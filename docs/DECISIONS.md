@@ -377,3 +377,72 @@ Only one help file ships: an amended `help.txt` rendered from
 `|link|` to a nonexistent tag, so the help can't quietly point at documentation that
 isn't there. The filetype section is generated from `filetypes.conf`. Anything else asked
 of `:help` gives `E149`, and the file says so and points at vimhelp.org.
+
+## 2026-09-24 — :q restarts Vim in place, not by rebooting
+
+Quitting Vim must not leave the device dead. A reboot would be simpler, but it takes a
+second, prints boot noise, and would kill every other service (web server, networking;
+Phase 6). So a new session restores Vim's own memory to power-on instead: `.data` from a
+snapshot, `.bss` zeroed (bracketed by `components/vim/linker.lf`), every heap block Vim
+allocated freed (each carries a tracking header), and each session runs as a fresh
+FreeRTOS task, so no stale stack is ever resumed. See docs/PHASE5.md, addendum.
+
+Two consequences to respect:
+
+- **Everything with session lifetime must live inside Vim's sections or be cleaned up
+  explicitly.** The session object and the supervisor live in `main`, outside, because
+  they have to survive the reset. The console poll registry
+  lives inside, so it's re-registered each session.
+- **Cleanup touches only what Vim owns** (opened on the Vim task during a session). The
+  wrappers are global, and the first version closed ESP-IDF's stdout.
+
+The heap budget also caps Vim's memory, which Phases 7–8 (MicroPython, git) will want.
+
+Superseded on the way: a private `multi_heap` arena (a second allocator, and it showed
+the S3 corruption below as readily as anything else) and `setjmp`/`longjmp` back into
+`app_main` (a new session would run on top of the dead one's stack).
+
+## 2026-09-24 — The runtime resolver must follow every way scripts load scripts
+
+Twice now a runtime file was missing because the resolver didn't know a loading
+mechanism: C code loading files by name (Phase 4), and Vim9 `import` paths (Phase 5).
+Both now have build-time checks. The general rule: when the resolver learns a new
+reference form, add a **validation** that fails the build, not just inclusion logic, and
+make the gate open a file of every kind that exercises it.
+
+## 2026-09-24 — Ship the help files the intro screen names; strip their dead links
+
+The intro screen tells you to type `:help version9`, `:help sponsor` and `:help Kuwasha`.
+Rather than patch those lines out, we ship the files: `version9.txt` without its patch
+lists (55 KB instead of 2 MB), `uganda.txt`, `sponsor.txt`, and netrw's manual. Links in
+upstream files that point at documentation not on the device become plain text at image
+build time. A visible link that answers E149 is worse than no link. Our own help
+stays strict: a dangling link there fails the build.
+
+`help.txt` names the chip, so the runtime image is built per target.
+
+## 2026-09-24 — The busy indicator lives in the select() wrapper, on the Vim task
+
+A spinner drawn by a separate task (a timer, say) would be simpler to reason about, and
+wrong: its bytes could land in the middle of one of Vim's escape sequences on the shared
+UART. Instead the existing select() wrapper, which already tells "Vim is polling for
+CTRL-C mid-work" (zero timeout) from "Vim is waiting for a key" (real wait), draws and
+erases on the Vim task through Vim's own output buffer. No Vim patch. The cost: work that
+never polls for CTRL-C shows no spinner. Every long loop in Vim polls, because that's
+how CTRL-C works.
+
+## 2026-09-24 — The ESP32-S3 gate is informational until tested on silicon
+
+An intermittent S3-only heap corruption predates Phase 5's restart work and survives
+every allocator arrangement and single-core mode. It doesn't reproduce in a Vim-free
+PSRAM stress test under the same emulator. See docs/PHASE5.md, "Known issue". The P4
+gate must pass. The S3 gate is run and reported, but doesn't block, until real S3
+hardware says whether this is the emulator or us.
+
+## 2026-09-24 — prepare-deps: `git check-ignore` needs the trailing slash
+
+The guard that refuses to extract into a tracked directory used
+`git check-ignore -q build-deps`. `.gitignore` says `/build-deps/`, a directory
+pattern, and on a fresh clone where `build-deps/` doesn't exist yet the slashless form
+doesn't match, so the script refused to run. It now checks `build-deps/`. Found by
+building the previous commit in a fresh worktree.

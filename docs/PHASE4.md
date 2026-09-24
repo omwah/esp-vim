@@ -31,7 +31,7 @@ device can edit ESP-IDF projects.
 
 **`scripts/make-runtime-image.py`** (`pixi run runtime`, run automatically by
 `vim-build`) copies a curated slice of Vim's runtime out of `build-deps/`, overlays our
-files from `esp-vim/runtime-image/`, and writes `build-deps/vimrt/`. The firmware build
+files from `esp-vim/runtime-image/`, and writes `build-deps/vimrt/` (per target since Phase 5: `build-deps/vimrt-<target>/`). The firmware build
 turns that into the FAT image. Dependencies are resolved to a fixed point:
 `syntax/`, `ftplugin/`, `indent/`, `autoload/` and `:compiler` references are all
 followed. Anything that's referenced but never loaded by default is excluded, with the
@@ -96,6 +96,11 @@ before any `-I` path. So running Vim's `configure` on the host (as this phase di
 build a desktop Vim for comparison) would silently compile the **host's** settings into
 the firmware. The component's CMake now refuses to configure if
 `build-deps/vim/src/auto/config.h` exists.
+
+*Correction (Phase 5): "no errors" held only for the files the gate opened, none of them
+Vim script. `indent/vim.vim`'s Vim9 `import` of `autoload/dist/vimindent.vim` wasn't
+followed by the resolver, so every Vim-script buffer failed. The resolver now follows
+imports and validates them. See [PHASE5.md](PHASE5.md), addendum.*
 
 ## Open items
 

@@ -21,6 +21,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from uart_session import Session, TARGET, PSRAM  # noqa: E402
 
 failures = 0
+# The chip's display name, as the firmware derives it: esp32p4 -> ESP32-P4.
+CHIP = "ESP32-" + TARGET[len("esp32"):].upper()
 
 
 # Every value read back from the screen ends in an explicit terminator ('|').
@@ -42,6 +44,8 @@ def main():
         with Session(term_size=(40, 120), log=str(log)) as s:
             term = s.expect(rb"ESPVIM-TERM ([^\r\n]*\))", 60).group(1).decode()
             s.expect("ESPVIM-READY", 60)
+            s.expect(f"Vim running on {CHIP}", 60)
+            check(True, f"intro screen has the title line 'Vim running on {CHIP}'")
             s.quiet(1.5)
 
             # 1. The terminal's size reaches Vim.
@@ -138,7 +142,28 @@ def main():
             s.quiet(1.0)
             s.type(":echo 'K' . '=' . (getline('.') =~# '\\*esp-keys\\*') . '|'\r")
             check(s.expect(rb"K=(\d)\|", 30).group(1) == b"1", "CTRL-] follows a help link")
+            s.type(":echo 'W' . '=' . (search('" + CHIP + "', 'nw') > 0) . (search('Tab5', 'nw') > 0) . '|'\r")
+            check(s.expect(rb"W=(\d\d)\|", 30).group(1) == b"10",
+                  f"help.txt names the {CHIP} and not the Tab5")
+            # Every help subject the intro screen advertises must exist, as
+            # must netrw's manual which help.txt links to.
+            for subject, want in (("version9", "version9.txt"), ("sponsor", "sponsor.txt"),
+                                  ("Kuwasha", "uganda.txt"), ("netrw", "netrw.txt")):
+                s.type(f":help {subject}\r")
+                s.quiet(1.0)
+                s.type(":echo 'F' . '=' . expand('%:t') . '|'\r")
+                got = s.expect(rb"F=([^|]*)\|", 30).group(1).decode()
+                check(got == want, f":help {subject} opens {want}", f"got {got!r}")
             s.type(":only\r:enew!\r")
+            s.quiet(1.0)
+            s.type(":echo 'V' . '=' . (execute('version') =~# '" + CHIP + "') . '|'\r")
+            check(s.expect(rb"V=(\d)\|", 30).group(1) == b"1", f":version names the {CHIP}")
+
+            # 2f. The busy indicator (counted in the log at the end): 1.5 s of
+            #     work must draw spinner frames.
+            s.type(":let t = reltime() | while reltimefloat(reltime(t)) < 1.5 | endwhile"
+                   " | echo 'B' . '=done|'\r")
+            s.expect(rb"B=done\|", 60)
             s.quiet(1.0)
 
             # 2e. Directory browsing, which the help promises: netrw on /fat.
@@ -173,18 +198,66 @@ def main():
             check(n > 0, "CTRL-C interrupts a running loop", f"loop reached n={n}")
 
             s.type(":qa!\r")
-            s.expect(rb"ESPVIM-EXIT rc=0", 30)
+            s.expect(rb"ESPVIM-EXIT rc=0 ", 30)
             check(True, "clean exit after interactive use")
 
+            # 8. :q is not a dead end. Vim restarts in place (no reboot) with ALL
+            #    of its state back at power-on: .data restored, .bss zeroed, heap
+            #    arena re-created, leftover files closed. Each session below is
+            #    dirtied first -- a global, an option, the working directory,
+            #    extra buffers, :help, a directory listing, an armed regexp
+            #    timer -- and the next must not see any of it, nor leak memory.
+            starts = []
+            for cycle in range(1, 4):
+                s.expect(rb"Vim is forever\.", 30)
+                s.expect(rb"Press any key to start a new session\.", 30)
+                s.quiet(0.5)
+                s.send(b"x")                               # "press any key"
+                m = s.expect(rb"ESPVIM-HEAP session=(\d+) int_free=(\d+) ", 60)
+                starts.append((int(m.group(1)), int(m.group(2))))
+                s.expect("ESPVIM-READY", 60)
+                s.quiet(1.5)
+                s.type(":echo 'S' . '=' . exists('g:dirty') . ':' . getcwd() . ':' . &tabstop"
+                       " . ':' . len(getbufinfo({'buflisted': 1})) . '|'\r")
+                got = s.expect(rb"S=([^|]*)\|", 30).group(1).decode()
+                check(got == "0:/fat:8:1", f"session {cycle + 1} starts at power-on state",
+                      f"globals:cwd:tabstop:buffers = {got!r} (want '0:/fat:8:1')")
+                s.type(":let g:dirty = 1 | set tabstop=3 | cd /vimrt | e /vimrt/vimrc"
+                       " | e /vimrt/defaults.vim | help | only | e /fat"
+                       " | call search('\\v(a|aa)+b', 'n', 0, 50)\r")
+                s.quiet(1.5)
+                s.type(":qa!\r")
+                s.expect(rb"ESPVIM-EXIT rc=0 ", 30)
+
+            sessions = [n for n, _ in starts]
+            check(sessions == [2, 3, 4], "each :q starts a new session in place (no reboot)",
+                  f"sessions seen: {sessions}")
+            ints = [f for _, f in starts]
+            check(max(ints) - min(ints) <= 1024, "no internal-RAM leak across sessions",
+                  f"internal free at session start: {ints}")
+
         data = log.read_bytes()
+        import re
         # 5. No "OOPS": Vim's fallback tgoto() emits that for a termcap string
         #    it cannot expand (patch 0006 fixed the one that did).
         check(b"OOPS" not in data, "no unexpandable termcap strings (\"OOPS\")",
               f"{data.count(b'OOPS')} found" if b"OOPS" in data else "")
+        # 2f. The busy spinner: drawn on the bottom row, one cell in from the
+        #     right (row 40, col 119), inside DECSC/DECRC so Vim's cursor is
+        #     untouched.
+        spun = data.count(b"\x1b7\x1b[40;119H\x1b[7m")
+        check(spun >= 2, "busy spinner turns during long commands", f"{spun} frames drawn")
         # 6. Mouse reporting enabled (button tracking + SGR) and disabled at exit.
         on = b"\x1b[?1002h" in data and b"\x1b[?1006h" in data
         off = b"\x1b[?1002l" in data and b"\x1b[?1006l" in data
         check(on and off, "SGR mouse reporting enabled, and disabled on exit")
+        # 6b. No crash and no reboot at any point. A panic reboots the chip and
+        #     Vim comes back fresh, so later checks can fail in confusing ways --
+        #     or pass by accident. Catch it directly: one boot, no panic.
+        boots = data.count(b"ESPVIM-HEAP session=1 ")
+        panics = len(re.findall(rb"Guru Meditation|abort\(\) was called|assert failed", data))
+        check(boots == 1 and panics == 0, "no crash or reboot during the session",
+              f"session-1 starts: {boots}, panics: {panics}")
         # 7. No Vim error messages anywhere in the session.
         import re
         errs = sorted(set(m.decode(errors="replace")

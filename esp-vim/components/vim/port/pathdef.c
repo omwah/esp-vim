@@ -13,7 +13,20 @@
 
 char_u *default_vim_dir        = (char_u *)"/vimrt";
 char_u *default_vimruntime_dir = (char_u *)"/vimrt";
-char_u *all_cflags             = (char_u *)"riscv32-esp-elf-gcc (ESP-IDF v5.5.5)";
+#include "sdkconfig.h"
+#include "esp_idf_version.h"
+
+#if CONFIG_IDF_TARGET_ARCH_XTENSA
+# define ESP_VIM_CC "xtensa-" CONFIG_IDF_TARGET "-elf-gcc"
+#else
+# define ESP_VIM_CC "riscv32-esp-elf-gcc"
+#endif
+#define ESP_VIM_STR_(x) #x
+#define ESP_VIM_STR(x) ESP_VIM_STR_(x)
+
+char_u *all_cflags             = (char_u *)ESP_VIM_CC " " __VERSION__ " (ESP-IDF v"
+        ESP_VIM_STR(ESP_IDF_VERSION_MAJOR) "." ESP_VIM_STR(ESP_IDF_VERSION_MINOR) "."
+        ESP_VIM_STR(ESP_IDF_VERSION_PATCH) ")";
 char_u *all_lflags             = (char_u *)"esp-idf component link";
 char_u *compiled_user          = (char_u *)"esp";
-char_u *compiled_sys           = (char_u *)"esp32p4";
+char_u *compiled_sys           = (char_u *)ESP_VIM_CHIP;   /* from the component CMakeLists */

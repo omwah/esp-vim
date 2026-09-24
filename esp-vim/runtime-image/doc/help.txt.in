@@ -1,27 +1,28 @@
-*help.txt*	For Vim version 9.2 on ESP32-P4 / ESP32-S3.  Last change: 2026 Sep 24
+*help.txt*	For Vim version 9.2 on the @CHIP@.  Last change: 2026 Sep 24
 
-		   VIM on ESP32 - main help file
+		   VIM on @CHIP@ - main help file
 									 k
       Move around:  Use the cursor keys, or "h" to go left,	       h   l
 		    "j" to go down, "k" to go up, "l" to go right.	 j
 Close this window:  Use ":q<Enter>".
    Get out of Vim:  Use ":qa!<Enter>" (careful, all changes are lost!).
+		    Vim is the whole device, so it then offers a fresh
+		    session rather than leaving you nowhere.  |esp-quit|
 
 Jump to a subject:  Position the cursor on a tag (e.g. |bars|) and hit CTRL-].
    With the mouse:  Double-click the left mouse button on a tag, e.g. |bars|.
 		    The mouse is already enabled.
 	Jump back:  Type CTRL-O.  Repeat to go further back.
 
-This is Vim 9.2 running directly on an ESP32 microcontroller -- the M5Stack
-Tab5 (ESP32-P4), or an ESP32-S3 board.  It is real Vim: the same editor, the
-same commands, Vim script, syntax highlighting, windows, buffers, registers,
-macros, :vimgrep, diffs.  What is different is the machine around it, and that
-is what this file is about.
+This is Vim 9.2 running directly on an @CHIP@ microcontroller.  It is real
+Vim: the same editor, the same commands, Vim script, syntax highlighting,
+windows, buffers, registers, macros, :vimgrep, diffs.  What is different is
+the machine around it, and that is what this file is about.
 
-This device carries only this one help file.  Vim's full documentation is
-12 MB and does not fit; ":help" on any other subject answers E149.  The
-complete reference is at https://vimhelp.org -- everything there applies here
-except what |esp-missing| lists.
+Vim's full documentation is 12 MB and does not fit on the device, so only a
+few help files are here -- see |esp-docs|.  ":help" on any other subject
+answers E149.  The complete reference is at https://vimhelp.org; everything
+there applies here except what |esp-missing| lists.
 
 Vim stands for Vi IMproved.  Most of Vim was made by Bram Moolenaar, but only
 through the help of many others.  See |esp-credits|.
@@ -32,9 +33,12 @@ CONTENTS
 |esp-files|		Files, storage and the current directory
 |esp-filetypes|		Which file types are recognised, and adding more
 |esp-keys|		Keyboard, mouse and the terminal
+|esp-busy|		The busy indicator
 |esp-settings|		Settings that differ from desktop Vim
 |esp-vimrc|		Your own configuration
+|esp-quit|		What happens when you quit
 |esp-missing|		What is not available on this device
+|esp-docs|		The help files on this device
 |esp-credits|		Credits and copying
 
 ==============================================================================
@@ -54,7 +58,8 @@ and <Tab> completes file names on the command line (":e no<Tab>").
 
 To browse directories use ":Explore" (or ":e /fat").  Move to a name and press
 <Enter> to open it, "-" to go up a directory.  This is Vim's netrw plugin, for
-local files; see |esp-missing| for its network features.
+local files; its full manual is |netrw|, and |esp-missing| lists the network
+features that do not work here.
 
 Flash is small (a few megabytes) and wears with writing, which is why swap,
 backup and undo files are off by default -- see |esp-settings|.
@@ -102,6 +107,18 @@ Connecting		Vim talks to a terminal over the serial console.  Use
 			such as "^[[A" mean the terminal is not in raw mode.
 
 ==============================================================================
+THE BUSY INDICATOR					*esp-busy*
+
+Some things take a noticeable moment on a microcontroller: opening a large
+file, the first file of a new type (its syntax rules are loaded), ":help".
+When Vim has been working for more than about a third of a second, a small
+spinner turns at the bottom right of the screen.  It disappears as soon
+as Vim is ready for your next key.  CTRL-C interrupts the work.
+
+To turn it off: >
+	:let g:esp_busy = 0
+<
+==============================================================================
 SETTINGS THAT DIFFER FROM DESKTOP VIM			*esp-settings*
 
 These are set by the system vimrc, /vimrt/vimrc:
@@ -141,6 +158,18 @@ ftplugin/, colors/, ftdetect/, and doc/ for their help (run ":helptags
 /fat/.vim/doc" after adding help files).
 
 ==============================================================================
+QUITTING						*esp-quit*
+
+Vim is the only thing running on the device, so there is nowhere to "exit" to.
+When the last window closes -- ":q", ":qa!", ":wq", "ZZ" -- you see: >
+	All buffers closed.  Vim is forever.
+	Press any key to start a new session.
+<and the next key starts Vim again, exactly as at power-on: no buffers, no
+variables or options left over from before, the current directory back at
+/fat.  This takes a moment, not a reboot.  Files you saved are of course still
+there; changes you quit without saving are gone, as always.
+
+==============================================================================
 NOT AVAILABLE ON THIS DEVICE				*esp-missing*
 
 There is no operating system shell and no other programs, so everything that
@@ -154,8 +183,8 @@ runs an external command is unavailable:
 
 Also not available:
 
-	This documentation	Only this file is on the device.  E149 for
-				other subjects; see https://vimhelp.org.
+	This documentation	Only the files in |esp-docs|.  E149 for other
+				subjects; see https://vimhelp.org.
 	Spell checking		No spelling dictionaries are installed yet.
 	System clipboard	The "* and "+ registers are not connected to
 				anything.  Other registers work normally.
@@ -165,17 +194,30 @@ Also not available:
 	Network access		netrw's ftp:// scp:// http:// and similar.
 
 ==============================================================================
+HELP FILES ON THIS DEVICE				*esp-docs*
+
+	|help.txt|	This file.
+	|netrw.txt|	The file browser, ":Explore".
+	|version9.txt|	What is new in Vim 9 (":help version9").  The list of
+			individual patches is left out to save flash.
+	|uganda.txt|	Vim's license, and the charity it asks you to support.
+	|sponsor.txt|	Sponsoring Vim development.
+
+Links inside those files that lead to Vim's other documentation are shown as
+plain text, since that documentation is not here.
+
+==============================================================================
 CREDITS AND COPYING					*esp-credits*
 
 Vim is written by Bram Moolenaar and the Vim project, with contributions from
 many others.  It is distributed under the Vim license, which lets you use and
 copy it freely; if you find it useful, consider supporting the charity it asks
-for, the ICCF (https://iccf-holland.org).  The license text is at
-https://vimhelp.org/uganda.txt.html.
+for, the ICCF (https://iccf-holland.org).  The license is |uganda.txt|, and
+|sponsor| explains how to support Vim development.
 
 This help file is an amended version of Vim's help.txt, rewritten for this
 device.  The rest of Vim here is unmodified apart from a few small patches
-needed to build it for the ESP32.
+needed to build it for the @CHIP@.
 
 ------------------------------------------------------------------------------
 *bars*		Bars example

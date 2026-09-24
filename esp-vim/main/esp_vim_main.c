@@ -59,7 +59,6 @@ static void console_init(void)
     uart_vfs_dev_use_driver(UART_NUM_0);
     uart_vfs_dev_port_set_rx_line_endings(UART_NUM_0, ESP_LINE_ENDINGS_LF);
     uart_vfs_dev_port_set_tx_line_endings(UART_NUM_0, ESP_LINE_ENDINGS_LF);
-    esp_vim_register_input_poll(0, uart_console_pending);
 }
 
 static void storage_init(void)
@@ -175,44 +174,123 @@ static void probe_terminal_size(void)
     }
 }
 
+/*
+ * Vim's heap budget: half the free PSRAM, at most 16 MB -- 16 MB on the Tab5,
+ * about 4 MB on an 8 MB ESP32-S3. Vim measured under 3 MB with large files open
+ * (docs/PHASE4.md); the cap keeps it from starving the services of later phases.
+ */
+#define ESP_VIM_HEAP_MAX (16u * 1024 * 1024)
+
+static esp_vim_session_t s_session;     /* survives session resets: not in Vim */
+static TaskHandle_t s_supervisor;       /* app_main's task, which runs sessions */
+
+/*
+ * Strong override of the port's weak default: Vim has exited (after printing
+ * ESPVIM-EXIT). Tell the supervisor, then end this task.
+ *
+ * Each session runs in its own FreeRTOS task, and a session ends by deleting
+ * its task -- nothing unwinds Vim's call stack. The first version longjmp'd
+ * back out of Vim instead; on the ESP32-S3 the next session then corrupted its
+ * heap, while the RISC-V P4 was fine. Xtensa's windowed register ABI makes a
+ * longjmp out of a deep call chain delicate; a fresh task with a fresh stack
+ * sidesteps it on every architecture.
+ */
+void esp_vim_session_exit(int status)
+{
+    (void)status;
+    xTaskNotifyGive(s_supervisor);
+    vTaskDelete(NULL);
+    for (;;)
+        vTaskDelay(portMAX_DELAY);  /* not reached */
+}
+
+/* Between sessions: say what happened, wait for a key. */
+static void between_sessions(void)
+{
+    static const char msg[] =
+        "\r\n"
+        "  All buffers closed.  Vim is forever.\r\n"
+        "  Press any key to start a new session.\r\n";
+
+    /* Discard keys typed while quitting, so a stray one cannot skip this --
+     * BEFORE showing the prompt, or a key pressed in answer to it could be
+     * flushed away and the wait would never end. */
+    uart_flush_input(UART_NUM_0);
+    write(STDOUT_FILENO, msg, sizeof(msg) - 1);
+
+    fd_set r;
+    FD_ZERO(&r);
+    FD_SET(STDIN_FILENO, &r);
+    if (select(STDIN_FILENO + 1, &r, NULL, NULL, NULL) > 0) {
+        char c;
+        read(STDIN_FILENO, &c, 1);
+    }
+}
+
+/* One Vim session: a fresh task with a fresh stack every time. */
 static void vim_task(void *arg)
 {
-    (void)arg;
-    /* TEMPORARY Phase 3 diagnostic: silent ex mode needs no terminal, so this
-     * isolates "is Vim's core working" from "is the console working". */
+    unsigned session = (unsigned)(uintptr_t)arg;
     char *argv[] = { "vim", NULL };
 
-    probe_terminal_size();
-    report_test_artifact();
-    printf("ESPVIM-HEAP int_free=%u psram_free=%u psram_total=%u\n",
-           (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
-           (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
-           (unsigned)heap_caps_get_total_size(MALLOC_CAP_SPIRAM));
-    printf("\nESPVIM-READY\n");     /* stable marker for esp-emu --inject-on */
-    int rc = vim_main(1, argv);
-    printf("\nESPVIM-EXIT rc=%d ESPVIM-END\n", rc);
+    /* Power-on state for Vim, and an empty heap. Must run on THIS task:
+     * what a session opens is owned by the task that begins it. */
+    esp_vim_session_begin(&s_session);
+    /* The poll registry lives in the port's .bss, just reset. */
+    esp_vim_register_input_poll(0, uart_console_pending);
 
-    /* mch_exit() must not call exit(): on IDF that restarts the chip. */
-    vTaskDelete(NULL);
+    probe_terminal_size();                         /* the window may have changed */
+    if (session == 1)
+        report_test_artifact();
+
+    size_t used, peak, total;
+    esp_vim_heap_stats(&used, &peak, &total);
+    printf("ESPVIM-HEAP session=%u int_free=%u vim_heap_size=%u vim_heap_used=%u\n",
+           session, (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+           (unsigned)total, (unsigned)used);
+    printf("\nESPVIM-READY\n");                    /* stable marker for esp-emu --inject-on */
+
+    vim_main(1, argv);
+
+    /* Vim's main() never returns -- it exits via getout() -- but be safe. */
+    printf("\nESPVIM-EXIT rc=0 ESPVIM-END\n");
+    esp_vim_session_exit(0);
 }
 
 void app_main(void)
 {
     esp_log_level_set("*", ESP_LOG_WARN);
 
+    /* Before anything else touches Vim: this snapshots Vim's .data while it
+     * still holds its initial values. */
+    size_t budget = heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 2;
+    if (budget > ESP_VIM_HEAP_MAX)
+        budget = ESP_VIM_HEAP_MAX;
+    ESP_ERROR_CHECK(esp_vim_session_init(&s_session, budget));
+
     console_init();
     storage_init();
     environment_init();
 
     /*
-     * Pinned to core 0, the core that installed the UART driver and owns its ISR.
+     * app_main's task becomes the session supervisor: start a Vim session,
+     * wait for it to end, show the between-sessions prompt, repeat.
      *
-     * Left unpinned, the Vim task could land on core 1, and the first select() on
-     * the console crashed inside ESP-IDF with "assert failed: spinlock_acquire
-     * (lock)" under xQueueSemaphoreTake. Pinning made it go away completely. Whether
-     * the fault is ESP-IDF's cross-core select path or the emulator's multi-hart
-     * model is NOT yet established -- re-test unpinned on real silicon (docs/PLAN.md
-     * Phase 9). Running the editor on its console's core costs nothing either way.
+     * Sessions are pinned to core 0, the core that installed the UART driver and
+     * owns its ISR. Left unpinned, a Vim task on core 1 crashed inside ESP-IDF's
+     * select() ("assert failed: spinlock_acquire (lock)"). Whether that is
+     * ESP-IDF's cross-core select path or the emulator's multi-hart model is NOT
+     * yet established -- re-test unpinned on real silicon (docs/PLAN.md Phase 9).
      */
-    xTaskCreatePinnedToCore(vim_task, "vim", ESP_VIM_TASK_STACK, NULL, 5, &g_vim_task, 0);
+    s_supervisor = xTaskGetCurrentTaskHandle();
+    for (unsigned session = 1;; session++) {
+        if (xTaskCreatePinnedToCore(vim_task, "vim", ESP_VIM_TASK_STACK,
+                                    (void *)(uintptr_t)session, 5, &g_vim_task, 0) != pdPASS) {
+            ESP_LOGE(TAG, "cannot create the Vim task");
+            esp_restart();
+        }
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);   /* until Vim exits */
+        vTaskDelay(1);                             /* let the idle task reclaim its stack */
+        between_sessions();
+    }
 }

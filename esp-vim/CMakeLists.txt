@@ -6,8 +6,9 @@ project(esp-vim)
 #
 # Its contents are GENERATED, not committed: scripts/make-runtime-image.py copies
 # a curated slice of Vim's own runtime out of build-deps/ and overlays our files
-# from runtime-image/. Run it (pixi run runtime) before building.
-set(VIMRT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../build-deps/vimrt")
+# from runtime-image/. Run it (pixi run runtime) before building. There is one
+# image per target, because :help names the chip it runs on.
+set(VIMRT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../build-deps/vimrt-${IDF_TARGET}")
 if(NOT EXISTS "${VIMRT_DIR}/defaults.vim")
     message(FATAL_ERROR
         "Curated runtime not found at ${VIMRT_DIR}.\n"

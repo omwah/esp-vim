@@ -176,10 +176,32 @@ set(VIM_XDIFF_SOURCES
 
 idf_component_register(
     SRCS "${VIM_SOURCES}" "${VIM_XDIFF_SOURCES}" "port/pathdef.c" "port/esp_shims.c"
+         "port/esp_busy.c"
     INCLUDE_DIRS "port"
     PRIV_INCLUDE_DIRS "${VIM_SRC}" "${VIM_SRC}/proto"   # upstream Makefile passes -Iproto
-    REQUIRES fatfs vfs esp_partition esp_driver_uart esp_timer
+    REQUIRES fatfs vfs esp_partition esp_driver_uart esp_timer heap
+    LDFRAGMENTS "linker.lf"     # brackets Vim's .data/.bss for session restarts
 )
+
+# Keep every Vim global inside the linker.lf brackets. RISC-V GCC otherwise
+# puts small globals (<= 8 bytes: got_int, curbuf, ...) in .sdata/.sbss, which
+# ESP-IDF's data/bss schemes do not cover -- a session restart would then leave
+# exactly the most important state behind.
+if(CONFIG_IDF_TARGET_ARCH_RISCV)
+    target_compile_options(${COMPONENT_LIB} PRIVATE -msmall-data-limit=0)
+endif()
+
+# The chip's marketing name, for the intro screen ("Vim running on ESP32-P4",
+# patches/vim/0007) and anything else that names the hardware: esp32p4 ->
+# ESP32-P4, esp32s3 -> ESP32-S3. The runtime image's :help gets the same name
+# from scripts/make-runtime-image.py.
+if(IDF_TARGET MATCHES "^esp32(.+)$")
+    string(TOUPPER "${CMAKE_MATCH_1}" chip_suffix)
+    set(ESP_VIM_CHIP "ESP32-${chip_suffix}")
+else()
+    string(TOUPPER "${IDF_TARGET}" ESP_VIM_CHIP)
+endif()
+target_compile_definitions(${COMPONENT_LIB} PRIVATE ESP_VIM_CHIP="${ESP_VIM_CHIP}")
 
 # -include forces our config.h ahead of everything, so Vim's sources need no
 # edit to find it. HAVE_CONFIG_H makes vim.h look for auto/config.h, which we
@@ -210,6 +232,9 @@ target_compile_options(${COMPONENT_LIB} PRIVATE
     -Dmalloc=esp_vim_malloc
     -Dcalloc=esp_vim_calloc
     -Drealloc=esp_vim_realloc
+    # free() too: Vim's blocks carry a tracking header (port/esp_shims.c) so a
+    # new session can free them all; anything else goes to ESP-IDF's heap.
+    -Dfree=esp_vim_free
 )
 
 # ESP-IDF defines chdir(), getcwd() and system(), so the port cannot simply
@@ -222,7 +247,7 @@ target_compile_options(${COMPONENT_LIB} PRIVATE
 # With --wrap the override calls __real_* instead.
 set(VIM_WRAPPED
     # the userspace working directory: every path-taking call resolves
-    chdir getcwd open fopen stat access unlink remove rmdir chmod rename mkdir opendir
+    chdir getcwd open fopen stat access unlink remove rmdir chmod rename mkdir opendir closedir
     # file identity: fstat must agree with stat (see esp_shims.c)
     fstat close fclose
     # process model, console, tty

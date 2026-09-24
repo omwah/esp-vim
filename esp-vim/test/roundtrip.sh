@@ -121,6 +121,8 @@ echo "runtime round trip"
 #   x.php    deliberately not in filetypes.conf       -> none
 #   runme    no extension, "#!/bin/sh" first line     -> sh   (scripts.vim)
 #   Kconfig  ESP-IDF config language                  -> kconfig
+#   defaults.vim  Vim script: sources indent/vim.vim, whose Vim9 import of
+#            autoload/dist/vimindent.vim the runtime once failed to ship -> vim
 # then the system vimrc (utf-8, noswapfile) and netrw (:Explore == 2).
 RT=":let g:r = []"$'\r'
 RT+=":e /fat/new.c | call add(g:r, &ft . '/' . get(b:, 'current_syntax', 'none'))"$'\r'
@@ -128,12 +130,13 @@ RT+=":e /fat/Makefile | call add(g:r, &ft)"$'\r'
 RT+=":e /fat/x.php | call add(g:r, empty(&ft) ? 'none' : &ft)"$'\r'
 RT+=":call writefile(['#!/bin/sh'], '/fat/runme') | e /fat/runme | call add(g:r, &ft)"$'\r'
 RT+=":e /fat/Kconfig | call add(g:r, &ft)"$'\r'
+RT+=":e /vimrt/defaults.vim | call add(g:r, &ft)"$'\r'
 RT+=":call writefile([join(g:r, ':') . ':' . &encoding . ':' . &swapfile . ':' . exists(':Explore')], '/fat/vimtest.txt')"$'\r'
 RT+=":qa!"$'\r'
 run_pair runtime "$RT"
 check_clean runtime
 got="$(artifact runtime)"
-want="c/c:make:none:sh:kconfig:utf-8:0:2"
+want="c/c:make:none:sh:kconfig:vim:utf-8:0:2"
 [ "$got" = "$want" ] \
     && pass "runtime: generated filetype detection, syntax, system vimrc, netrw" \
     || fail "runtime: expected '$want', got '$got'"

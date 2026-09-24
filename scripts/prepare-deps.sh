@@ -31,7 +31,10 @@ info() { printf '  %s\n' "$*"; }
 # committed.  If it is not ignored, a later `git add -A` would swallow all of it,
 # so refuse to populate it rather than set that trap.
 if git -C "$REPO_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    if ! git -C "$REPO_ROOT" check-ignore -q build-deps 2>/dev/null; then
+    # Trailing slash: the .gitignore rule "/build-deps/" matches directories
+    # only, and in a fresh clone build-deps does not exist yet -- without the
+    # slash git cannot tell it is a directory, and this guard refused to run.
+    if ! git -C "$REPO_ROOT" check-ignore -q build-deps/ 2>/dev/null; then
         die "build-deps/ is not git-ignored -- refusing to extract into a tracked path.
        Add '/build-deps/' to .gitignore first."
     fi

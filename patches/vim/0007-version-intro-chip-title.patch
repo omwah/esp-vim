@@ -1,0 +1,40 @@
+diff -ruN '--exclude=.git' '--exclude=*.o' '--exclude=*.rej' '--exclude=*.orig' a/src/version.c b/src/version.c
+--- a/src/version.c	2026-09-21 13:40:41.000000000 -0700
++++ b/src/version.c	2026-09-24 11:46:23.589735119 -0700
+@@ -3521,6 +3521,16 @@
+     char	*p;
+     static char	*(lines[]) =
+     {
++#ifdef ESP_VIM_CHIP
++	// Title line naming the chip this build runs on (see
++	// esp-vim/components/vim/CMakeLists.txt).  Not translated: it is a
++	// product name.
++# define INTRO_VERSION_LINE 4
++	"Vim running on " ESP_VIM_CHIP,
++	"",
++#else
++# define INTRO_VERSION_LINE 2
++#endif
+ 	N_("VIM - Vi IMproved"),
+ 	"",
+ 	N_("version "),
+@@ -3545,6 +3555,10 @@
+ #ifdef FEAT_GUI
+     static char	*(gui_lines[]) =
+     {
++# ifdef ESP_VIM_CHIP
++	NULL,
++	NULL,
++# endif
+ 	NULL,
+ 	NULL,
+ 	NULL,
+@@ -3610,7 +3624,7 @@
+ 		    p = N_("menu  Help->Sponsor           for information    ");
+ 	    }
+ 	    if (*p != NUL)
+-		do_intro_line(row, (char_u *)_(p), i == 2, 0);
++		do_intro_line(row, (char_u *)_(p), i == INTRO_VERSION_LINE, 0);
+ 	    ++row;
+ 	}
+     }

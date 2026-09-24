@@ -4,6 +4,8 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
+#include "esp_err.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -22,6 +24,46 @@ extern "C" {
  * will register its own.
  */
 void esp_vim_register_input_poll(int fd, bool (*input_pending)(void));
+
+/*
+ * Vim sessions: restarting Vim in place after :q, without rebooting.
+ *
+ *   esp_vim_session_t s;
+ *   esp_vim_session_init(&s, heap_budget);    // once, before any Vim code runs
+ *   for (;;) {
+ *       esp_vim_session_begin(&s);            // power-on state, empty heap
+ *       ... vim_main() ...                     // leaves via esp_vim_session_exit()
+ *   }
+ *
+ * The session object must live OUTSIDE Vim (it is what survives the reset).
+ */
+typedef struct {
+    void   *data_snapshot;      /* Vim's .data as it was at power-on */
+    size_t  data_size;
+    size_t  heap_budget;        /* most PSRAM Vim may hold; 0 = unlimited */
+} esp_vim_session_t;
+
+esp_err_t esp_vim_session_init(esp_vim_session_t *sess, size_t heap_budget);
+void      esp_vim_session_begin(const esp_vim_session_t *sess);
+
+/*
+ * Called on the Vim task when Vim exits (via exit()), after the ESPVIM-EXIT
+ * line is printed. The port's weak default parks the task; the firmware
+ * provides a strong definition that starts a new session.
+ */
+void esp_vim_session_exit(int status) __attribute__((noreturn));
+
+/* Bytes Vim holds now, its high-water mark, and its budget. */
+void esp_vim_heap_stats(size_t *used, size_t *peak, size_t *total);
+
+/*
+ * Busy indicator (port/esp_busy.c), driven by the select() wrapper on the Vim
+ * task: a zero-timeout console poll means Vim is working, a real wait means it
+ * is idle. Not for use elsewhere.
+ */
+void esp_vim_busy_poll(void);
+void esp_vim_busy_idle(void);
+void esp_vim_busy_wait_done(void);
 
 #ifdef __cplusplus
 }

@@ -1,0 +1,16 @@
+# Bracket every writable section of libvim.a -- Vim itself plus the port's
+# shims -- so a new Vim session can restore it to power-on state after :q
+# (esp_vim_session_begin in port/esp_shims.c):
+#
+#   _vim_data_start .. _vim_data_end   initialised data, restored from a snapshot
+#   _vim_bss_start  .. _vim_bss_end    zero-initialised data, zeroed
+#
+# ESP-IDF's data/bss schemes cover .data+ and .bss+ only. On RISC-V the
+# component is built with -msmall-data-limit=0 (CMakeLists.txt) so nothing is
+# placed in .sdata/.sbss, which these brackets would miss.
+[mapping:vim]
+archive: libvim.a
+entries:
+    * (default);
+        data -> dram0_data SURROUND(vim_data),
+        bss -> dram0_bss SURROUND(vim_bss)

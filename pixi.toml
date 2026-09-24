@@ -63,7 +63,7 @@ spike-report = { cmd = 'bash -c ". scripts/env.sh >/dev/null && cd esp-vim/test/
 
 mkpatch = { cmd = "scripts/mkpatch.sh", description = "Generate a patch from edits in build-deps/<dep> (see docs/DECISIONS.md)" }
 
-runtime = { cmd = "python scripts/make-runtime-image.py", description = "Curate $VIMRUNTIME into build-deps/vimrt/ (checks it fits the partition)" }
+runtime = { cmd = "python scripts/make-runtime-image.py", description = "Curate $VIMRUNTIME into build-deps/vimrt-<target>/ for each target (checks it fits the partition)" }
 
 vim-build = { cmd = 'bash -c ". scripts/env.sh >/dev/null && scripts/vim-build.sh esp32p4"', depends-on = ["runtime"], description = "Build the Vim firmware for ESP32-P4 (curates the runtime first)" }
 

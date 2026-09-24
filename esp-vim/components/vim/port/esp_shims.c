@@ -63,31 +63,161 @@ static const char *TAG = "vim-shim";
     } while (0)
 
 /* ======================================================================= */
-/*  Vim's heap: PSRAM first                                                 */
+/*  Vim's heap: tracked blocks in ESP-IDF's PSRAM heap                      */
 /*                                                                          */
-/*  malloc/calloc/realloc are renamed to these by -D in the component's      */
-/*  CMakeLists, for Vim's sources only. Prefer the 32 MB of PSRAM; fall back */
-/*  to any heap rather than fail, since Vim treats NULL as out-of-memory.    */
+/*  malloc/calloc/realloc/free are renamed to these by -D in the component  */
+/*  CMakeLists, for Vim's sources only. Every block Vim allocates carries a */
+/*  small header linking it into a list, so a new session can free ALL of   */
+/*  the previous session's memory -- Vim itself never frees at exit.        */
+/*                                                                          */
+/*  Blocks come from ESP-IDF's own PSRAM heap, keeping internal RAM for     */
+/*  ESP-IDF (docs/PHASE4.md). An earlier version gave Vim a separate        */
+/*  multi_heap arena instead; on the ESP32-S3 that arena's TLSF bookkeeping */
+/*  corrupted under load (even with no restart), while the identical code   */
+/*  was clean on the P4 -- see docs/PHASE5.md. The system heap is proven on */
+/*  both chips, and a tracked list also cannot be damaged by a foreign     */
+/*  free() the way an arena carved out of another heap can.                 */
 /* ======================================================================= */
+
+typedef struct vim_blk {
+    struct vim_blk *prev, *next;
+    size_t size;                /* payload bytes */
+    struct vim_blk *self;       /* == this block while it is live: "is it ours?" */
+} vim_blk_t;                    /* 16 bytes: keeps the payload 8-byte aligned */
+
+static vim_blk_t *s_blocks;     /* every live Vim allocation */
+static size_t s_heap_used, s_heap_peak, s_heap_budget;
 
 #define VIM_HEAP_CAPS (MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
 
+static inline vim_blk_t *our_block(void *ptr)
+{
+    if (ptr == NULL)
+        return NULL;
+    vim_blk_t *b = (vim_blk_t *)ptr - 1;
+    return b->self == b ? b : NULL;
+}
+
+static void blk_link(vim_blk_t *b, size_t size)
+{
+    b->size = size;
+    b->self = b;
+    b->prev = NULL;
+    b->next = s_blocks;
+    if (s_blocks != NULL)
+        s_blocks->prev = b;
+    s_blocks = b;
+    s_heap_used += size;
+    if (s_heap_used > s_heap_peak)
+        s_heap_peak = s_heap_used;
+}
+
+static void blk_unlink(vim_blk_t *b)
+{
+    if (b->prev != NULL)
+        b->prev->next = b->next;
+    else
+        s_blocks = b->next;
+    if (b->next != NULL)
+        b->next->prev = b->prev;
+    s_heap_used -= b->size;
+    b->self = NULL;             /* a double free will no longer look like ours */
+}
+
+static bool over_budget(size_t more)
+{
+    return s_heap_budget != 0 && s_heap_used + more > s_heap_budget;
+}
+
 void *esp_vim_malloc(size_t size)
 {
-    void *p = heap_caps_malloc(size, VIM_HEAP_CAPS);
-    return p != NULL ? p : heap_caps_malloc(size, MALLOC_CAP_DEFAULT);
+    if (size > SIZE_MAX - sizeof(vim_blk_t) || over_budget(size))
+        return NULL;            /* Vim reports "out of memory" itself */
+    vim_blk_t *b = heap_caps_malloc(sizeof(vim_blk_t) + size, VIM_HEAP_CAPS);
+    if (b == NULL)
+        b = heap_caps_malloc(sizeof(vim_blk_t) + size, MALLOC_CAP_DEFAULT);
+    if (b == NULL)
+        return NULL;
+    blk_link(b, size);
+    return b + 1;
 }
 
 void *esp_vim_calloc(size_t n, size_t size)
 {
-    void *p = heap_caps_calloc(n, size, VIM_HEAP_CAPS);
-    return p != NULL ? p : heap_caps_calloc(n, size, MALLOC_CAP_DEFAULT);
+    if (size != 0 && n > SIZE_MAX / size)
+        return NULL;
+    void *p = esp_vim_malloc(n * size);
+    if (p != NULL)
+        memset(p, 0, n * size);
+    return p;
+}
+
+void esp_vim_free(void *ptr)
+{
+    if (ptr == NULL)
+        return;
+    vim_blk_t *b = our_block(ptr);
+    if (b != NULL) {
+        blk_unlink(b);
+        heap_caps_free(b);
+    } else {
+        heap_caps_free(ptr);    /* not ours: allocated outside Vim */
+    }
 }
 
 void *esp_vim_realloc(void *ptr, size_t size)
 {
-    void *p = heap_caps_realloc(ptr, size, VIM_HEAP_CAPS);
-    return p != NULL ? p : heap_caps_realloc(ptr, size, MALLOC_CAP_DEFAULT);
+    if (ptr == NULL)
+        return esp_vim_malloc(size);
+    if (size == 0) {
+        esp_vim_free(ptr);
+        return NULL;
+    }
+    vim_blk_t *b = our_block(ptr);
+    if (b == NULL) {            /* a foreign block: move it into Vim's heap */
+        void *n = esp_vim_malloc(size);
+        if (n != NULL) {
+            size_t old = heap_caps_get_allocated_size(ptr);
+            memcpy(n, ptr, old < size ? old : size);
+            heap_caps_free(ptr);
+        }
+        return n;
+    }
+    if (size > b->size && over_budget(size - b->size))
+        return NULL;
+    if (size > SIZE_MAX - sizeof(vim_blk_t))
+        return NULL;
+
+    size_t old = b->size;
+    blk_unlink(b);              /* the block may move */
+    vim_blk_t *nb = heap_caps_realloc(b, sizeof(vim_blk_t) + size, VIM_HEAP_CAPS);
+    if (nb == NULL) {
+        blk_link(b, old);       /* realloc failed: the original is untouched */
+        return NULL;
+    }
+    blk_link(nb, size);
+    return nb + 1;
+}
+
+/* Free every block Vim still holds. Only for a new session. */
+static void vim_heap_release_all(void)
+{
+    vim_blk_t *b = s_blocks;
+    while (b != NULL) {
+        vim_blk_t *next = b->next;
+        b->self = NULL;
+        heap_caps_free(b);
+        b = next;
+    }
+    s_blocks = NULL;
+    s_heap_used = 0;
+}
+
+void esp_vim_heap_stats(size_t *used, size_t *peak, size_t *total)
+{
+    if (used)  *used  = s_heap_used;
+    if (peak)  *peak  = s_heap_peak;
+    if (total) *total = s_heap_budget;
 }
 
 /* ======================================================================= */
@@ -123,11 +253,29 @@ static bool (*poll_for(int fd))(void)
 }
 
 extern int __real_select(int, fd_set *, fd_set *, fd_set *, struct timeval *);
+static bool on_vim_task(void);
+
+/* Does this select() ask about a console fd (one with a registered poll)? */
+static bool asks_console(int nfds, fd_set *r)
+{
+    for (int fd = 0; r && fd < nfds; fd++)
+        if (FD_ISSET(fd, r) && poll_for(fd) != NULL)
+            return true;
+    return false;
+}
 
 int __wrap_select(int nfds, fd_set *r, fd_set *w, fd_set *e, struct timeval *tv)
 {
-    if (tv == NULL || tv->tv_sec != 0 || tv->tv_usec != 0)
-        return __real_select(nfds, r, w, e, tv);        /* a real wait */
+    if (tv == NULL || tv->tv_sec != 0 || tv->tv_usec != 0) {
+        /* A real wait. On the console that means Vim is idle, waiting for
+         * you: take down the busy spinner first (esp_busy.c). */
+        if (!on_vim_task() || !asks_console(nfds, r))
+            return __real_select(nfds, r, w, e, tv);
+        esp_vim_busy_idle();
+        int n = __real_select(nfds, r, w, e, tv);
+        esp_vim_busy_wait_done();
+        return n;
+    }
 
     /* Only short-circuit when EVERY fd asked about has a registered poll. */
     for (int fd = 0; fd < nfds; fd++) {
@@ -136,6 +284,11 @@ int __wrap_select(int nfds, fd_set *r, fd_set *w, fd_set *e, struct timeval *tv)
         if (asked && poll_for(fd) == NULL)
             return __real_select(nfds, r, w, e, tv);
     }
+
+    /* A zero-timeout poll of the console: Vim checking for CTRL-C in the
+     * middle of work. That is what drives the busy spinner. */
+    if (on_vim_task())
+        esp_vim_busy_poll();
 
     int ready = 0;
     for (int fd = 0; fd < nfds; fd++) {
@@ -388,19 +541,44 @@ static void apply_identity(struct stat *st, uint32_t id)
 #define ESP_FD_TRACK 64
 static uint32_t s_fd_id[ESP_FD_TRACK];
 static bool     s_fd_known[ESP_FD_TRACK];
+static FILE    *s_fd_file[ESP_FD_TRACK];    /* set when the fd came from fopen() */
+/*
+ * Ownership, separate from identity. --wrap is GLOBAL: ESP-IDF's own fopen()
+ * of stdin/stdout/stderr at boot goes through these wrappers too. The first
+ * version closed every tracked fd when a new Vim session began -- including
+ * stdout, and the next printf() died on a freed lock. Only files and
+ * directories opened ON THE VIM TASK DURING A SESSION belong to Vim; anything
+ * else (ESP-IDF, and later the web server and other services) is never touched.
+ */
+static bool     s_fd_owned[ESP_FD_TRACK];
+static TaskHandle_t s_session_task;         /* set by esp_vim_session_begin */
+
+static inline bool opened_by_vim(void)
+{
+    return s_session_task != NULL && xTaskGetCurrentTaskHandle() == s_session_task;
+}
+
+static bool on_vim_task(void)
+{
+    return opened_by_vim();
+}
 
 static void fd_remember(int fd, const char *abs)
 {
     if (fd >= 0 && fd < ESP_FD_TRACK) {
         s_fd_id[fd] = path_identity(abs);
         s_fd_known[fd] = true;
+        s_fd_owned[fd] = opened_by_vim();
     }
 }
 
 static void fd_forget(int fd)
 {
-    if (fd >= 0 && fd < ESP_FD_TRACK)
+    if (fd >= 0 && fd < ESP_FD_TRACK) {
         s_fd_known[fd] = false;
+        s_fd_owned[fd] = false;
+        s_fd_file[fd] = NULL;
+    }
 }
 
 extern int   __real_open(const char *, int, ...);
@@ -440,8 +618,12 @@ FILE *__wrap_fopen(const char *path, const char *mode)
     char buf[ESP_CWD_MAX];
     const char *abs = RESOLVE(path, buf);
     FILE *fp = __real_fopen(abs, mode);
-    if (fp != NULL && abs != NULL)
-        fd_remember(fileno(fp), abs);
+    if (fp != NULL && abs != NULL) {
+        int fd = fileno(fp);
+        fd_remember(fd, abs);
+        if (fd >= 0 && fd < ESP_FD_TRACK && s_fd_owned[fd])
+            s_fd_file[fd] = fp;
+    }
     return fp;
 }
 
@@ -510,6 +692,11 @@ int __wrap_chmod(const char *path, mode_t mode)
 extern int   __real_rename(const char *, const char *);
 extern int   __real_mkdir(const char *, mode_t);
 extern DIR  *__real_opendir(const char *);
+extern int   __real_closedir(DIR *);
+
+/* Directories Vim has open, so a new session can close what the old one left. */
+#define ESP_DIR_TRACK 16
+static DIR *s_dirs[ESP_DIR_TRACK];
 
 int __wrap_rename(const char *from, const char *to)
 {
@@ -531,7 +718,24 @@ int __wrap_mkdir(const char *path, mode_t mode)
 DIR *__wrap_opendir(const char *path)
 {
     char buf[ESP_CWD_MAX];
-    return __real_opendir(esp_resolve(path, buf, sizeof(buf)));
+    DIR *d = __real_opendir(esp_resolve(path, buf, sizeof(buf)));
+    if (d != NULL && opened_by_vim()) {
+        for (int i = 0; i < ESP_DIR_TRACK; i++) {
+            if (s_dirs[i] == NULL) {
+                s_dirs[i] = d;
+                break;
+            }
+        }
+    }
+    return d;
+}
+
+int __wrap_closedir(DIR *d)
+{
+    for (int i = 0; i < ESP_DIR_TRACK; i++)
+        if (s_dirs[i] == d)
+            s_dirs[i] = NULL;
+    return __real_closedir(d);
 }
 
 /* ======================================================================= */
@@ -766,31 +970,37 @@ int setitimer(int which, const struct itimerval *new_value,
 }
 
 /*
+ * What happens when Vim quits. The default parks the task; the firmware
+ * overrides it (main/esp_vim_main.c) to start a new session instead, so :q is
+ * never a dead end on a device where Vim is the whole user interface.
+ */
+__attribute__((weak, noreturn)) void esp_vim_session_exit(int status)
+{
+    (void)status;
+    vTaskDelete(NULL);
+    for (;;)
+        vTaskDelay(portMAX_DELAY);
+}
+
+/*
  * Vim exits by calling exit() from mch_exit(), and on ESP-IDF exit() reaches
- * _exit(), which is literally "abort()" (components/newlib/src/syscalls.c:121).
- * That panics the chip and reboots it -- so an ordinary ":q" became a crash loop
- * until this wrap existed.
+ * _exit(), which is literally "abort()" (components/newlib/src/syscalls.c:121)
+ * -- a panic and reboot. Hand control to esp_vim_session_exit() instead.
  *
- * Parking the task instead leaves the panic path free for real faults, and keeps
- * the exit code visible for the emulator harness to assert on.
+ * ESPVIM-END terminates the line so a harness using esp-emu --exit-on can
+ * trigger on it without truncating the numbers before it.
  */
 void __wrap_exit(int status)
 {
-    /* ESPVIM-END terminates the line so a harness using esp-emu --exit-on can
-     * trigger on it: --exit-on stops the emulator the moment its string appears,
-     * so triggering on "ESPVIM-EXIT" itself truncated the " rc=N" after it. */
-    /* Heap telemetry rides on the exit line so every gate run records it.
-     * int_min is the internal-RAM low-water mark: the number that went to zero
-     * before Vim's heap was moved to PSRAM (docs/PHASE4.md). */
-    printf("\nESPVIM-EXIT rc=%d int_free=%u int_min=%u psram_free=%u ESPVIM-END\n",
+    size_t used, peak, total;
+    esp_vim_heap_stats(&used, &peak, &total);
+    printf("\nESPVIM-EXIT rc=%d int_free=%u int_min=%u vim_heap_used=%u vim_heap_peak=%u ESPVIM-END\n",
            status,
            (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
            (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL),
-           (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+           (unsigned)used, (unsigned)peak);
     fflush(stdout);
-    vTaskDelete(NULL);          /* does not return */
-    for (;;)
-        vTaskDelay(portMAX_DELAY);
+    esp_vim_session_exit(status);
 }
 
 void __wrap__exit(int status)
@@ -809,4 +1019,73 @@ int __wrap_system(const char *command)
     ESP_LOGW(TAG, "no shell on this platform; refused: %s", command);
     errno = ENOSYS;
     return -1;
+}
+
+/* ======================================================================= */
+/*  Session lifecycle: restart Vim in place after :q                        */
+/*                                                                          */
+/*  Vim is not written to be started twice: its globals are initialised      */
+/*  once and its heap is never freed. Starting a clean session therefore     */
+/*  means putting ALL of Vim's state back to power-on:                       */
+/*    - .data restored from a snapshot taken before the first session,       */
+/*    - .bss zeroed,                                                         */
+/*    - every heap block the old session still held freed,                  */
+/*    - files and directories the old session left open closed,              */
+/*    - the regexp-timeout timer deleted.                                    */
+/*  The .data/.bss bounds come from components/vim/linker.lf, which          */
+/*  surrounds every writable section of libvim.a (including this file) with  */
+/*  _vim_{data,bss}_{start,end}. On RISC-V the component is compiled with    */
+/*  -msmall-data-limit=0 so no Vim global hides in .sdata/.sbss outside     */
+/*  those bounds.                                                            */
+/* ======================================================================= */
+
+extern char _vim_data_start[], _vim_data_end[];
+extern char _vim_bss_start[], _vim_bss_end[];
+
+esp_err_t esp_vim_session_init(esp_vim_session_t *sess, size_t heap_budget)
+{
+    size_t data_size = (size_t)(_vim_data_end - _vim_data_start);
+
+    memset(sess, 0, sizeof(*sess));
+    sess->data_snapshot = heap_caps_malloc(data_size ? data_size : 1,
+                                           MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (sess->data_snapshot == NULL)
+        return ESP_ERR_NO_MEM;
+    /* Before any Vim code has run, .data holds its initial values. */
+    memcpy(sess->data_snapshot, _vim_data_start, data_size);
+    sess->data_size = data_size;
+    sess->heap_budget = heap_budget;
+    return ESP_OK;
+}
+
+void esp_vim_session_begin(const esp_vim_session_t *sess)
+{
+    /* 1. Release what the previous session holds -- this state lives in the
+     *    sections about to be reset, so it has to happen first. */
+    if (s_itimer != NULL) {
+        esp_timer_stop(s_itimer);
+        esp_timer_delete(s_itimer);
+    }
+    for (int fd = 0; fd < ESP_FD_TRACK; fd++) {
+        if (!s_fd_known[fd] || !s_fd_owned[fd])
+            continue;                       /* never close what Vim did not open */
+        if (s_fd_file[fd] != NULL)
+            __real_fclose(s_fd_file[fd]);
+        else
+            __real_close(fd);
+    }
+    for (int i = 0; i < ESP_DIR_TRACK; i++)
+        if (s_dirs[i] != NULL)
+            __real_closedir(s_dirs[i]);
+    vim_heap_release_all();         /* the list head is in .bss, about to be zeroed */
+
+    /* 2. Power-on state for every Vim global, this file's included. */
+    memcpy(_vim_data_start, sess->data_snapshot, sess->data_size);
+    memset(_vim_bss_start, 0, (size_t)(_vim_bss_end - _vim_bss_start));
+
+    /* 3. An empty heap with this session's budget. */
+    s_heap_budget = sess->heap_budget;
+
+    /* 4. From here on, what this task opens belongs to the session. */
+    s_session_task = xTaskGetCurrentTaskHandle();
 }

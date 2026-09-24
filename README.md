@@ -54,7 +54,7 @@ someone's shell history. `pixi task list` shows them all.
 | `pixi run spike-build` | Build the spike only |
 | `pixi run spike-report` | Re-record spike output into `docs/phase1-spike-results.txt` |
 | `pixi run configure-vim` | Run Vim's `configure` on the host to emit a baseline `auto/config.h` |
-| `pixi run runtime` | Curate `$VIMRUNTIME` into `build-deps/vimrt/` and generate `filetype.vim` (checks it fits the partition) |
+| `pixi run runtime` | Curate `$VIMRUNTIME` into `build-deps/vimrt-<target>/` (one per chip) and generate `filetype.vim` (checks it fits the partition) |
 | `pixi run vim-build` | Build the Vim firmware for ESP32-P4 (`esp-vim/build-esp32p4/`); runs `runtime` first |
 | `pixi run vim-build-s3` | Build the ESP32-S3 variant (`esp-vim/build-esp32s3/`) |
 | `pixi run vim-test` | **The regression gate** on ESP32-P4: builds, then round trips across reboots plus interactive console checks |

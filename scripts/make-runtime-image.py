@@ -5,7 +5,8 @@ Build the curated $VIMRUNTIME for the read-only /vimrt partition.
 Vim's runtime tree is 51 MB; the partition is 3 MB. This copies a deliberate
 subset out of build-deps/vim/runtime (extracted by prepare-deps.sh -- never
 committed), overlays OUR files from esp-vim/runtime-image/, and writes the
-result to build-deps/vimrt/, which the firmware build turns into a FAT image.
+result to build-deps/vimrt-<target>/, which the firmware build turns into a
+FAT image. It is per target only because :help names the chip it runs on.
 
 Curation is safe because Vim finds almost all runtime files with `runtime!`,
 which silently does nothing when a file is absent: a filetype with no ftplugin
@@ -16,7 +17,8 @@ than hand-picked.
 
 Fails if the estimated FAT footprint will not fit the partition.
 
-Usage: scripts/make-runtime-image.py        (or: pixi run runtime)
+Usage: scripts/make-runtime-image.py [esp32p4|esp32s3 ...]
+       (no target: every supported one; or: pixi run runtime)
 """
 
 import csv
@@ -30,7 +32,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "build-deps" / "vim" / "runtime"
 OURS = ROOT / "esp-vim" / "runtime-image"
-OUT = ROOT / "build-deps" / "vimrt"
+TARGETS = ["esp32p4", "esp32s3"]
+OUT = None                  # build-deps/vimrt-<target>, set per target in main()
 PARTITIONS = ROOT / "esp-vim" / "partitions.csv"
 FILETYPES_CONF = ROOT / "esp-vim" / "filetypes.conf"
 PARTITION_NAME = "vimrt"
@@ -57,6 +60,21 @@ C_REFERENCED = ["colors/lists/default.vim", "optwin.vim"]
 # Help buffers: Vim sets 'filetype' to "help" itself when :help opens a file,
 # independently of filetypes.conf, so these ship regardless.
 HELP_SUPPORT = ["syntax/help.vim", "ftplugin/help.vim"]
+
+# Upstream help files shipped next to our help.txt. The intro screen names
+# ":help version9", ":help sponsor" and ":help Kuwasha" (uganda.txt), so those
+# must exist or the first screen you see lies; netrw is the file browser.
+#   source (under build-deps/vim/runtime)  ->  name in /vimrt/doc
+UPSTREAM_DOCS = {
+    "doc/version9.txt": "version9.txt",
+    "doc/uganda.txt": "uganda.txt",
+    "doc/sponsor.txt": "sponsor.txt",
+    "pack/dist/opt/netrw/doc/netrw.txt": "netrw.txt",
+}
+# version9.txt is 2 MB, nearly all of it the one-line-per-patch lists; the
+# partition has well under 1 MB spare. Those sections keep their heading and
+# tags (so |patches-9.2| still lands somewhere) and lose their body.
+TRIM_SECTIONS = {"version9.txt": re.compile(r"^PATCHES\s")}
 
 SYNTAX_INFRA = ["syntax.vim", "synload.vim", "syncolor.vim", "nosyntax.vim", "manual.vim"]
 
@@ -99,6 +117,13 @@ def excluded(rel):
 REF_SYNTAX = re.compile(r"syntax/([A-Za-z0-9_]+)\.vim")
 REF_FTPLUGIN = re.compile(r"ftplugin/([A-Za-z0-9_]+)\.vim")
 REF_INDENT = re.compile(r"indent/([A-Za-z0-9_]+)\.vim")
+# Vim9 script imports name a FILE, not a "name#func(" call, so the autoload rule
+# below never sees them. Three forms: relative ("./x", "../x" -- from the
+# importing file), `import autoload 'x.vim'` (autoload/ on 'runtimepath') and a
+# plain `import 'x.vim'` (import/ on 'runtimepath'). Missing this shipped a
+# runtime where every Vim-script buffer failed: indent/vim.vim imports
+# ../autoload/dist/vimindent.vim.
+REF_IMPORT = re.compile(r"^\s*import\s+(autoload\s+)?['\"]([^'\"]+)['\"]", re.M)
 REF_COMPILER = re.compile(r"^\s*compiler!?\s+([A-Za-z0-9_]+)", re.M)
 REF_AUTOLOAD = re.compile(r"\b((?:[A-Za-z0-9_]+#)+)[A-Za-z0-9_]+\s*\(")
 
@@ -197,7 +222,44 @@ TAG_DEF = re.compile(r"(?:^|(?<=\s))\*([^*\s|]+)\*(?=\s|$)", re.M)
 TAG_LINK = re.compile(r"(?<!\\)\|([#-)!+-~]+)\|")
 
 
-def render_help(filetypes):
+def chip_name(target):
+    """esp32p4 -> ESP32-P4, as the component CMakeLists does for the C side."""
+    m = re.fullmatch(r"esp32(.+)", target)
+    return f"ESP32-{m.group(1).upper()}" if m else target.upper()
+
+
+def trim_sections(text, heading):
+    """Drop the body of every section whose heading matches, keeping the rule,
+    the heading line (with its tags) and a note saying where the rest is."""
+    out, lines, i = [], text.split("\n"), 0
+    while i < len(lines):
+        out.append(lines[i])
+        if re.fullmatch(r"=+", lines[i]) and i + 1 < len(lines) and heading.match(lines[i + 1]):
+            out += [lines[i + 1], "",
+                    "The list of individual patches is not included on this device, to",
+                    "save flash.  It is at https://vimhelp.org/version9.txt.html", ""]
+            i += 2
+            while i < len(lines) and not re.fullmatch(r"=+", lines[i]) \
+                    and not lines[i].startswith(" vim:"):
+                i += 1
+            continue
+        i += 1
+    return "\n".join(out)
+
+
+def copy_upstream_docs():
+    for src, name in UPSTREAM_DOCS.items():
+        path = SRC / src
+        if not path.is_file():
+            die(f"missing upstream help file {src}")
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if name in TRIM_SECTIONS:
+            text = trim_sections(text, TRIM_SECTIONS[name])
+        (OUT / "doc").mkdir(exist_ok=True)
+        (OUT / "doc" / name).write_text(text, encoding="utf-8")
+
+
+def render_help(filetypes, chip):
     """doc/help.txt from esp-vim/runtime-image/doc/help.txt.in.
 
     The device's help is an amended version of Vim's help.txt: the navigation
@@ -218,7 +280,11 @@ def render_help(filetypes):
             row = (row + " " + pat) if row else head + pat
             first = False
         lines.append(row)
-    text = HELP_TEMPLATE.read_text().replace("@FILETYPES@", "\n".join(lines))
+    text = (HELP_TEMPLATE.read_text().replace("@FILETYPES@", "\n".join(lines))
+            .replace("@CHIP@", chip))
+    left = re.search(r"@[A-Z]+@", text)
+    if left:
+        die(f"unrendered placeholder {left.group(0)} in {HELP_TEMPLATE.name}")
     (OUT / "doc").mkdir(exist_ok=True)
     (OUT / "doc" / "help.txt").write_text(text)
 
@@ -228,6 +294,12 @@ def write_help_tags():
 
     :help finds everything -- help.txt itself included -- through doc/tags, so
     without it ":help" is E149 even though the file is there.
+
+    Our own help must not link anywhere that is missing. Upstream files are
+    written against Vim's full 12 MB of documentation, so most of their links
+    necessarily point at files not on the device; those are turned into plain
+    text (the bars are what make it a link) rather than left as links that
+    answer E149 when followed.
     """
     docs = sorted((OUT / "doc").glob("*.txt"))
     tags = {}
@@ -236,9 +308,31 @@ def write_help_tags():
             if t in tags and tags[t] != d.name:
                 die(f"help tag *{t}* defined in both {tags[t]} and {d.name}")
             tags[t] = d.name
-    dangling = []
+    dangling, unlinked = [], 0
+    upstream = set(UPSTREAM_DOCS.values())
     for d in docs:
-        for n, line in enumerate(d.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+        text = d.read_text(encoding="utf-8", errors="replace")
+        if d.name in upstream:
+            def plain(m):
+                nonlocal unlinked
+                if m.group(1) in tags:
+                    return m.group(0)
+                unlinked += 1
+                return m.group(1)
+            # Leave example blocks alone: there "|x|" is code (a regex, a
+            # mapping), and help syntax does not treat it as a link either. A
+            # block opens after a line ending in " >" and closes at a line
+            # starting with "<" or with any non-blank, as in syntax/help.vim.
+            out, example = [], False
+            for line in text.split("\n"):
+                if example and (line.startswith("<") or line[:1] not in ("", " ", "\t")):
+                    example = False
+                out.append(line if example else TAG_LINK.sub(plain, line))
+                if line == ">" or line.endswith(" >") or line.endswith("\t>"):
+                    example = True
+            d.write_text("\n".join(out), encoding="utf-8")
+            continue
+        for n, line in enumerate(text.splitlines(), 1):
             for link in TAG_LINK.findall(line):
                 if link not in tags:
                     dangling.append(f"{d.name}:{n}: |{link}|")
@@ -249,7 +343,7 @@ def write_help_tags():
         return t.replace("\\", "\\\\").replace("/", "\\/")
     rows = sorted(f"{t}\t{f}\t/*{esc(t)}*" for t, f in tags.items())
     (OUT / "doc" / "tags").write_text("\n".join(rows) + "\n")
-    return len(tags)
+    return len(tags), unlinked
 
 
 def partition_size(name):
@@ -262,9 +356,17 @@ def partition_size(name):
     die(f"partition '{name}' not in {PARTITIONS}")
 
 
+def import_target(importer, spec, is_autoload):
+    """Runtime-relative path a Vim9 import refers to."""
+    if spec.startswith(("./", "../")):
+        return os.path.normpath(str(Path(importer).parent / spec))
+    return ("autoload/" if is_autoload else "import/") + spec
+
+
 class Image:
     def __init__(self):
         self.files = set()
+        self.imports = []           # (importer, target) pairs, validated later
 
     def add(self, rel):
         rel = Path(rel)
@@ -309,6 +411,10 @@ class Image:
                 # even though :make itself cannot run here.
                 for m in REF_COMPILER.findall(t):
                     self.add(f"compiler/{m}.vim")
+                for auto, spec in REF_IMPORT.findall(t):
+                    target = import_target(f, spec, bool(auto))
+                    self.imports.append((str(f), target))
+                    self.add(target)
                 for m in REF_AUTOLOAD.findall(t):
                     parts = m.rstrip("#").split("#")
                     self.add("autoload/" + "/".join(parts) + ".vim")
@@ -317,6 +423,18 @@ class Image:
 def main():
     if not (SRC / "defaults.vim").is_file():
         die(f"no Vim runtime at {SRC} -- run: pixi run deps")
+    targets = sys.argv[1:] or TARGETS
+    for t in targets:
+        if t not in TARGETS:
+            die(f"unknown target {t!r} (known: {' '.join(TARGETS)})")
+    for t in targets:
+        build(t)
+
+
+def build(target):
+    global OUT
+    OUT = ROOT / "build-deps" / f"vimrt-{target}"
+    chip = chip_name(target)
 
     img = Image()
     for f in ROOT_FILES:
@@ -345,6 +463,14 @@ def main():
 
     img.resolve()
 
+    # Every Vim9 import in the image must resolve to a shipped file. A missing
+    # one is not a lazy load that might never happen: Vim checks the file when
+    # the importing script is sourced, and every buffer of that type errors.
+    broken = sorted({f"{imp} -> {tgt}" for imp, tgt in img.imports
+                     if Path(tgt) not in img.files})
+    if broken:
+        die("Vim9 imports that would not resolve on the device:\n  " + "\n  ".join(broken))
+
     # Materialise.
     if OUT.exists():
         shutil.rmtree(OUT)
@@ -365,8 +491,9 @@ def main():
             shutil.copy2(p, dst)
             ours += 1
 
-    render_help(filetypes)
-    ntags = write_help_tags()
+    render_help(filetypes, chip)
+    copy_upstream_docs()
+    ntags, unlinked = write_help_tags()
 
     # Budget check: FAT rounds every file up to a whole cluster, and this tree is
     # hundreds of small files, so raw bytes badly understate the real footprint.
@@ -379,15 +506,17 @@ def main():
     # Leave room for the FAT itself, the root directory and long-name entries.
     budget = int(cap * 0.90)
 
-    (ROOT / "build-deps" / "vimrt.manifest").write_text(
+    (ROOT / "build-deps" / f"vimrt-{target}.manifest").write_text(
         "".join(f"{p.relative_to(OUT)}\t{p.stat().st_size}\n" for p in sorted(files)))
 
-    print(f"vimrt: {len(files)} files ({ours} ours), {len(dirs)} dirs, "
+    print(f"vimrt-{target}: {len(files)} files ({ours} ours), {len(dirs)} dirs, "
           f"{len(filetypes)} filetypes from {FILETYPES_CONF.name}")
     print(f"  raw {raw / 1024:.0f} KB, FAT footprint ~{est / 1024:.0f} KB "
           f"of {cap / 1024:.0f} KB partition ({100 * est / cap:.0f}%)")
-    print(f"  help: doc/help.txt with {ntags} tags, all links resolve")
-    print(f"  written to {OUT.relative_to(ROOT)}/, listing in build-deps/vimrt.manifest")
+    docs = ", ".join(["help.txt"] + sorted(UPSTREAM_DOCS.values()))
+    print(f"  help for {chip}: {docs}; {ntags} tags")
+    print(f"    our links all resolve; {unlinked} upstream links to absent docs made plain text")
+    print(f"  written to {OUT.relative_to(ROOT)}/, listing in build-deps/vimrt-{target}.manifest")
     if est > budget:
         die(f"estimated {est} bytes exceeds 90% of the {cap}-byte '{PARTITION_NAME}' partition")
 

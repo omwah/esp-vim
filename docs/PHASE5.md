@@ -141,3 +141,133 @@ identity until `close()`/`fclose()`.
 
 Accepted limitation: two different files whose paths hash identically (about 1 in 4×10⁹
 per pair) would be treated as one.
+
+## Addendum: quitting starts a new session
+
+`:q` used to park the Vim task and leave the device dead. Vim *is* the device, so there
+was nowhere to go. Now the last window closing shows
+
+    All buffers closed.  Vim is forever.
+    Press any key to start a new session.
+
+and the next key starts Vim again **in place, without a reboot**. Other tasks and (in
+later phases) services keep running.
+
+Vim was never written to be started twice: its globals are initialised once and its
+heap is never freed. So a new session puts **all** of Vim's state back to power-on:
+
+| State | How it is reset |
+|---|---|
+| `.data` (initialised globals) | restored from a snapshot taken in `app_main` before any Vim code ran |
+| `.bss` (zeroed globals) | zeroed |
+| heap | every block Vim allocates carries a 16-byte header linking it into a list; the list is freed. Blocks come from ESP-IDF's PSRAM heap, under a budget (half of free PSRAM, at most 16 MB) |
+| open files / directories | closed, but **only those Vim opened** (see below) |
+| regexp-timeout timer | deleted |
+| the call stack | each session is a **fresh FreeRTOS task**; `exit()` ends the task and a supervisor in `app_main` starts the next one after a key press |
+
+Two earlier designs were replaced. A dedicated `multi_heap` arena for Vim corrupted its
+TLSF bookkeeping on the S3 (below), and a `setjmp`/`longjmp` back into `app_main`
+left the old call chain's stack in an undefined state. A task per session makes the
+stack question disappear. Tracked blocks from the system heap avoid a second allocator,
+and a foreign `free()` can't damage them the way it can an arena carved out of another
+heap.
+
+`components/vim/linker.lf` brackets every writable section of `libvim.a` with
+`_vim_{data,bss}_{start,end}`. On RISC-V the component is built with
+`-msmall-data-limit=0`: otherwise small globals like `got_int` and `curbuf` land in
+`.sdata`/`.sbss`, which ESP-IDF's `data`/`bss` schemes don't bracket, and the "reset"
+would leave exactly the most important state behind. Verified from the linker map on
+both chips: every live Vim section is inside the brackets, nothing else is, and there
+are no small-data sections.
+
+**Lesson — ownership.** The first version closed every file the wrappers had seen, and
+immediately crashed on boot. `--wrap` is global, so ESP-IDF's own `fopen()` of stdout
+at startup had been recorded, and session reset **closed stdout**. Only files and
+directories opened *on the Vim task during a session* now belong to Vim. That matters
+even more once a web server shares the filesystem (Phase 6).
+
+The gate checks that sessions 2, 3 and 4 each start at power-on state (after deliberately
+dirtying the previous session with a global, an option, the working directory, buffers,
+`:help`, netrw and an armed timer), and that internal RAM doesn't leak across quits.
+
+**Found on the way — a Phase 4 runtime hole.** Opening any Vim-script file failed with
+`E282`/`E1053`: `indent/vim.vim` does `import autoload '../autoload/dist/vimindent.vim'`,
+and the Phase 4 resolver only followed `name#func()` calls, not Vim9 `import` paths.
+Phase 4's "no errors" gate never opened a `.vim` file. The resolver now follows all three
+import forms, and **the build fails if any import in the image doesn't resolve**. The
+runtime gate scenario now opens a Vim-script file too.
+
+## Addendum: splash, help files and a busy indicator
+
+Three things a first-time user sees, all found by hands-on use.
+
+**The intro screen names the chip.** It now opens with the title line *Vim running on
+ESP32-P4* (or *ESP32-S3*). The name is derived from `IDF_TARGET` by the component
+CMakeLists (`esp32p4` → `ESP32-P4`) and passed as `ESP_VIM_CHIP`. Patch
+`0007-version-intro-chip-title` adds the line, and `:version`'s "Compiled by" line uses
+the same name. `pathdef.c` had hard-coded `esp32p4` and the RISC-V compiler, which was
+wrong on the S3.
+
+**The intro screen no longer lies about help.** It advertises `:help version9`,
+`:help sponsor` and `:help Kuwasha`, and none of them existed. The runtime image now
+ships, next to our `help.txt`:
+
+| File | Size | Note |
+|---|---|---|
+| `version9.txt` | 55 KB | upstream is **2 MB**, 98% of it the one-line-per-patch lists; those four sections keep their heading and tags, and lose their body |
+| `uganda.txt`, `sponsor.txt` | 15 KB | as upstream |
+| `netrw.txt` | 147 KB | the file browser's manual, which `help.txt` points to |
+
+These files are written against Vim's full documentation, so most of their links point at
+files that aren't on the device. The image builder turns those links into plain text
+(666 of them), leaving links that work. It skips example blocks, where `|x|` is code.
+Our own `help.txt` is still held to the strict rule: a dangling link fails the build. The
+runtime partition went from 74% to 84% full.
+
+`help.txt` names the chip it was built for (`@CHIP@` in the template). That makes the
+runtime image **per target**: `build-deps/vimrt-esp32p4/` and `vimrt-esp32s3/`.
+
+**Busy indicator** (`port/esp_busy.c`). On a microcontroller a new file type's syntax,
+`:help`, or a large file can take a noticeable moment, and a silent terminal looks like
+a hung device. After 0.3 s of work a spinner (`| / - \`) turns on the bottom row, one
+cell in from the right, until Vim next waits for a key. `:let g:esp_busy = 0` turns it
+off. It needs no Vim patch, because the select() wrapper already sees both signals:
+
+- a zero-timeout poll of the console is Vim checking for CTRL-C mid-work, so draw a frame;
+- a real wait is Vim idle, so put the cell back from Vim's own screen model (`screen_char`)
+  and return the cursor.
+
+Both run **on the Vim task, through Vim's output buffer**. So a frame can never land
+inside one of Vim's escape sequences, which a separate task writing to the UART could.
+Frames are wrapped in DECSC/DECRC, so Vim's cursor and attributes are untouched. It isn't
+the very last cell because `builtin_xterm` has no `xn`: Vim won't redraw that cell, and
+writing it can scroll some terminals.
+
+The gate checks the splash title, `:help version9`/`sponsor`/`Kuwasha`/`netrw`, the chip
+name in `help.txt` and `:version` (and no "Tab5"), and that spinner frames appear.
+
+## Known issue: intermittent heap corruption on the ESP32-S3 (emulator)
+
+**Open.** On the S3, some interactive runs die with a TLSF assertion in ESP-IDF's heap
+(`block_trim_free`/`block_merge_prev`: "block must be free"), or a silent reboot, almost
+always while Vim is sourcing syntax files. The P4 has never shown it.
+
+What is established:
+
+- **It predates the session restart work.** Commit `4bbaa81`, from before `:q`
+  restarted anything, fails 1 run in 6 the same way. The S3 "pass" recorded for
+  Phase 5 was a lucky run, not a green gate.
+- **Not the allocator arrangement.** A private `multi_heap` arena, plain
+  `heap_caps_malloc`, and the tracked blocks all show it.
+- **Not dual-core.** It persists with `CONFIG_FREERTOS_UNICORE=y`.
+- **Not the emulator's PSRAM heap in isolation.** A standalone S3 app with no Vim code
+  ran 3 million random `heap_caps_malloc`/`realloc`/`free` operations on PSRAM with
+  verified fill patterns, with and without interleaved flash reads: clean.
+- ESP-IDF's heap poisoning can't be used to locate it. With it enabled, the S3 image
+  faults on core 1 inside the FreeRTOS scheduler during boot, before any Vim code runs.
+  That itself is evidence the S3 emulation isn't fully trustworthy, but it isn't proof.
+
+Still open: an Xtensa-specific bug in Vim or the port that only syntax loading exercises,
+or an esp-emu Xtensa CPU/cache defect that only Vim's access pattern triggers. **Next
+step: run the S3 gate on real ESP32-S3 silicon.** Until then the S3 gate is
+informational, and the P4 gate (`pixi run vim-test`) is the one that must pass.
