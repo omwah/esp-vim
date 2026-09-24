@@ -12,6 +12,7 @@ Exit status is non-zero if any check fails. The raw UART log is kept on
 failure (path printed) since that is what you need to see why.
 """
 
+import re
 import sys
 import tempfile
 import time
@@ -49,6 +50,14 @@ def main():
             s.expect(f"Vim running on {CHIP}", 60)
             check(True, f"intro screen has the title line 'Vim running on {CHIP}'")
             s.quiet(1.5)
+
+            # 0. Default highlight colours use xterm numbering: blue is 4/12.
+            #    With PC numbering (t_Co set before t_AF) they were 1/9, red.
+            s.type(":echo 'H' . '=' . matchstr(execute('hi NonText'), 'ctermfg=\\d\\+') . ':'"
+                   " . matchstr(execute('hi Directory'), 'ctermfg=\\d\\+') . '|'\r")
+            got = s.expect(rb"H=([^|]*)\|", 30).group(1).decode()
+            check(got == "ctermfg=12:ctermfg=4", "default colours use xterm numbering (blue is blue)",
+                  f"NonText:Directory {got!r}")
 
             # 1. The terminal's size reaches Vim.
             s.type(":echo 'SIZE=' . &lines . 'x' . &columns . '|'\r")
@@ -229,6 +238,118 @@ def main():
             check(got == "-1:1", f"console TX pin {CONSOLE_TX} is refused (-1 and an error)",
                   f"value:error {got!r}")
 
+            # 2g+. The README's Vim-script example runs as printed: read it out of
+            #      README.md, write it to the device, :source it. It ends with
+            #      GPIO 21 high (i = 9).
+            readme = (Path(__file__).resolve().parents[2] / "README.md").read_text()
+            block = re.search(r"```vim\n(\" blink GPIO 21.*?)```", readme, re.S).group(1)
+            vimlist = "[" + ", ".join("'" + l.replace("'", "''") + "'" for l in block.splitlines()) + "]"
+            s.type(f":call writefile({vimlist}, '/fat/blink.vim') | source /fat/blink.vim\r")
+            s.quiet(2.0, timeout=60)
+            s.type(":echo 'G' . '=' . esp_gpio_read(21) . '|'\r")
+            got = s.expect(rb"G=([^|]*)\|", 30).group(1).decode()
+            check(got == "1", "the README's blink.vim example runs", f"GPIO 21 reads {got!r}")
+
+            # Diff mode (xdiff is built in; there is no external diff program).
+            s.type(":call writefile(['one', 'two', 'three'], '/fat/d1.txt')"
+                   " | call writefile(['one', 'TWO', 'three'], '/fat/d2.txt')\r")
+            s.type(":e /fat/d1.txt | diffthis | vsplit /fat/d2.txt | diffthis\r")
+            s.quiet(1.5)
+            s.type(":echo 'Y' . '=' . &diff . (diff_hlID(2, 1) > 0) . (diff_hlID(1, 1) > 0) . '|'\r")
+            got = s.expect(rb"Y=([^|]*)\|", 30).group(1).decode()
+            check(got == "110", ":diffthis highlights only the changed line", f"diff:changed:same {got!r}")
+            s.type(":diffoff! | only | enew!\r")
+            s.quiet(1.0)
+
+            # 2h. esp_fs path validation (Phase 6b). Every one of these must be
+            #     refused: into read-only /vimrt, ".." out of /fat, a storage
+            #     root itself, outside all roots, a directory into itself.
+            s.type(":call mkdir('/fat/fm/sub', 'p') | call writefile(['alpha'], '/fat/fm/a.txt')"
+                   " | call writefile(['beta'], '/fat/fm/b.txt') | call mkdir('/fat/fm2', 'p')\r")
+            s.quiet(1.0)
+            s.type(":let g:n = 0 | for C in [function('esp_fs_copy', ['/fat/fm/a.txt', '/vimrt/a.txt']),"
+                   " function('esp_fs_delete', ['/fat/../vimrt/vimrc']), function('esp_fs_delete', ['/fat']),"
+                   " function('esp_fs_list', ['/fat/../../etc']), function('esp_fs_copy', ['/fat/fm', '/fat/fm/sub/x'])]"
+                   " | let v:errmsg = '' | silent! call C() | let g:n += !empty(v:errmsg) | endfor"
+                   " | echo 'Z' . '=' . g:n . filereadable('/vimrt/vimrc') . '|'\r")
+            got = s.expect(rb"Z=([^|]*)\|", 30).group(1).decode()
+            check(got == "51", "esp_fs refuses read-only, traversal, roots, outside, into-itself",
+                  f"refused:vimrc-intact {got!r} (want '51')")
+
+            # 2i. :EspFiles, driven by keys: F-keys for some operations, the
+            #     letter aliases for others (the Tab5 keyboard has no F-keys).
+            F = {"F3": "\x1bOR", "F5": "\x1b[15~", "F7": "\x1b[18~", "F8": "\x1b[19~", "F10": "\x1b[21~"}
+            def probe(tag, expr):
+                s.type(f":echo '{tag}' . '=' . {expr} . '|'\r")
+                return s.expect(rf"{tag}=([^|]*)\|".encode(), 30).group(1).decode()
+            s.type(":EspFiles /fat/fm /fat/fm2\r")
+            s.quiet(1.5)
+            got = probe("P", "tabpagenr('$') . ':' . b:espfiles.dir . ':' . getbufvar(winbufnr(2), 'espfiles').dir")
+            check(got == "2:/fat/fm:/fat/fm2", ":EspFiles opens two panes in a tab", f"got {got!r}")
+            s.type("/a\\.txt\r" + F["F5"])                    # F5: copy a.txt -> other pane
+            s.quiet(1.0)
+            s.type("\r")                                        # accept the offered destination
+            s.quiet(1.5)
+            got = probe("C", "join(readfile('/fat/fm2/a.txt'))")
+            check(got == "alpha", "F5 copies to the other pane", f"/fat/fm2/a.txt holds {got!r}")
+            s.type("gg/b\\.txt\rc")                             # c: the same by letter
+            s.quiet(1.0)
+            s.type("\r")
+            s.quiet(1.5)
+            s.type(":call writefile(['old'], '/fat/fm2/b.txt')\r")   # make it differ
+            s.quiet(0.5)
+            s.type("c")                                          # again: now it exists
+            s.quiet(1.0)
+            s.type("\r")
+            s.quiet(1.0)
+            s.type("y")                                          # "Overwrite?" Yes
+            s.quiet(1.5)
+            got = probe("B", "join(readfile('/fat/fm2/b.txt'))")
+            check(got == "beta", "c copies too, and asks before overwriting", f"got {got!r}")
+            s.type("gg/a\\.txt\rr")                             # r: move, renaming
+            s.quiet(1.0)
+            s.type("\x15/fat/fm/renamed.txt\r")                 # CTRL-U, then a new name
+            s.quiet(1.5)
+            got = probe("R", "filereadable('/fat/fm/a.txt') . filereadable('/fat/fm/renamed.txt')")
+            check(got == "01", "r renames a file", f"a.txt:renamed.txt {got!r}")
+            s.type(F["F7"])                                      # F7: mkdir
+            s.quiet(1.0)
+            s.type("newdir\r")
+            s.quiet(1.5)
+            got = probe("K", "isdirectory('/fat/fm/newdir') . (getline('.') =~# 'newdir/')")
+            check(got == "11", "F7 makes a directory and puts the cursor on it", f"got {got!r}")
+            s.type("gg/sub\\/\rd")                              # d: delete a directory
+            s.quiet(1.0)
+            s.type("y")
+            s.quiet(1.5)
+            got = probe("X", "isdirectory('/fat/fm/sub')")
+            check(got == "0", "d deletes a directory after asking", f"still there: {got!r}")
+            s.type("gg/renamed\r" + F["F3"])                    # F3: view
+            s.quiet(1.5)
+            got = probe("V", "expand('%:t') . ':' . &readonly . ':' . tabpagenr('$')")
+            check(got == "renamed.txt:1:3", "F3 views a file read-only in a new tab", f"got {got!r}")
+            s.type("q")
+            s.quiet(1.0)
+            s.type("\t")                                        # to the right pane
+            s.quiet(0.5)
+            s.type("gg/a\\.txt\r ")                              # tag a.txt ...
+            s.type("gg/b\\.txt\rt")                              # ... and b.txt
+            s.quiet(1.0)
+            got = probe("T", "len(b:espfiles.tags)")
+            check(got == "2", "Space and t tag entries", f"{got} tagged")
+            s.type(F["F8"])                                      # F8: delete both
+            s.quiet(1.0)
+            s.type("y")
+            s.quiet(1.5)
+            got = probe("D", "len(esp_fs_list('/fat/fm2'))")
+            check(got == "0", "F8 deletes the tagged entries", f"{got} left in /fat/fm2")
+            s.type(F["F10"])                                     # F10: quit
+            s.quiet(1.0)
+            got = probe("Q", "tabpagenr('$')")
+            check(got == "1", "F10 closes the file manager", f"{got} tab pages")
+            s.type(":call esp_fs_delete('/fat/fm') | call esp_fs_delete('/fat/fm2') | enew!\r")
+            s.quiet(1.0)
+
             # 3. The zero-timeout input poll is cheap. ESP-IDF's select() rounds
             #    "don't wait" up to a tick; the port short-circuits it. Compared
             #    with a plain loop so emulator speed does not matter. Before the
@@ -291,7 +412,6 @@ def main():
                   f"internal free at session start: {ints}")
 
         data = log.read_bytes()
-        import re
         # 5. No "OOPS": Vim's fallback tgoto() emits that for a termcap string
         #    it cannot expand (patch 0006 fixed the one that did).
         check(b"OOPS" not in data, "no unexpandable termcap strings (\"OOPS\")",
@@ -313,7 +433,6 @@ def main():
         check(boots == 1 and panics == 0, "no crash or reboot during the session",
               f"session-1 starts: {boots}, panics: {panics}")
         # 7. No Vim error messages anywhere in the session.
-        import re
         errs = sorted(set(m.decode(errors="replace")
                           for m in re.findall(rb"E\d{2,4}: [^\x1b\r\n]*", data)))
         check(not errs, "no Vim error messages", "; ".join(errs))

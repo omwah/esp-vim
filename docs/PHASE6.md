@@ -66,3 +66,87 @@ namespaces and keys. `:help esp-commands` documents them all.
 PSRAM and Vim's own use; `:EspTasks` lists the `vim` task; `:EspNvs` stores a number and
 a string and `:EspNvs!` erases; `:EspGpio` drives a free pin high and low and reads it
 back; the console TX pin is refused.
+
+## 6b — The file-operations core and `:EspFiles` (2026-09-24)
+
+**Result:** a two-pane, Midnight-Commander-style file manager, over one validated
+file-operations core that the web interface (6e) will share. P4 gate: all checks pass,
+including eleven new ones.
+
+### `components/esp_fs`: the one core
+
+Copy, move, delete, mkdir, list and free space, used by every front end that changes
+files. It's a **separate component, not part of the Vim one**: the web server will call it
+from its own task, so it must not use Vim's allocator or globals. Being outside
+`linker.lf`'s brackets, its mutex also survives a Vim session restart.
+
+Path validation happens here and nowhere else:
+
+- Paths must be absolute, and are normalised lexically (`//`, `.`, `..` folded).
+  FAT has no symlinks, so the lexical result is the real location. Control characters
+  are refused.
+- The result must lie inside a **mounted** root: `/fat` and `/sd` (read-write) or
+  `/vimrt` (read-only). `/` exists only as a listing of those roots.
+- A root itself can be listed but never deleted, moved, copied or overwritten.
+- A directory can't be copied or moved into itself.
+
+Operations hold a recursive mutex, keep their scratch memory (paths plus a 4 KB copy
+buffer) on the heap per call, and never leave a truncated copy behind. Moves within a
+root are renames. FAT won't rename onto an existing name, so an allowed overwrite
+removes the target first, and only for files. Moves across roots are copy-then-delete.
+Recursion is capped at 24 levels.
+
+**Progress callback.** Long copies and deletes call back after every chunk. The Vim
+builtins pass one that runs Vim's own break check, so **CTRL-C stops a big copy and the
+busy spinner turns during it**, with nothing Vim-specific in the core.
+
+### `esp_fs_*()` builtins
+
+`esp_fs_list()`, `esp_fs_copy()`, `esp_fs_move()`, `esp_fs_delete()`, `esp_fs_mkdir()`,
+`esp_fs_info()`, `esp_fs_roots()`, added to patch 0008 (19 rows now, still one block).
+Relative paths are made absolute against Vim's working directory before the core sees
+them.
+
+### `:EspFiles`
+
+`autoload/espfiles.vim`: two panes in a tab page of their own. Every MC function key has
+a letter alias (`F3`/`v`, `F4`/`e`, `F5`/`c`, `F6`/`r`, `F7`/`m`, `F8`/`d`, `F10`/`q`),
+because the Tab5 keyboard has no F-keys. Tagging (`Space`/`t`), a rename when moving
+within one directory, overwrite prompts with "All", the free space for each pane in its
+status line, and double-click to open. Edit and view open a new tab, so `:q` returns to
+the manager.
+
+The plan put the manager in `pack/esp/start/espfiles/`. It's an autoload file instead, so
+nothing is parsed at startup until `:EspFiles` is first used, which matters on this
+hardware.
+
+### Tests
+
+The core refuses five attacks through the builtins: writing into `/vimrt`, `..` out of
+`/fat`, deleting a root, listing outside the roots, and copying a directory into itself.
+`/vimrt/vimrc` is intact afterwards. The manager is driven entirely by keystrokes:
+`F5` and `c` copy, the overwrite prompt appears and is honoured, `r` renames, `F7`
+makes a directory, `d` deletes one after asking, `F3` views read-only, `Space`/`t` tag,
+`F8` deletes the tagged entries, and `F10` closes.
+
+## Screenshots, and a colour bug they found (2026-09-24)
+
+`pixi run screenshots` regenerates the README images from the real firmware. It boots it
+in the emulator, drives it over the UART, feeds every byte the device sends into a
+terminal emulator (`pyte`), and renders that screen as SVG. Nothing is mocked. `pyte`
+chokes on Vim's private SGR sequences (the modifyOtherKeys handshake), which change
+nothing on screen, so the script ignores them.
+
+The first images showed `~` lines and directory names in **red** where Vim's light
+colour scheme has blue. The system vimrc set `t_Co=256` before `t_AF`, and setting
+`t_Co` makes Vim recompute its default highlight colours at once. It chooses xterm colour
+numbering only if `t_AF` already ends in `m`; otherwise it uses PC numbering, where 1 is
+blue. So every default group (`NonText`, `Directory`, ...) was wrong on the device from
+the start. Syntax colours load later and were right, which is why nobody noticed. The
+vimrc now sets `t_AF`/`t_AB` first, and the gate checks `NonText` is 12 and `Directory` is 4.
+
+Two checks added alongside: the README's Vim-script example is read out of `README.md`,
+written to the device and sourced, so the published example can't silently break; and
+`:diffthis` is exercised, since the README lists diff among the features. The emulator
+time cap in `uart_session.py` went from 360 s to 600 s, because the interactive gate now
+takes about six minutes.

@@ -21,8 +21,9 @@ function! s:Show(name, lines, header, Refresh) abort
     execute 'botright ' . min([len(a:lines), &lines / 2]) . 'new'
     setlocal buftype=nofile bufhidden=wipe noswapfile nobuflisted
     setlocal nonumber norelativenumber nowrap nolist foldcolumn=0 nospell
+    let &l:fillchars = 'eob: '
     let b:esp_view = a:name
-    silent execute 'file esp://' . tolower(a:name)
+    silent execute 'file Esp' . a:name
     nnoremap <buffer> <silent> q :close<CR>
     nnoremap <buffer> <silent> R :call b:esp_refresh()<CR>
     syntax match EspViewTitle /\%1l.*/

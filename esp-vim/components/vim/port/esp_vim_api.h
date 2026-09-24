@@ -12,6 +12,15 @@
 #ifndef ESP_VIM_API_H
 #define ESP_VIM_API_H
 
+/* api/esp_api_fs.c (over components/esp_fs) */
+void f_esp_fs_copy(typval_T *argvars, typval_T *rettv);
+void f_esp_fs_delete(typval_T *argvars, typval_T *rettv);
+void f_esp_fs_info(typval_T *argvars, typval_T *rettv);
+void f_esp_fs_list(typval_T *argvars, typval_T *rettv);
+void f_esp_fs_mkdir(typval_T *argvars, typval_T *rettv);
+void f_esp_fs_move(typval_T *argvars, typval_T *rettv);
+void f_esp_fs_roots(typval_T *argvars, typval_T *rettv);
+
 /* api/esp_api_sys.c */
 void f_esp_heap(typval_T *argvars, typval_T *rettv);
 void f_esp_info(typval_T *argvars, typval_T *rettv);

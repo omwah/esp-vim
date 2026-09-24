@@ -48,6 +48,44 @@ THE :Esp COMMANDS					*esp-commands*
 Commands for the device itself.  Those that show a table open it in a small
 window at the bottom: "R" refreshes it, "q" closes it.
 
+:EspFiles [{left} [{right}]]				*:EspFiles*
+		A two-pane file manager, in the style of Midnight Commander,
+		in a tab page of its own.  Each pane shows a directory; both
+		start in the current directory unless given.  "/" shows the
+		storage roots.  The key on the left is the Midnight
+		Commander one; every one has a letter too, for keyboards
+		without function keys:
+
+		<CR>  l		enter a directory, or edit a file
+		<BS>  h  -	up to the parent directory
+		<Tab>		switch to the other pane
+		<Space>  t	tag or untag, then move down
+		u		untag everything
+		<F3>  v		view a file, read-only, in a new tab ("q"
+				closes it)
+		<F4>  e		edit a file in a new tab; ":q" comes back
+		<F5>  c		copy the tagged items (or the one under the
+				cursor) to the other pane's directory
+		<F6>  r		move them; to the SAME directory it is a
+				rename, and you are offered the name to edit
+		<F7>  m		make a directory
+		<F8>  d		delete, after asking; a directory goes with
+				everything in it
+		o		make the other pane show this directory
+		<C-L>  R	refresh
+		<F1>  g?	list the keys
+		<F10>  q	close the file manager
+
+		Copy and move ask for the destination, with the other pane's
+		directory filled in; edit it to copy to another name.  When a
+		file would be replaced you are asked, with "All" for the rest.
+		CTRL-C stops a long copy.  /vimrt is read-only, and nothing
+		outside /fat, /sd and /vimrt can be reached.
+
+		Scripts can do the same with esp_fs_list(), esp_fs_copy(),
+		esp_fs_move(), esp_fs_delete(), esp_fs_mkdir(), esp_fs_info()
+		and esp_fs_roots().
+
 :EspInfo						*:EspInfo*
 		Chip, revision, cores, flash and PSRAM size, versions, uptime
 		and why the chip last reset.
@@ -118,7 +156,8 @@ Everything you write goes under /fat.  Relative names work as usual: ":w
 notes.txt" writes /fat/notes.txt, ":cd" changes directory, ":pwd" shows it,
 and <Tab> completes file names on the command line (":e no<Tab>").
 
-To browse directories use ":Explore" (or ":e /fat").  Move to a name and press
+To manage files use |:EspFiles|, a two-pane file manager.  To browse a
+single directory use ":Explore" (or ":e /fat").  Move to a name and press
 <Enter> to open it, "-" to go up a directory.  This is Vim's netrw plugin, for
 local files; its full manual is |netrw|, and |esp-missing| lists the network
 features that do not work here.

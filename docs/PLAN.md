@@ -15,7 +15,7 @@
 | 3 — OS shim layer | **done** (2026-09-23), see [PHASE3.md](PHASE3.md) — Vim runs, edits, saves; `pixi run vim-test` |
 | 4 — Storage + curated runtime | **done** (2026-09-24), see [PHASE4.md](PHASE4.md) — runtime 74% of `vimrt`, 30 filetypes, 0.47 MB PSRAM to open a file |
 | 5 — Emulator bring-up over UART | **done** (2026-09-24), see [PHASE5.md](PHASE5.md) — interactive over UART; `:q` restarts in place; chip-named splash, device help, busy indicator. P4 gate green. **S3: open intermittent heap corruption under the emulator**, gate informational until tested on silicon |
-| 6 — `:Esp*` commands, file manager, transports, web | **in progress**, see [PHASE6.md](PHASE6.md). 6a (builtins + device commands) done 2026-09-24 |
+| 6 — `:Esp*` commands, file manager, transports, web | **in progress**, see [PHASE6.md](PHASE6.md). 6a (builtins + device commands) and 6b (`esp_fs` core + `:EspFiles`) done 2026-09-24 |
 | 7 — MicroPython | not started |
 | 8 — Git | not started |
 | 9 — Tab5 hardware over UART | not started |
@@ -638,8 +638,8 @@ for one:
 | Stage | Scope | State |
 |---|---|---|
 | 6a | builtin plumbing (patch, build check); `:EspInfo` `:EspHeap` `:EspTasks` `:EspGpio` `:EspNvs` `:EspReboot` | **done** |
-| 6b | `esp_api_fs.c` (one file-ops core with path validation) and the two-pane `:EspFiles` manager, local roots | next |
-| 6c | networking in the emulator (EMAC + `--net user`), `esp_http_get`, spell download | |
+| 6b | `esp_fs` (one file-ops core with path validation) and the two-pane `:EspFiles` manager, local roots | **done** |
+| 6c | networking in the emulator (EMAC + `--net user`), `esp_http_get`, spell download | next |
 | 6d | libssh2: SCP/SFTP builtins, netrw transports, remote panes | |
 | 6e | web file manager, settings, live status | |
 | 6f | radio via esp-hosted/C6 (`:EspWifi*`, `:EspBle*`), `:EspSerial`, `:EspI2cScan`, `:EspAdc`, `:EspSensors` | |

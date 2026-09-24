@@ -39,10 +39,15 @@ set regexpengine=1
 " Both terminals Vim talks to here do 256 colours: a host terminal over the
 " UART, and the Tab5's libvterm-based display console. Vim's term_color()
 " upgrades the plain "\e[3%dm" forms to 38;5;N / 48;5;N itself above 15.
+"
+" ORDER MATTERS: t_AF before t_Co. Setting t_Co makes Vim recompute its default
+" highlight colours at once, and it picks xterm colour numbering only if t_AF
+" (ending in "m") is already set -- otherwise PC numbering, where 1 is blue, and
+" every default group (NonText, Directory, ...) comes out red instead of blue.
 if &term =~# '^xterm'
-  set t_Co=256
   let &t_AB = "\<Esc>[4%dm"
   let &t_AF = "\<Esc>[3%dm"
+  set t_Co=256
 endif
 
 " Mouse: SGR reporting. It is the only xterm mouse protocol that works beyond

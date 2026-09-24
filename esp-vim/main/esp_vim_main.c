@@ -18,6 +18,7 @@
 #include "esp_system.h"
 #include "esp_vfs_fat.h"
 #include "nvs_flash.h"
+#include "esp_fs.h"
 #include "esp_heap_caps.h"
 #include "driver/uart.h"
 #include "driver/uart_vfs.h"
@@ -74,6 +75,8 @@ static void storage_init(void)
     }
     if (n != ESP_OK)
         ESP_LOGE(TAG, "nvs init failed: %s -- :EspNvs will not work", esp_err_to_name(n));
+
+    ESP_ERROR_CHECK(esp_fs_init());     /* before any task can use it */
 
     static wl_handle_t wl = WL_INVALID_HANDLE;
     esp_vfs_fat_mount_config_t rw = {

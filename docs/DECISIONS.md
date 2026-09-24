@@ -462,3 +462,14 @@ and a build-time check (`scripts/check-builtins.py`) guards the table's sort ord
 deletes it when a defaults file is newer. Consequence: `menuconfig` changes don't
 survive a defaults edit. That's intended: configuration belongs in the committed
 defaults.
+
+## 2026-09-24 — esp_fs is its own component; the file manager is autoloaded
+
+The file-operations core (`components/esp_fs`) is the only place paths are validated, and
+the web server will call it from another task. So it can't live in the Vim component,
+where `malloc` is Vim's session-tracked heap and a restart resets everything. Vim reaches
+it through thin `esp_fs_*()` builtins. Long operations take a progress callback rather
+than knowing about Vim, which is how CTRL-C and the spinner work during a copy.
+
+`:EspFiles` is `autoload/espfiles.vim`, not a `pack/*/start` package. A start package's
+plugin files are sourced at every startup; an autoload file costs nothing until first use.

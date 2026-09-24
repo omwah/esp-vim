@@ -1,6 +1,6 @@
 diff -ruN '--exclude=.git' '--exclude=*.o' '--exclude=*.rej' '--exclude=*.orig' a/src/evalfunc.c b/src/evalfunc.c
 --- a/src/evalfunc.c	2026-09-21 13:40:41.000000000 -0700
-+++ b/src/evalfunc.c	2026-09-24 13:21:25.353366960 -0700
++++ b/src/evalfunc.c	2026-09-24 14:15:16.682966899 -0700
 @@ -14,6 +14,11 @@
  
  #include "vim.h"
@@ -13,7 +13,7 @@ diff -ruN '--exclude=.git' '--exclude=*.o' '--exclude=*.rej' '--exclude=*.orig' 
  #if defined(FEAT_EVAL)
  
  #ifdef VMS
-@@ -2279,6 +2284,35 @@
+@@ -2279,6 +2284,49 @@
  			ret_void,	    f_err_teapot},
      {"escape",		2, 2, FEARG_1,	    arg2_string,
  			ret_string,	    f_escape},
@@ -21,6 +21,20 @@ diff -ruN '--exclude=.git' '--exclude=*.o' '--exclude=*.rej' '--exclude=*.orig' 
 +    // Keep these sorted: lookup is a binary search over this table, and an
 +    // out-of-order row breaks unrelated builtins.  All "esp_" names sort
 +    // between "escape" and "eval".
++    {"esp_fs_copy",	2, 3, FEARG_1,	    arg3_string_string_bool,
++			ret_bool,	    f_esp_fs_copy},
++    {"esp_fs_delete",	1, 1, FEARG_1,	    arg1_string,
++			ret_bool,	    f_esp_fs_delete},
++    {"esp_fs_info",	1, 1, FEARG_1,	    arg1_string,
++			ret_dict_any,	    f_esp_fs_info},
++    {"esp_fs_list",	1, 1, FEARG_1,	    arg1_string,
++			ret_list_dict_any,  f_esp_fs_list},
++    {"esp_fs_mkdir",	1, 1, FEARG_1,	    arg1_string,
++			ret_bool,	    f_esp_fs_mkdir},
++    {"esp_fs_move",	2, 3, FEARG_1,	    arg3_string_string_bool,
++			ret_bool,	    f_esp_fs_move},
++    {"esp_fs_roots",	0, 0, 0,	    NULL,
++			ret_list_dict_any,  f_esp_fs_roots},
 +    {"esp_gpio_mode",	2, 2, FEARG_1,	    arg2_number_string,
 +			ret_bool,	    f_esp_gpio_mode},
 +    {"esp_gpio_pins",	0, 0, 0,	    NULL,
