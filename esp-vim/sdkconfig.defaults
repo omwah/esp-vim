@@ -29,3 +29,9 @@ CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
 # Optimize for size: Vim is ~2 MB of text at -Og and the app partition is the
 # one thing that cannot be resized once /fat holds user data (docs/PLAN.md Ph.4).
 CONFIG_COMPILER_OPTIMIZATION_SIZE=y
+
+# Panic output to UART only. With the P4's default secondary console
+# (USB-Serial-JTAG), the panic handler spins forever on a TX FIFO that nothing
+# drains -- in the emulator, or on a board with no USB host attached -- so a
+# crash looked like a silent hang with no message at all.
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y

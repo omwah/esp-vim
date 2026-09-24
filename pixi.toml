@@ -67,6 +67,8 @@ vim-build = { cmd = 'bash -c ". scripts/env.sh >/dev/null && cd esp-vim && idf.p
 
 vim-size = { cmd = 'bash -c ". scripts/env.sh >/dev/null && cd esp-vim && riscv32-esp-elf-size -t $(find build -path \"*__idf_vim.dir*\" -name \"*.c.obj\") | tail -1"', description = "Report the Vim component's text/data/bss" }
 
+vim-test = { cmd = 'bash -c ". scripts/env.sh >/dev/null && esp-vim/test/roundtrip.sh"', depends-on = ["vim-build"], description = "Emulator gate: edit + CWD round trips across a reboot (build first)" }
+
 # Phase 2: generate a baseline config.h on the HOST, to be curated by hand.
 # Needs pixi's ncurses: Vim's configure refuses to finish without a terminal
 # library, even though the ESP build undefines HAVE_TGETENT and uses the

@@ -24,6 +24,9 @@ int vim_main(int argc, char **argv);
 
 static const char *TAG = "esp-vim";
 
+/* Exposed so a debugger can find the Vim task's saved context (see docs). */
+TaskHandle_t g_vim_task;
+
 /*
  * Vim recurses in the regexp engine and in eval, and Xtensa's windowed ABI
  * (the S3 variant) costs more stack per frame than RISC-V. Kconfig-tunable
@@ -81,14 +84,37 @@ static void environment_init(void)
     setenv("COLUMNS", "80", 1);
 }
 
+/*
+ * Read back a file Vim wrote on a previous run and print it.
+ *
+ * This is the other half of the emulator round-trip gate (docs/PLAN.md Phase 5):
+ * run one injects an edit and saves, run two -- against the --save-state image --
+ * proves the bytes survived a reboot. Cheap enough to leave in.
+ */
+static void report_test_artifact(void)
+{
+    FILE *f = fopen("/fat/vimtest.txt", "r");
+    if (f == NULL)
+        return;
+
+    char buf[128];
+    size_t n = fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    buf[n] = '\0';
+    printf("ESPVIM-ARTIFACT<<%s>>\n", buf);
+}
+
 static void vim_task(void *arg)
 {
     (void)arg;
+    /* TEMPORARY Phase 3 diagnostic: silent ex mode needs no terminal, so this
+     * isolates "is Vim's core working" from "is the console working". */
     char *argv[] = { "vim", NULL };
 
+    report_test_artifact();
     printf("\nESPVIM-READY\n");     /* stable marker for esp-emu --inject-on */
     int rc = vim_main(1, argv);
-    printf("\nESPVIM-EXIT rc=%d\n", rc);
+    printf("\nESPVIM-EXIT rc=%d ESPVIM-END\n", rc);
 
     /* mch_exit() must not call exit(): on IDF that restarts the chip. */
     vTaskDelete(NULL);
@@ -102,6 +128,15 @@ void app_main(void)
     storage_init();
     environment_init();
 
-    xTaskCreate(vim_task, "vim", ESP_VIM_TASK_STACK / sizeof(StackType_t) * sizeof(StackType_t),
-                NULL, 5, NULL);
+    /*
+     * Pinned to core 0, the core that installed the UART driver and owns its ISR.
+     *
+     * Left unpinned, the Vim task could land on core 1, and the first select() on
+     * the console crashed inside ESP-IDF with "assert failed: spinlock_acquire
+     * (lock)" under xQueueSemaphoreTake. Pinning made it go away completely. Whether
+     * the fault is ESP-IDF's cross-core select path or the emulator's multi-hart
+     * model is NOT yet established -- re-test unpinned on real silicon (docs/PLAN.md
+     * Phase 9). Running the editor on its console's core costs nothing either way.
+     */
+    xTaskCreatePinnedToCore(vim_task, "vim", ESP_VIM_TASK_STACK, NULL, 5, &g_vim_task, 0);
 }

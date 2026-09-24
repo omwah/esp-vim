@@ -9,7 +9,7 @@
 #
 # Usage:
 #   scripts/run-emu.sh <project-dir> [--chip esp32p4] [--psram 32M]
-#                      [--save-state] [--exit-on STR] [--timeout 30s]
+#                      [--save-state] [--reuse] [--exit-on STR] [--timeout 30s]
 #                      [-- <extra esp-emu args>]
 
 set -euo pipefail
@@ -19,7 +19,7 @@ EMU="$REPO_ROOT/build-deps/esp-emu/esp-emu"
 
 die() { printf 'run-emu: %s\n' "$*" >&2; exit 1; }
 
-PROJECT=""; CHIP="esp32p4"; PSRAM="32M"; SAVE=0
+PROJECT=""; CHIP="esp32p4"; PSRAM="32M"; SAVE=0; REUSE=0
 EXIT_ON=""; TIMEOUT=""; EXTRA=()
 
 while [ "$#" -gt 0 ]; do
@@ -27,6 +27,7 @@ while [ "$#" -gt 0 ]; do
         --chip)       CHIP="$2";    shift 2 ;;
         --psram)      PSRAM="$2";   shift 2 ;;
         --save-state) SAVE=1;       shift ;;
+        --reuse)      REUSE=1;      shift ;;
         --exit-on)    EXIT_ON="$2"; shift 2 ;;
         --timeout)    TIMEOUT="$2"; shift 2 ;;
         --)           shift; EXTRA=("$@"); break ;;
@@ -58,9 +59,17 @@ printf 'Merging flash image...\n'
 ( cd "$PROJECT" && idf.py merge-bin -o merged.bin >/dev/null )
 [ -f "$MERGED" ] || die "merge produced no $MERGED"
 
-# Always run a copy: --save-state overwrites the image it was given.
+# Always run a copy: --save-state overwrites the image it was given, and the
+# pristine merged image must survive. --reuse keeps the copy from a previous
+# --save-state run instead of starting fresh -- that is what makes a two-run
+# "write it, reboot, read it back" test possible.
 RUN_IMG="$BUILD/run.bin"
-cp "$MERGED" "$RUN_IMG"
+if [ "$REUSE" -eq 1 ]; then
+    [ -f "$RUN_IMG" ] || die "--reuse given but $RUN_IMG does not exist"
+    printf 'Reusing saved state in %s\n' "${RUN_IMG#"$PROJECT"/}"
+else
+    cp "$MERGED" "$RUN_IMG"
+fi
 
 ARGS=(--chip "$CHIP" --firmware "$RUN_IMG" --psram-size "$PSRAM")
 [ "$SAVE" -eq 1 ]      && ARGS+=(--save-state)

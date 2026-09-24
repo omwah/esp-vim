@@ -164,7 +164,7 @@ set(VIM_XDIFF_SOURCES
 )
 
 idf_component_register(
-    SRCS "${VIM_SOURCES}" "${VIM_XDIFF_SOURCES}" "port/pathdef.c"
+    SRCS "${VIM_SOURCES}" "${VIM_XDIFF_SOURCES}" "port/pathdef.c" "port/esp_shims.c"
     INCLUDE_DIRS "port"
     PRIV_INCLUDE_DIRS "${VIM_SRC}" "${VIM_SRC}/proto"   # upstream Makefile passes -Iproto
     REQUIRES fatfs vfs esp_partition esp_driver_uart esp_timer
@@ -178,7 +178,29 @@ target_compile_options(${COMPONENT_LIB} PRIVATE
     -DESP_PLATFORM
     -Dmain=vim_main          # app_main owns the real entry point
     -include "${CMAKE_CURRENT_LIST_DIR}/port/auto/config.h"
+
+    # Symbol collisions with ESP-IDF, found by diffing libvim.a's globals
+    # against every IDF archive. Vim names its Vimscript builtins f_<name>,
+    # which runs straight into FatFs's f_* API; timer_start collides with IDF's
+    # own. Renaming via -D keeps both the definition and its callers consistent
+    # inside this component, and needs no upstream patch.
+    -Df_mkdir=vim_f_mkdir
+    -Df_readdir=vim_f_readdir
+    -Dtimer_start=vim_timer_start
 )
+
+# ESP-IDF defines chdir(), getcwd() and system(), so the port cannot simply
+# define its own -- that is a duplicate symbol. --wrap lets us interpose:
+# references resolve to __wrap_*, and __real_* reaches the original.
+#
+# This is also what makes rename/mkdir/opendir work. They have no mch_* macro to
+# redirect (mch_rename is also a real function, so a macro mangles its
+# prototype), and defining them under their own names would recurse infinitely.
+# With --wrap the override calls __real_* instead.
+set(VIM_WRAPPED chdir getcwd system rename mkdir opendir exit _exit)
+foreach(sym IN LISTS VIM_WRAPPED)
+    target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=${sym}")
+endforeach()
 
 # Vim is a 30-year-old C codebase and builds cleanly under its own warning set,
 # not IDF's. These are silenced deliberately rather than by patching upstream.

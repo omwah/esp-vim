@@ -15,25 +15,26 @@ holds our changes, and `scripts/prepare-deps.sh` extracts and applies them into 
 git-ignored `build-deps/`. Nobody hand-writes a `.patch`, so the workflow is:
 
 ```sh
-scripts/prepare-deps.sh vim            # clean, unpatched (or patched) tree
-cd build-deps/vim
-git init -q && git add -A && git commit -qm base   # throwaway repo, inside the tree
-#   ... make the edit ...
-git diff > ../../patches/vim/0005-short-description.patch
-cd ../.. && scripts/prepare-deps.sh vim            # confirm it applies from scratch
+pixi run deps                                  # clean tree, existing patches applied
+$EDITOR build-deps/vim/src/whatever.c          # make the change
+pixi run mkpatch vim 0006-short-description    # diff against a pristine reference
+pixi run deps                                  # confirm it applies from scratch
 ```
+
+`mkpatch` extracts a pristine copy of the archive, applies the existing series to it,
+and diffs that against your edited tree, so the patch holds exactly your new change.
 
 Rules that matter:
 
-- **Generate patches against the extracted archive, never against a git clone of
-  upstream.** Context lines can differ, and a patch that applies to the clone may fail
-  against the archive.
-- Numbered prefixes set apply order (`0001-`, `0002-`, …), applied lexically.
-- `prepare-deps.sh` tries `git apply --whitespace=nowarn` first and falls back to
-  `patch -p1`. It **stops at the first failure** rather than continuing with a
-  half-patched tree; re-running resets the tree from the archive.
-- Keep each patch to one concern with a descriptive name. These are re-applied against
-  every future Vim, so a reviewer must be able to tell what each one is for without
+- **Never run git inside `build-deps/`.** It sits inside this repository's worktree,
+  so a git command there operates on the *outer* repo. See the 2026-09-23 entry on
+  `mkpatch` below for how that went wrong.
+- Numbered prefixes set the apply order (`0001-`, `0002-`, …), applied lexically.
+- `prepare-deps.sh` applies with `patch -p1` (never `git apply`) and **verifies each
+  patch changed what it claims to**. A no-op apply is a hard error, not a silent
+  success.
+- Keep each patch to one concern, with a descriptive name. They're re-applied against
+  every future Vim, so a reviewer must be able to tell what each is for without
   reading the diff.
 
 ### Re-syncing to a newer upstream
@@ -208,3 +209,58 @@ Two fixes:
   the edited tree. The difference is exactly the new change.
 
 **Do not run git commands inside `build-deps/`.**
+
+## 2026-09-23 — Three interposition mechanisms, not one
+
+Phase 3 needed to intercept file and process calls and ended up using three
+mechanisms. Each exists for a reason, so they shouldn't be "simplified" into one.
+
+1. **Redirect Vim's own `mch_*` macros** (`open`, `fopen`, `stat`, `lstat`, `access`,
+   `unlink`, `rmdir`). Preferred wherever it works, because it's scoped to Vim and has
+   no effect on ESP-IDF. Costs one small upstream patch (0005) adding `#ifndef` guards.
+2. **`-Wl,--wrap`** (`chdir`, `getcwd`, `rename`, `mkdir`, `opendir`, `system`,
+   `exit`, `_exit`). Used when ESP-IDF already defines the symbol, since defining our
+   own is a duplicate. It's also used when the override needs the original, since
+   defining `rename()` inside `rename()` recurses. The cost is global scope: ESP-IDF's
+   own calls go through the wrapper too. That's harmless here, because absolute paths
+   pass through unchanged.
+3. **Plain definitions** for what ESP-IDF genuinely lacks.
+
+The failed attempts, so they aren't retried:
+
+- A function-like macro for `chdir`/`getcwd`. It also rewrites the prototype in
+  `<unistd.h>`, where `getcwd(char *__buf, size_t __size)` expands as though the
+  parameter declarations were arguments.
+- Overriding `mch_rename`. It's also a real function declared in `proto/os_unix.pro`,
+  so the macro mangles that declaration.
+
+## 2026-09-23 — The Vim task is pinned to core 0 (root cause open)
+
+Unpinned, the Vim task could run on core 1, and its first `select()` on the console
+crashed inside `esp_vfs_select` with `assert failed: spinlock_acquire (lock)`. Pinned
+to core 0, where the UART driver and its ISR were installed, the crash went away
+completely and the full gate passes.
+
+**The root cause isn't established.** It could be ESP-IDF's cross-core select path or
+esp-emu's multi-hart model, and nothing so far distinguishes them. The pin stays
+because it costs nothing: an editor has no use for the second core, and keeping it on
+its console's core is sensible regardless. Phase 9 retests unpinned on silicon.
+
+If the pin is ever removed, rerun `pixi run vim-test` *and* the interactive case. The
+crash only happened when Vim reached its input wait.
+
+## 2026-09-23 — Stubs must be honest about "cannot happen" vs "cannot do"
+
+Every stub originally did the same thing: fail loudly with `ENOSYS` and log on first call.
+`setitimer` showed the flaw. It was assumed unreachable, but it's on the regexp path,
+and its `ENOSYS` surfaced to the user as `E1286: Could not set timeout`.
+
+The rule now:
+
+- If a call is **truly unreachable** (`execvp`, `pipe`, `waitpid`, `dup`), fail and log.
+- If it's **reachable but meaningless** here (`setitimer`, `signal`, `sigaction`,
+  `sigprocmask`, `umask`), succeed quietly and document why the missing effect doesn't
+  matter.
+
+Log-on-first-call is what exposed the misclassification within one run. Keep it on
+every stub in the first group.

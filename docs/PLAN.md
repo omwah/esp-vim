@@ -12,7 +12,7 @@
 | 0 — Repository bootstrap | **done** (2026-09-23) |
 | 1 — Capability spike (GO/NO-GO) | **done — GO** (2026-09-23), see [PHASE1.md](PHASE1.md) |
 | 2 — Build system + generated files | **done** (2026-09-23), see [PHASE2.md](PHASE2.md) — Vim compiles, 1.82 MB text at `-Os` |
-| 3 — OS shim layer | not started |
+| 3 — OS shim layer | **done** (2026-09-23), see [PHASE3.md](PHASE3.md) — Vim runs, edits, saves; `pixi run vim-test` |
 | 4 — Storage + curated runtime | not started |
 | 5 — Emulator bring-up over UART | not started |
 | 6 — `:Esp*` commands, file manager, transports, web | not started |
@@ -1038,6 +1038,7 @@ changes for this phase** — which is the point of doing it this way.
 | Phase 8 | Stage 2: push to a bare repo on the host over both HTTPS and SSH; host-side `git log` shows the commits |
 | Phase 8 | Stage 3: clone and verify checked-out blobs byte-for-byte. **Both delta forms must be exercised deliberately** — real servers send `ofs-delta` almost exclusively once the client advertises it, so `ref-delta` is only reached by omitting that capability from our advertisement (or by constructing such a packfile by hand). Test both paths explicitly or the gate silently covers one |
 | Phase 8 | `:EspGitGc` packs loose objects; repo still passes host-side `git fsck` afterwards |
+| Phase 9 | **Re-test the Vim task unpinned** (drop `xTaskCreatePinnedToCore(..., 0)`). Under the emulator, running Vim on core 1 crashed `esp_vfs_select` with a NULL-spinlock assert; the cause (IDF cross-core select vs the emulator's multi-hart model) is unresolved — see PHASE3.md |
 | Phase 9 | **Re-run the Phase 1 spike on real silicon** (`pixi run spike-build` + flash) and diff against `docs/phase1-spike-results.txt` — the emulator's answers are assumptions until confirmed on a real UART and real flash |
 | Phase 9 | Scripted round trip on Tab5 over real UART; heap, redraw timing and C6 latency recorded |
 | Phase 9 | **Transports re-tested over the production path** — SCP, SFTP, git push and the web manager over the C6 link on real hardware, not EMAC, including the co-processor-unresponsive error path |

@@ -30,8 +30,11 @@ cd esp-vim/test/spike && idf.py build
 ### 1. ESP-IDF has no working directory at all — `chdir` is the one failing gate
 
 `chdir()` returns `ENOSYS` and `getcwd()` always answers `/`. This is not a missing
-Kconfig option: grepping IDF v5.5.5 finds **no `chdir` implementation anywhere** in
-`components/`. It is newlib's stub.
+Kconfig option. IDF defines both as stubs in `components/newlib/src/realpath.c:112-125`:
+`chdir` is literally `errno = ENOSYS; return -1` and `getcwd` hardcodes `"/"`.
+*(Corrected in Phase 3. This originally said there was no `chdir` implementation
+anywhere, because the grep missed `newlib/src/`. The conclusion is unchanged, but the
+symbols' existence is why Phase 3 has to use `--wrap`.)*
 
 Vim needs a CWD for `:cd`/`:lcd`, for `mch_dirname()`, and to resolve relative paths.
 **The port must supply a userspace one** in `port/esp_shims.c`: an `esp_cwd` string, with
