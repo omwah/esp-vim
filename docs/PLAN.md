@@ -10,7 +10,7 @@
 | Phase | State |
 |---|---|
 | 0 — Repository bootstrap | **done** (2026-09-23) |
-| 1 — Capability spike (GO/NO-GO) | not started |
+| 1 — Capability spike (GO/NO-GO) | **done — GO** (2026-09-23), see [PHASE1.md](PHASE1.md) |
 | 2 — Build system + generated files | not started |
 | 3 — OS shim layer | not started |
 | 4 — Storage + curated runtime | not started |
@@ -21,8 +21,17 @@
 | 9 — Tab5 hardware over UART | not started |
 | 10 — Tab5 display console | not started |
 
+Toolchain: ESP-IDF **v5.5.5**, riscv32-esp-elf 14.2.0, emulator esp-emu 0.43.0.
+
 Measured numbers still outstanding: app-partition size after first link (Phase 2), final
 partition table (Phase 4).
+
+**Phase 1 changed the plan** — see [PHASE1.md](PHASE1.md). In short: the `isatty(0)` gate
+passed, but ESP-IDF has **no working directory** (`chdir` is `ENOSYS`, `getcwd` always
+`/`), so the port must supply a userspace CWD; and `getuid`, `getpwuid`, `signal`,
+`lstat`, `readlink`, `symlink`, `link` and `umask` are all absent, with `lstat` not even
+declared. `SPECIAL_WILDCHAR` can be undefined to make stubbing `mch_expand_wildcards()`
+safe.
 
 ## Context
 

@@ -1,0 +1,27 @@
+CONFIG_IDF_TARGET="esp32p4"
+
+# 16 MB flash, custom table (see partitions.csv)
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+
+# The spike exists to test these three.
+CONFIG_VFS_SUPPORT_TERMIOS=y
+CONFIG_VFS_SUPPORT_SELECT=y
+CONFIG_VFS_SUPPORT_DIR=y
+
+# Vim needs long filenames and a sane codepage.
+CONFIG_FATFS_LFN_HEAP=y
+CONFIG_FATFS_MAX_LFN=255
+CONFIG_FATFS_API_ENCODING_UTF_8=y
+
+# PSRAM: the Tab5 has 32 MB. esp-emu is told the size with --psram-size.
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_USE_MALLOC=y
+
+# Console on UART0, which is what esp-emu bridges to stdio.
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+
+# Vim recurses (regexp, eval); the spike only needs room to be honest about it.
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192

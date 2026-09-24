@@ -1,0 +1,78 @@
+SPIKE-BEGIN
+Phase 1 capability spike -- docs/PLAN.md
+
+=== target
+  chip                         ----  model=18 cores=2 revision=301
+  IDF                          ----  v5.5.5
+  free heap                    ----  34126983 bytes
+
+=== console, BEFORE installing the UART driver
+  isatty(0)                    ----  yes
+  isatty(1)                    ----  yes
+E (368) uart: uart_get_baudrate(403): uart port not enabled, unable to get register values
+  tcgetattr(0)                 ----  rc=-1 errno=22 (Invalid argument)
+
+=== console, AFTER uart_vfs_dev_use_driver()
+  isatty(0)                    PASS  Vim will render
+  tcgetattr(0)                 PASS  
+  c_lflag                      ----  0x00000000 (ICANON=0 ECHO=0)
+  tcsetattr(0, raw)            PASS  
+  raw mode readback            ----  c_lflag=0x00000000 (flags took)
+  fcntl(0, O_NONBLOCK)         PASS  
+
+=== select() on fd 0
+  select() rc                  ----  0 (errno=0)
+  blocked for                  ----  256 ms of a 250 ms timeout
+  select() blocks on stdin     PASS  
+
+=== writable FATFS at /fat (partition 'storage')
+W (648) vfs_fat_spiflash: FatFS mount (f_mount) failed with error: "No filesystem detected" [13]. Retrying after format...
+  mount /fat rw                PASS  ESP_OK
+  mkdir /fat/d                 PASS  
+  fopen write                  PASS  
+  fopen read                   PASS  
+  content round trip           PASS  hello from the spike
+
+  stat fields                  ----  size=21 ino=0 dev=0 mode=100777 mtime=315532800
+  opendir                      PASS  
+  readdir entries              ----  1
+  rename                       PASS  
+  chdir                        FAIL  Function not implemented
+  getcwd                       ----  /
+    -> port impact             ----  needs a userspace CWD in port/esp_shims.c
+  unlink                       PASS  
+
+=== read-only FATFS at /vimrt (partition 'vimrt')
+  partition 'vimrt' found      PASS  
+  vimrt size                   ----  3145728 bytes at 0x720000
+  mount /vimrt ro              PASS  ESP_OK
+  read /vimrt/hello.txt        PASS  
+  ro content                   PASS  phase-1 spike: /vimrt is readable
+  stat fields                  ----  size=34 ino=0 dev=0 mode=100777 mtime=315532800
+  opendir /vimrt/syntax        PASS  
+    entry                      ----  c.vim
+  ro partition rejects write   PASS  Permission denied
+
+=== POSIX surface Vim's os_unix.c expects (weak-linked probe)
+  system()                     present Vim routes :! here via USE_SYSTEM
+  fork()                       ABSENT  must be absent; :! and pty depend on it
+  getuid()                     ABSENT  mch_get_uid
+  geteuid()                    ABSENT  file-permission checks
+  getpwuid()                   ABSENT  '~' expansion, mch_get_user_name
+  getpwnam()                   ABSENT  '~user' expansion
+  signal()                     ABSENT  SIGINT/SIGWINCH handling
+  lstat()                      ABSENT  symlink-aware stat
+  readlink()                   ABSENT  resolving symlinks
+  symlink()                    ABSENT  creating symlinks
+  link()                       ABSENT  backup-by-rename path
+  chmod()                      present preserving file modes
+  umask()                      ABSENT  new-file modes
+  system() returns             ----  -1 (a stub is fine; Vim reports E371)
+  getenv(HOME)                 ----  unset -- app_main must set it
+  sizeof(void*)                ----  4
+
+=== summary
+  gates passed: 19
+  gates failed: 1
+
+SPIKE-DONE

@@ -110,3 +110,34 @@ writer:
 
 The hard rule: **httpd handlers never call into Vim's API** — not even `emsg()`. MicroPython
 runs on the Vim task and inherits its guarantee rather than needing its own.
+
+## 2026-09-23 — Userspace CWD via the mch_open/mch_fopen macros
+
+Phase 1 found ESP-IDF has no working directory at all: `chdir()` is newlib's `ENOSYS` stub
+and `getcwd()` always returns `/`. Grepping IDF v5.5.5 confirms there is no implementation
+to enable — this is not a Kconfig option we missed.
+
+Vim needs a CWD for `:cd`, `mch_dirname()`, and relative-path resolution. Rather than
+patch Vim's many call sites, the port keeps an `esp_cwd` string and redefines the two
+macros Vim already funnels file access through (`vim.h:2582-2583`):
+
+```c
+# define mch_open(n, m, p)  open((n), (m), (p))
+# define mch_fopen(n, p)    fopen((n), (p))
+```
+
+Redefining these in the port's config header resolves relative paths to absolute before
+they reach the VFS, with no upstream patch. `stat`, `opendir`, `unlink`, `mkdir` and
+`rename` get the same wrapper treatment.
+
+## 2026-09-23 — Undefine SPECIAL_WILDCHAR
+
+`gen_expand_wildcards()` only shells out to `mch_expand_wildcards()` for re-entrant calls,
+for patterns containing `` "`'{" `` (`SPECIAL_WILDCHAR`, `os_unix.h:383`), and for a UNIX
+fallback when `expand_env()` leaves `$`/`~` unexpanded. Undefining `SPECIAL_WILDCHAR`
+eliminates the first two; setting `HOME`/`VIMRUNTIME` eliminates the third for runtime
+sourcing.
+
+So `mch_expand_wildcards()` can safely return `FAIL` and everything routes to Vim's
+internal matcher. Cost: no brace or backtick expansion. Accepted — there is no shell to
+expand them with anyway.
