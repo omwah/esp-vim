@@ -17,7 +17,7 @@
 | 5 — Emulator bring-up over UART | **done** (2026-09-24), see [PHASE5.md](PHASE5.md) — interactive over UART; `:q` restarts in place; chip-named splash, device help, busy indicator. P4 gate green. **S3: open intermittent heap corruption under the emulator**, gate informational until tested on silicon |
 | 6 — `:Esp*` commands, file manager, transports, web | **in progress**, see [PHASE6.md](PHASE6.md). 6a (builtins + device commands) and 6b (`esp_fs` core + `:EspFiles`) done 2026-09-24 |
 | 7 — MicroPython | not started |
-| 8 — Git | not started |
+| 8 — Git | not started. **Being reconsidered:** libgit2 instead of pure Python; test build scheduled after Phase 6 (see Phase 8) |
 | 9 — Tab5 hardware over UART | not started |
 | 10 — Tab5 display console | not started |
 
@@ -644,6 +644,7 @@ for one:
 | 6e | web file manager, settings, live status | |
 | 6f | radio via esp-hosted/C6 (`:EspWifi*`, `:EspBle*`), `:EspSerial`, `:EspI2cScan`, `:EspAdc`, `:EspSensors` | |
 | — | `:EspUsbMsc` | hardware only, Phase 9 |
+| 6z | **libgit2 feasibility build** (see Phase 8): decides how Phase 8 is built | after 6f, before Phase 7 |
 
 ### Architecture: thin C, thick vimscript
 
@@ -939,6 +940,24 @@ All of this is emulator-testable — no hardware needed.
 ---
 
 ## Phase 8 — Git
+
+> **Under reconsideration (2026-09-24): libgit2 instead of pure Python.** The design
+> below chose pure Python because no ESP-IDF port of libgit2 exists. That underrated
+> porting it the way Vim was ported, which is likely less work than writing git,
+> because packfile reading with delta resolution, the hardest Python piece, is what
+> libgit2 already does. libgit2 would also bring full clone, fetch, push and merge, and
+> run far faster than interpreted Python. It would remove Phase 8's dependency on
+> MicroPython. Its transfer callbacks can cancel, so CTRL-C and the spinner fit the
+> `esp_fs` progress pattern. It can use mbedTLS (SHA-1, HTTPS), bundles zlib and its
+> HTTP parser, runs without threads, and takes SSH from the libssh2 that 6d brings.
+> Licence: GPLv2 with a linking exception, compatible with linking into this firmware.
+>
+> **Gate, after Phase 6 and before Phase 7:** build libgit2 as an ESP-IDF component for
+> the P4 and measure its flash size. Check that the no-`mmap` fallback works on real
+> packs, and that FAT settings (`core.symlinks=false`, `core.filemode=false`) behave.
+> Then init, commit, clone and push against a host server in the emulator, measuring
+> RAM and stack. If it passes, this phase is rewritten around `esp_git_*()` builtins and
+> `:EspGit*` commands, and DECISIONS records why. If not, the pure-Python design stands.
 
 **Depends on Phase 7.** Implemented as a MicroPython package (frozen into the app as `.mpy`),
 modelled on `benhoyt/pygit`, with the hot paths in C as tabulated in the findings above:
