@@ -23,6 +23,8 @@ from uart_session import Session, TARGET, PSRAM  # noqa: E402
 failures = 0
 # The chip's display name, as the firmware derives it: esp32p4 -> ESP32-P4.
 CHIP = "ESP32-" + TARGET[len("esp32"):].upper()
+# The console UART's TX pin: :EspGpio must refuse to touch it.
+CONSOLE_TX = {"esp32p4": 37, "esp32s3": 43}[TARGET]
 
 
 # Every value read back from the screen ends in an explicit terminator ('|').
@@ -174,6 +176,58 @@ def main():
             check(got == "netrw", ":e /fat opens the netrw directory browser", f"filetype {got!r}")
             s.type(":enew!\r")
             s.quiet(1.0)
+
+            # 2g. The :Esp commands (Phase 6a) and the esp_*() builtins behind them.
+            s.type(":echo 'I' . '=' . esp_info().chip . '|' . (esp_info().cores > 0) . '|'\r")
+            m = s.expect(rb"I=([^|]*)\|(\d)\|", 30)
+            check(m.groups() == (CHIP.encode(), b"1"), "esp_info() names the chip",
+                  "/".join(g.decode() for g in m.groups()))
+            s.type(":EspInfo\r")
+            s.quiet(1.0)
+            s.type(":echo 'X' . '=' . get(b:, 'esp_view', '') . '|' . (getline(2) =~# '" + CHIP + "') . '|'\r")
+            m = s.expect(rb"X=([^|]*)\|(\d)\|", 30)
+            check(m.groups() == (b"Info", b"1"), ":EspInfo opens its view with the chip",
+                  "/".join(g.decode() for g in m.groups()))
+            s.type("q")
+            s.quiet(0.5)
+            s.type(":echo 'W' . '=' . winnr('$') . '|'\r")
+            check(s.expect(rb"W=(\d+)\|", 30).group(1) == b"1", "q closes the view")
+            s.type(":EspHeap\r")
+            s.quiet(1.0)
+            s.type(":echo 'M' . '=' . b:esp_view . (esp_heap().psram.total > 0) . (esp_heap().vim.used > 0) . '|'\r")
+            got = s.expect(rb"M=([^|]*)\|", 30).group(1).decode()
+            check(got == "Heap11", ":EspHeap shows PSRAM and Vim's own use", f"got {got!r}")
+            s.type(":close\r:EspTasks\r")
+            s.quiet(1.0)
+            s.type(":echo 'T' . '=' . b:esp_view . (search('^vim ', 'nw') > 0) . '|'\r")
+            got = s.expect(rb"T=([^|]*)\|", 30).group(1).decode()
+            check(got == "Tasks1", ":EspTasks lists the vim task", f"got {got!r}")
+            s.type(":close\r")
+            # NVS: a number and a string round trip, then erase.
+            s.type(":EspNvs test answer 42\r:EspNvs test greet hello world\r")
+            s.quiet(1.0)
+            s.type(":echo 'N' . '=' . esp_nvs_get('test', 'answer') . ':' . type(esp_nvs_get('test', 'answer'))"
+                   " . ':' . esp_nvs_get('test', 'greet') . '|'\r")
+            got = s.expect(rb"N=([^|]*)\|", 30).group(1).decode()
+            check(got == "42:0:hello world", ":EspNvs stores a number and a string", f"got {got!r}")
+            s.type(":EspNvs! test answer\r")
+            s.quiet(0.5)
+            s.type(":echo 'E' . '=' . esp_nvs_get('test', 'answer', 'gone') . '|'\r")
+            got = s.expect(rb"E=([^|]*)\|", 30).group(1).decode()
+            check(got == "gone", ":EspNvs! erases a key", f"got {got!r}")
+            # GPIO: drive a free pin both ways and read it back; refuse the console.
+            s.type(":let g:pin = esp_gpio_pins()[-1] | execute 'EspGpio' g:pin 'on'\r")
+            s.quiet(0.5)
+            s.type(":let g:hi = esp_gpio_read(g:pin) | call esp_gpio_write(g:pin, 0)"
+                   " | echo 'G' . '=' . g:pin . ':' . g:hi . esp_gpio_read(g:pin) . '|'\r")
+            got = s.expect(rb"G=([^|]*)\|", 30).group(1).decode()
+            check(got.endswith(":10"), ":EspGpio drives a pin high and low", f"pin:levels {got!r}")
+            # (Not :try -- ":catch" takes the rest of the line as its pattern.)
+            s.type(f":let v:errmsg = '' | silent! let g:r = esp_gpio_read({CONSOLE_TX})"
+                   " | echo 'U' . '=' . g:r . ':' . (v:errmsg =~# 'in use') . '|'\r")
+            got = s.expect(rb"U=([^|]*)\|", 30).group(1).decode()
+            check(got == "-1:1", f"console TX pin {CONSOLE_TX} is refused (-1 and an error)",
+                  f"value:error {got!r}")
 
             # 3. The zero-timeout input poll is cheap. ESP-IDF's select() rounds
             #    "don't wait" up to a tick; the port short-circuits it. Compared

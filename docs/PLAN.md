@@ -15,7 +15,7 @@
 | 3 — OS shim layer | **done** (2026-09-23), see [PHASE3.md](PHASE3.md) — Vim runs, edits, saves; `pixi run vim-test` |
 | 4 — Storage + curated runtime | **done** (2026-09-24), see [PHASE4.md](PHASE4.md) — runtime 74% of `vimrt`, 30 filetypes, 0.47 MB PSRAM to open a file |
 | 5 — Emulator bring-up over UART | **done** (2026-09-24), see [PHASE5.md](PHASE5.md) — interactive over UART; `:q` restarts in place; chip-named splash, device help, busy indicator. P4 gate green. **S3: open intermittent heap corruption under the emulator**, gate informational until tested on silicon |
-| 6 — `:Esp*` commands, file manager, transports, web | not started |
+| 6 — `:Esp*` commands, file manager, transports, web | **in progress**, see [PHASE6.md](PHASE6.md). 6a (builtins + device commands) done 2026-09-24 |
 | 7 — MicroPython | not started |
 | 8 — Git | not started |
 | 9 — Tab5 hardware over UART | not started |
@@ -632,12 +632,26 @@ assumptions from setting.
 
 ## Phase 6 — The `:Esp*` command layer, file manager and transports
 
+**Delivered in stages**, each ending with a green P4 gate, because the phase is too large
+for one:
+
+| Stage | Scope | State |
+|---|---|---|
+| 6a | builtin plumbing (patch, build check); `:EspInfo` `:EspHeap` `:EspTasks` `:EspGpio` `:EspNvs` `:EspReboot` | **done** |
+| 6b | `esp_api_fs.c` (one file-ops core with path validation) and the two-pane `:EspFiles` manager, local roots | next |
+| 6c | networking in the emulator (EMAC + `--net user`), `esp_http_get`, spell download | |
+| 6d | libssh2: SCP/SFTP builtins, netrw transports, remote panes | |
+| 6e | web file manager, settings, live status | |
+| 6f | radio via esp-hosted/C6 (`:EspWifi*`, `:EspBle*`), `:EspSerial`, `:EspI2cScan`, `:EspAdc`, `:EspSensors` | |
+| — | `:EspUsbMsc` | hardware only, Phase 9 |
+
 ### Architecture: thin C, thick vimscript
 
 Two layers, chosen so that the command surface stays editable without reflashing and the
 upstream patch footprint stays at a single site:
 
-1. **C builtins** in `components/esp_vim_api/`, registered by `0003-evalfunc-esp-builtins.patch`
+1. **C builtins** in `components/vim/api/` (not a separate component: they need Vim's
+   private headers and allocator), registered by `patches/vim/0008-evalfunc-esp-builtins`
    into `global_functions[]` in `evalfunc.c`. **This table cannot be appended to** —
    `find_internal_func_opt()` (`evalfunc.c:~2000`) does a `STRCMP` **binary search** over it,
    so out-of-order rows silently break lookup for *unrelated* builtins, surfacing as bizarre

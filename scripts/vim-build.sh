@@ -23,4 +23,18 @@ BUILD="build-$TARGET"
 cd "$PROJECT"
 # IDF_TARGET only takes effect on the first configure of a build directory; the
 # sdkconfig it creates there then pins the target for that directory.
+python3 "$PROJECT/../scripts/check-builtins.py"
+
+# $BUILD/sdkconfig is generated from sdkconfig.defaults*, but once it exists
+# ESP-IDF prefers it, so an edit to the defaults would silently never apply.
+# Nothing hand-made lives in it (menuconfig changes belong in the defaults), so
+# regenerate it whenever a defaults file is newer.
+for d in sdkconfig.defaults sdkconfig.defaults."$TARGET"; do
+    if [ -f "$BUILD/sdkconfig" ] && [ "$d" -nt "$BUILD/sdkconfig" ]; then
+        echo "vim-build: $d changed; regenerating $BUILD/sdkconfig"
+        rm -f "$BUILD/sdkconfig"
+        break
+    fi
+done
+
 exec idf.py -B "$BUILD" -D "SDKCONFIG=$BUILD/sdkconfig" -D "IDF_TARGET=$TARGET" build

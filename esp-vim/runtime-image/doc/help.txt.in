@@ -30,6 +30,7 @@ through the help of many others.  See |esp-credits|.
 						*esp-contents*
 CONTENTS
 
+|esp-commands|		The :Esp commands: the device itself
 |esp-files|		Files, storage and the current directory
 |esp-filetypes|		Which file types are recognised, and adding more
 |esp-keys|		Keyboard, mouse and the terminal
@@ -40,6 +41,67 @@ CONTENTS
 |esp-missing|		What is not available on this device
 |esp-docs|		The help files on this device
 |esp-credits|		Credits and copying
+
+==============================================================================
+THE :Esp COMMANDS					*esp-commands*
+
+Commands for the device itself.  Those that show a table open it in a small
+window at the bottom: "R" refreshes it, "q" closes it.
+
+:EspInfo						*:EspInfo*
+		Chip, revision, cores, flash and PSRAM size, versions, uptime
+		and why the chip last reset.
+
+:EspHeap						*:EspHeap*
+		Free memory: internal RAM, PSRAM and DMA-capable memory, with
+		the largest free block and the lowest it has been since boot.
+		Also how much Vim itself is using, its peak, and its budget.
+
+:EspTasks						*:EspTasks*
+		The FreeRTOS tasks, with priority, core and the least stack
+		each has had free.  "vim" is this editor.
+
+:EspGpio {pin} [{action}]				*:EspGpio*
+		Read or drive a GPIO pin.  {action} is one of:
+			read		show the level (the default)
+			on  off		drive high or low, making the pin an
+					output first if it is not one
+			toggle		invert the level
+			in  pullup  pulldown
+					make it an input, with a pull resistor
+			out  od		make it an output, push-pull or open
+					drain
+			reset		back to the state at power-on
+		<Tab> completes pin numbers and actions.  Pins the system
+		depends on -- flash, PSRAM, the console -- are refused.  Pins
+		keep their state after you quit Vim, until the next reset.
+
+:EspNvs							*:EspNvs*
+		List everything in NVS, the small key/value store that keeps
+		settings across reboots.
+:EspNvs {namespace}
+		List one namespace.
+:EspNvs {namespace} {key}
+		Show one value.
+:EspNvs {namespace} {key} {value}
+		Store a value: digits are stored as a number, anything else
+		as a string.  Namespaces and keys are at most 15 characters.
+:EspNvs! {namespace} {key}
+		Erase a value.
+		<Tab> completes namespaces and keys.  Other parts of the
+		system keep their own entries here; change those only if you
+		know what they are for.
+
+:EspReboot[!]						*:EspReboot*
+		Restart the chip.  Refuses while any buffer has unsaved
+		changes, unless you add !.  Unlike |esp-quit| this is a real
+		reset.
+
+The same information is available to scripts, as Dicts and Lists:
+esp_info(), esp_heap(), esp_tasks(), esp_gpio_pins(), esp_gpio_read(),
+esp_gpio_write(), esp_gpio_mode(), esp_nvs_list(), esp_nvs_get(),
+esp_nvs_set(), esp_nvs_erase(), esp_reboot().  Try ":echo esp_heap()".
+esp_gpio_read() returns -1, with an error, for a pin it may not use.
 
 ==============================================================================
 FILES AND STORAGE					*esp-files*

@@ -36,3 +36,6 @@ CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
 
 # Optimize for size: the app partition cannot be resized once /fat holds data.
 CONFIG_COMPILER_OPTIMIZATION_SIZE=y
+
+# :EspTasks lists every FreeRTOS task (uxTaskGetSystemState).
+CONFIG_FREERTOS_USE_TRACE_FACILITY=y

@@ -446,3 +446,19 @@ The guard that refuses to extract into a tracked directory used
 pattern, and on a fresh clone where `build-deps/` doesn't exist yet the slashless form
 doesn't match, so the script refused to run. It now checks `build-deps/`. Found by
 building the previous commit in a fresh worktree.
+
+## 2026-09-24 — The esp_*() builtins live in the Vim component
+
+The plan put them in a separate `components/esp_vim_api/`. They need Vim's private
+headers and must allocate through Vim's (session-tracked) heap, so a separate component
+would have to reach into the Vim component's private include path and allocator anyway.
+They're in `components/vim/api/`. The single-site patch (0008) is unchanged in spirit,
+and a build-time check (`scripts/check-builtins.py`) guards the table's sort order.
+
+## 2026-09-24 — Generated sdkconfig is regenerated when the defaults change
+
+`build-<target>/sdkconfig` is an output. Once it exists, ESP-IDF prefers it to
+`sdkconfig.defaults*`, so edits to the defaults silently never applied. `vim-build.sh`
+deletes it when a defaults file is newer. Consequence: `menuconfig` changes don't
+survive a defaults edit. That's intended: configuration belongs in the committed
+defaults.

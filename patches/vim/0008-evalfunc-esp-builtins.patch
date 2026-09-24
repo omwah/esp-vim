@@ -1,0 +1,51 @@
+diff -ruN '--exclude=.git' '--exclude=*.o' '--exclude=*.rej' '--exclude=*.orig' a/src/evalfunc.c b/src/evalfunc.c
+--- a/src/evalfunc.c	2026-09-21 13:40:41.000000000 -0700
++++ b/src/evalfunc.c	2026-09-24 13:21:25.353366960 -0700
+@@ -14,6 +14,11 @@
+ 
+ #include "vim.h"
+ 
++#ifdef ESP_PLATFORM
++// The esp_*() builtins, implemented by the ESP32 port (esp-vim/components/vim).
++# include "esp_vim_api.h"
++#endif
++
+ #if defined(FEAT_EVAL)
+ 
+ #ifdef VMS
+@@ -2279,6 +2284,35 @@
+ 			ret_void,	    f_err_teapot},
+     {"escape",		2, 2, FEARG_1,	    arg2_string,
+ 			ret_string,	    f_escape},
++#ifdef ESP_PLATFORM
++    // Keep these sorted: lookup is a binary search over this table, and an
++    // out-of-order row breaks unrelated builtins.  All "esp_" names sort
++    // between "escape" and "eval".
++    {"esp_gpio_mode",	2, 2, FEARG_1,	    arg2_number_string,
++			ret_bool,	    f_esp_gpio_mode},
++    {"esp_gpio_pins",	0, 0, 0,	    NULL,
++			ret_list_number,    f_esp_gpio_pins},
++    {"esp_gpio_read",	1, 1, FEARG_1,	    arg1_number,
++			ret_number,	    f_esp_gpio_read},
++    {"esp_gpio_write",	2, 2, FEARG_1,	    arg2_number,
++			ret_bool,	    f_esp_gpio_write},
++    {"esp_heap",	0, 0, 0,	    NULL,
++			ret_dict_any,	    f_esp_heap},
++    {"esp_info",	0, 0, 0,	    NULL,
++			ret_dict_any,	    f_esp_info},
++    {"esp_nvs_erase",	2, 2, FEARG_1,	    arg2_string,
++			ret_bool,	    f_esp_nvs_erase},
++    {"esp_nvs_get",	2, 3, FEARG_1,	    NULL,
++			ret_any,	    f_esp_nvs_get},
++    {"esp_nvs_list",	0, 1, FEARG_1,	    arg1_string,
++			ret_list_dict_any,  f_esp_nvs_list},
++    {"esp_nvs_set",	3, 3, FEARG_1,	    NULL,
++			ret_bool,	    f_esp_nvs_set},
++    {"esp_reboot",	0, 0, 0,	    NULL,
++			ret_void,	    f_esp_reboot},
++    {"esp_tasks",	0, 0, 0,	    NULL,
++			ret_list_dict_any,  f_esp_tasks},
++#endif
+     {"eval",		1, 1, FEARG_1,	    arg1_string,
+ 			ret_any,	    f_eval},
+     {"eventhandler",	0, 0, 0,	    NULL,

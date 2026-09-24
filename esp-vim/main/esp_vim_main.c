@@ -17,6 +17,7 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_vfs_fat.h"
+#include "nvs_flash.h"
 #include "esp_heap_caps.h"
 #include "driver/uart.h"
 #include "driver/uart_vfs.h"
@@ -63,6 +64,17 @@ static void console_init(void)
 
 static void storage_init(void)
 {
+    /* NVS: :EspNvs, and later WiFi credentials, keys and settings. A full or
+     * newer-format partition is erased, ESP-IDF's documented recovery. */
+    esp_err_t n = nvs_flash_init();
+    if (n == ESP_ERR_NVS_NO_FREE_PAGES || n == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_LOGW(TAG, "nvs: %s; erasing the partition", esp_err_to_name(n));
+        if (nvs_flash_erase() == ESP_OK)
+            n = nvs_flash_init();
+    }
+    if (n != ESP_OK)
+        ESP_LOGE(TAG, "nvs init failed: %s -- :EspNvs will not work", esp_err_to_name(n));
+
     static wl_handle_t wl = WL_INVALID_HANDLE;
     esp_vfs_fat_mount_config_t rw = {
         .max_files = 12,
