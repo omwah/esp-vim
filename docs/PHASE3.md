@@ -27,6 +27,8 @@ It also fails on any stub firing, any `abort()`/assert/panic, or a missing clean
 
 ## How the shim is built (`port/esp_shims.c`)
 
+*(Superseded in Phase 5: the `mch_*` macro redirection below missed direct `stat()` calls in `os_unix.c`, so all path calls now use `--wrap`, and patch 0005 is retired. See [PHASE5.md](PHASE5.md), addendum.)*
+
 Three mechanisms, each chosen for a reason:
 
 | Mechanism | Used for | Why this one |

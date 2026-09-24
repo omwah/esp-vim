@@ -38,6 +38,9 @@
 #include "esp_timer.h"
 #include "esp_vim_port.h"
 #include <sys/select.h>
+#include <termios.h>
+#include <ctype.h>
+#include <stdint.h>
 #include <sys/time.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -148,6 +151,46 @@ int __wrap_select(int nfds, fd_set *r, fd_set *w, fd_set *e, struct timeval *tv)
             FD_CLR(fd, e);              /* and never in an error state */
     }
     return ready;
+}
+
+/* ======================================================================= */
+/*  tcgetattr(): report the control characters a real tty would             */
+/* ======================================================================= */
+
+/*
+ * ESP-IDF's UART tcgetattr() zeroes the whole struct termios and never fills
+ * c_cc[] (esp_driver_uart/src/uart_vfs.c). Vim reads the backspace key from
+ * c_cc[VERASE] -- exactly as a desktop Vim learns it from `stty` -- so it got 0,
+ * kept builtin xterm's ^H, and the DEL (0x7f) that nearly every terminal sends
+ * for Backspace did nothing. VINTR was 0 as well.
+ *
+ * When a console leaves c_cc[] entirely zero, report the POSIX/Linux line
+ * discipline defaults instead. A console that sets any of its own values (the
+ * Phase 10 display console will) is left untouched.
+ */
+extern int __real_tcgetattr(int fd, struct termios *t);
+
+int __wrap_tcgetattr(int fd, struct termios *t)
+{
+    int rc = __real_tcgetattr(fd, t);
+    if (rc != 0 || t == NULL)
+        return rc;
+
+    for (int i = 0; i < NCCS; i++)
+        if (t->c_cc[i] != 0)
+            return rc;                  /* the driver reported its own */
+
+    t->c_cc[VINTR]  = 0x03;             /* ^C */
+    t->c_cc[VQUIT]  = 0x1c;             /* ^\ */
+    t->c_cc[VERASE] = 0x7f;             /* ^? -- what Backspace sends */
+    t->c_cc[VKILL]  = 0x15;             /* ^U */
+    t->c_cc[VEOF]   = 0x04;             /* ^D */
+    t->c_cc[VSTART] = 0x11;             /* ^Q */
+    t->c_cc[VSTOP]  = 0x13;             /* ^S */
+    t->c_cc[VSUSP]  = 0x1a;             /* ^Z */
+    t->c_cc[VMIN]   = 1;
+    t->c_cc[VTIME]  = 0;
+    return rc;
 }
 
 /* ======================================================================= */
@@ -286,12 +329,95 @@ char *__wrap_getcwd(char *buf, size_t size)
 /* ======================================================================= */
 /*  File operations, CWD-aware                                              */
 /*                                                                          */
-/*  Vim's mch_open/mch_fopen/mch_stat/... macros are redirected here by      */
-/*  port/auto/config.h, so no Vim call site needed changing -- only the      */
-/*  #ifndef guards added by patch 0005.                                      */
+/*  Interposed at LINK time with -Wl,--wrap (components/vim/CMakeLists.txt) */
+/*  so that every caller resolves relative paths, however the call is       */
+/*  spelled. An earlier version redirected Vim's mch_* macros instead, but  */
+/*  os_unix.c -- which implements many mch_* functions -- calls stat() and  */
+/*  open() directly ("Keep the #ifdef outside of stat(), it may be a       */
+/*  macro"), so mch_getperm() and mch_isdir() still saw unresolved paths:   */
+/*  isdirectory('.') was 0 and relative glob(), and with it :e <Tab>        */
+/*  completion, found nothing. Absolute paths -- everything ESP-IDF itself  */
+/*  uses -- pass through unchanged.                                         */
 /* ======================================================================= */
 
-int esp_open(const char *path, int flags, ...)
+/*
+ * File identity. FATFS reports st_dev = st_ino = 0 for EVERY file (Phase 1),
+ * and Vim decides "is this the same file?" by comparing exactly those two
+ * fields (fullpathcmp() in filepath.c, buffer identity in buffer.c). So every
+ * existing file looked like every other: :help, finding the tag file "the same"
+ * as the current buffer, searched the wrong buffer (E434), and :e between
+ * existing files was unreliable.
+ *
+ * We synthesize an identity from the file's path instead: a 32-bit FNV-1a hash
+ * of the normalised, case-folded absolute path (FAT is case-insensitive, so
+ * A.TXT and a.txt ARE one file), split across st_dev and st_ino because both
+ * are only 16 bits on this target. Every Vim use of st_dev pairs it with
+ * st_ino, except the (dev_T)-1 "stat failed" sentinel, which is avoided.
+ *
+ * fstat() must agree with stat(): Vim re-checks the inode of the fd it is
+ * writing against the one stat() gave before (bufwrite.c) and fails with E949
+ * "File changed while writing" on a mismatch. So fds opened through the
+ * wrappers remember their identity until closed.
+ */
+static uint32_t path_identity(const char *abs)
+{
+    char norm[ESP_CWD_MAX];
+    strncpy(norm, abs, sizeof(norm) - 1);
+    norm[sizeof(norm) - 1] = '\0';
+    esp_normalise(norm);
+
+    uint32_t h = 2166136261u;                       /* FNV-1a */
+    for (const char *c = norm; *c; c++) {
+        h ^= (uint8_t)tolower((unsigned char)*c);
+        h *= 16777619u;
+    }
+    return h;
+}
+
+static void apply_identity(struct stat *st, uint32_t id)
+{
+    uint16_t dev = (uint16_t)(id >> 16), ino = (uint16_t)id;
+    if (dev == 0xFFFF)
+        dev = 0xFFFE;           /* (dev_T)-1 means "stat failed" to Vim */
+    if (dev == 0 && ino == 0)
+        ino = 1;                /* never look like FATFS's all-zero default */
+    st->st_dev = dev;
+    st->st_ino = ino;
+}
+
+#define ESP_FD_TRACK 64
+static uint32_t s_fd_id[ESP_FD_TRACK];
+static bool     s_fd_known[ESP_FD_TRACK];
+
+static void fd_remember(int fd, const char *abs)
+{
+    if (fd >= 0 && fd < ESP_FD_TRACK) {
+        s_fd_id[fd] = path_identity(abs);
+        s_fd_known[fd] = true;
+    }
+}
+
+static void fd_forget(int fd)
+{
+    if (fd >= 0 && fd < ESP_FD_TRACK)
+        s_fd_known[fd] = false;
+}
+
+extern int   __real_open(const char *, int, ...);
+extern FILE *__real_fopen(const char *, const char *);
+extern int   __real_close(int);
+extern int   __real_fclose(FILE *);
+extern int   __real_stat(const char *, struct stat *);
+extern int   __real_fstat(int, struct stat *);
+extern int   __real_access(const char *, int);
+extern int   __real_unlink(const char *);
+extern int   __real_remove(const char *);
+extern int   __real_rmdir(const char *);
+extern int   __real_chmod(const char *, mode_t);
+
+#define RESOLVE(path, buf) esp_resolve((path), (buf), sizeof(buf))
+
+int __wrap_open(const char *path, int flags, ...)
 {
     char buf[ESP_CWD_MAX];
     mode_t mode = 0;
@@ -302,48 +428,85 @@ int esp_open(const char *path, int flags, ...)
         mode = (mode_t)va_arg(ap, int);
         va_end(ap);
     }
-    return open(esp_resolve(path, buf, sizeof(buf)), flags, mode);
+    const char *abs = RESOLVE(path, buf);
+    int fd = __real_open(abs, flags, mode);
+    if (fd >= 0 && abs != NULL)
+        fd_remember(fd, abs);
+    return fd;
 }
 
-/*
- * Returns void* because port/auto/config.h must declare this before <stdio.h>
- * has been seen; the mch_fopen macro casts it back to FILE*.
- */
-void *esp_fopen(const char *path, const char *mode)
+FILE *__wrap_fopen(const char *path, const char *mode)
 {
     char buf[ESP_CWD_MAX];
-    return (void *)fopen(esp_resolve(path, buf, sizeof(buf)), mode);
+    const char *abs = RESOLVE(path, buf);
+    FILE *fp = __real_fopen(abs, mode);
+    if (fp != NULL && abs != NULL)
+        fd_remember(fileno(fp), abs);
+    return fp;
 }
 
-int esp_stat(const char *path, struct stat *st)
+int __wrap_close(int fd)
+{
+    fd_forget(fd);
+    return __real_close(fd);
+}
+
+int __wrap_fclose(FILE *fp)
+{
+    if (fp != NULL)
+        fd_forget(fileno(fp));
+    return __real_fclose(fp);
+}
+
+int __wrap_stat(const char *path, struct stat *st)
 {
     char buf[ESP_CWD_MAX];
-    return stat(esp_resolve(path, buf, sizeof(buf)), st);
+    const char *abs = RESOLVE(path, buf);
+    int rc = __real_stat(abs, st);
+    if (rc == 0 && st != NULL && abs != NULL)
+        apply_identity(st, path_identity(abs));
+    return rc;
 }
 
-int esp_access(const char *path, int mode)
+int __wrap_fstat(int fd, struct stat *st)
+{
+    int rc = __real_fstat(fd, st);
+    if (rc == 0 && st != NULL && fd >= 0 && fd < ESP_FD_TRACK && s_fd_known[fd])
+        apply_identity(st, s_fd_id[fd]);
+    return rc;
+}
+
+int __wrap_access(const char *path, int mode)
 {
     char buf[ESP_CWD_MAX];
-    return access(esp_resolve(path, buf, sizeof(buf)), mode);
+    return __real_access(RESOLVE(path, buf), mode);
 }
 
-int esp_unlink(const char *path)
+int __wrap_unlink(const char *path)
 {
     char buf[ESP_CWD_MAX];
-    return unlink(esp_resolve(path, buf, sizeof(buf)));
+    return __real_unlink(RESOLVE(path, buf));
 }
 
-int esp_rmdir(const char *path)
+int __wrap_remove(const char *path)
 {
     char buf[ESP_CWD_MAX];
-    return rmdir(esp_resolve(path, buf, sizeof(buf)));
+    return __real_remove(RESOLVE(path, buf));
 }
 
-/*
- * rename/mkdir/opendir have no mch_* macro to redirect, and defining them under
- * their own names would recurse. -Wl,--wrap solves both: __real_* is the
- * original, so these resolve the path and then delegate.
- */
+int __wrap_rmdir(const char *path)
+{
+    char buf[ESP_CWD_MAX];
+    return __real_rmdir(RESOLVE(path, buf));
+}
+
+int __wrap_chmod(const char *path, mode_t mode)
+{
+    char buf[ESP_CWD_MAX];
+    return __real_chmod(RESOLVE(path, buf), mode);
+}
+
+/* Same mechanism for the rest of the path-taking calls. */
 extern int   __real_rename(const char *, const char *);
 extern int   __real_mkdir(const char *, mode_t);
 extern DIR  *__real_opendir(const char *);

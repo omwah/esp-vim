@@ -220,7 +220,14 @@ target_compile_options(${COMPONENT_LIB} PRIVATE
 # redirect (mch_rename is also a real function, so a macro mangles its
 # prototype), and defining them under their own names would recurse infinitely.
 # With --wrap the override calls __real_* instead.
-set(VIM_WRAPPED chdir getcwd system rename mkdir opendir exit _exit select)
+set(VIM_WRAPPED
+    # the userspace working directory: every path-taking call resolves
+    chdir getcwd open fopen stat access unlink remove rmdir chmod rename mkdir opendir
+    # file identity: fstat must agree with stat (see esp_shims.c)
+    fstat close fclose
+    # process model, console, tty
+    system exit _exit select tcgetattr
+)
 foreach(sym IN LISTS VIM_WRAPPED)
     target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=${sym}")
 endforeach()

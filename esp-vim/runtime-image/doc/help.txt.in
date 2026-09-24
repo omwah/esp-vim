@@ -1,0 +1,198 @@
+*help.txt*	For Vim version 9.2 on ESP32-P4 / ESP32-S3.  Last change: 2026 Sep 24
+
+		   VIM on ESP32 - main help file
+									 k
+      Move around:  Use the cursor keys, or "h" to go left,	       h   l
+		    "j" to go down, "k" to go up, "l" to go right.	 j
+Close this window:  Use ":q<Enter>".
+   Get out of Vim:  Use ":qa!<Enter>" (careful, all changes are lost!).
+
+Jump to a subject:  Position the cursor on a tag (e.g. |bars|) and hit CTRL-].
+   With the mouse:  Double-click the left mouse button on a tag, e.g. |bars|.
+		    The mouse is already enabled.
+	Jump back:  Type CTRL-O.  Repeat to go further back.
+
+This is Vim 9.2 running directly on an ESP32 microcontroller -- the M5Stack
+Tab5 (ESP32-P4), or an ESP32-S3 board.  It is real Vim: the same editor, the
+same commands, Vim script, syntax highlighting, windows, buffers, registers,
+macros, :vimgrep, diffs.  What is different is the machine around it, and that
+is what this file is about.
+
+This device carries only this one help file.  Vim's full documentation is
+12 MB and does not fit; ":help" on any other subject answers E149.  The
+complete reference is at https://vimhelp.org -- everything there applies here
+except what |esp-missing| lists.
+
+Vim stands for Vi IMproved.  Most of Vim was made by Bram Moolenaar, but only
+through the help of many others.  See |esp-credits|.
+------------------------------------------------------------------------------
+						*esp-contents*
+CONTENTS
+
+|esp-files|		Files, storage and the current directory
+|esp-filetypes|		Which file types are recognised, and adding more
+|esp-keys|		Keyboard, mouse and the terminal
+|esp-settings|		Settings that differ from desktop Vim
+|esp-vimrc|		Your own configuration
+|esp-missing|		What is not available on this device
+|esp-credits|		Credits and copying
+
+==============================================================================
+FILES AND STORAGE					*esp-files*
+
+The device has two filesystems:
+
+	/fat		Your files.  Flash storage, kept across reboots.
+			This is $HOME, and Vim starts with /fat as the
+			current directory.
+	/vimrt		Vim's runtime files ($VIMRUNTIME): syntax files,
+			plugins, this help.  Read-only.
+
+Everything you write goes under /fat.  Relative names work as usual: ":w
+notes.txt" writes /fat/notes.txt, ":cd" changes directory, ":pwd" shows it,
+and <Tab> completes file names on the command line (":e no<Tab>").
+
+To browse directories use ":Explore" (or ":e /fat").  Move to a name and press
+<Enter> to open it, "-" to go up a directory.  This is Vim's netrw plugin, for
+local files; see |esp-missing| for its network features.
+
+Flash is small (a few megabytes) and wears with writing, which is why swap,
+backup and undo files are off by default -- see |esp-settings|.
+
+==============================================================================
+FILE TYPES						*esp-filetypes*
+
+Vim recognises these file types by name (nearly all with syntax highlighting):
+
+@FILETYPES@
+
+A file with no matching name is still recognised from a first line such as
+"#!/bin/sh".  Other file types are deliberately not detected, which keeps
+memory use low.  Check what Vim decided with ":set filetype?".
+
+To add a file type on the device, without rebuilding, put an ftdetect script
+in /fat/.vim/ftdetect/.  For example /fat/.vim/ftdetect/foo.vim: >
+	au BufNewFile,BufRead *.foo  setf foo
+<Its syntax file then goes in /fat/.vim/syntax/foo.vim.  (The built-in list
+comes from esp-vim/filetypes.conf in the firmware sources.)
+
+==============================================================================
+KEYBOARD, MOUSE AND THE TERMINAL			*esp-keys*
+
+Interrupt		CTRL-C stops a long command, a runaway search or a
+			loop, and returns to Normal mode.  Wait a moment
+			before typing again: Vim discards keys that were
+			already queued when it was interrupted.
+
+Backspace		Works whether your terminal sends DEL or CTRL-H.
+
+Mouse			Enabled, using SGR mouse reporting.  Click to move
+			the cursor, drag to select, wheel to scroll.
+
+Screen size		Measured from your terminal when Vim starts.  If you
+			resize the terminal window afterwards, tell Vim: >
+				:set lines=40 columns=120
+<			Without an answer from the terminal (a log capture, a
+			basic serial monitor) the size is 24 lines by 80
+			columns.
+
+Connecting		Vim talks to a terminal over the serial console.  Use
+			a terminal program that passes keys through
+			unchanged ("raw" mode): arrow keys arriving as text
+			such as "^[[A" mean the terminal is not in raw mode.
+
+==============================================================================
+SETTINGS THAT DIFFER FROM DESKTOP VIM			*esp-settings*
+
+These are set by the system vimrc, /vimrt/vimrc:
+
+	'noswapfile'	No swap files: they would be written to flash
+			continuously.  Save often with ":w".
+	'nobackup' 'nowritebackup'
+			No backup copies.
+	'noundofile'	Undo history is kept while Vim runs, not across
+			restarts.
+	'viminfo' empty	Command history, marks and registers are not saved
+			between sessions.
+	'nomodeline'	Files arrive over the network, so they are not
+			allowed to change settings when opened.
+	'regexpengine' 1
+			The backtracking engine; it uses far less memory
+			here.  Syntax highlighting gives up on a pattern
+			that takes longer than 'redrawtime'; a slow search
+			you started yourself is stopped with CTRL-C.
+	'encoding' utf-8
+
+To keep undo history across restarts, for example: >
+	:call mkdir('/fat/.vim/undo', 'p')
+	:set undofile undodir=/fat/.vim/undo
+<Put those lines in your vimrc (|esp-vimrc|) to make them permanent.
+
+==============================================================================
+YOUR OWN CONFIGURATION					*esp-vimrc*
+
+Put your settings in /fat/.vimrc.  Note one thing Vim does everywhere, which
+is easy to miss: when a personal vimrc exists, defaults.vim is no longer
+loaded -- and it is what turns on syntax highlighting, file type plugins and
+the mouse.  Start /fat/.vimrc with this line to keep them: >
+	source $VIMRUNTIME/defaults.vim
+<Plugins and scripts go under /fat/.vim/ as on any Unix: plugin/, syntax/,
+ftplugin/, colors/, ftdetect/, and doc/ for their help (run ":helptags
+/fat/.vim/doc" after adding help files).
+
+==============================================================================
+NOT AVAILABLE ON THIS DEVICE				*esp-missing*
+
+There is no operating system shell and no other programs, so everything that
+runs an external command is unavailable:
+
+	:!cmd  :r !cmd  :w !cmd  system()  filters (!{motion})
+				No shell.  Vim reports E371.
+	:terminal  job_start()	No processes to run.
+	:make			Needs a compiler.  ":vimgrep" works.
+	:grep			Uses an external program.  Use ":vimgrep".
+
+Also not available:
+
+	This documentation	Only this file is on the device.  E149 for
+				other subjects; see https://vimhelp.org.
+	Spell checking		No spelling dictionaries are installed yet.
+	System clipboard	The "* and "+ registers are not connected to
+				anything.  Other registers work normally.
+	CTRL-X CTRL-O		Omni-completion engines are not installed.
+				CTRL-N, CTRL-P and CTRL-X CTRL-F work.
+	{a,b} and `cmd`		Brace and backtick expansion in file names.
+	Network access		netrw's ftp:// scp:// http:// and similar.
+
+==============================================================================
+CREDITS AND COPYING					*esp-credits*
+
+Vim is written by Bram Moolenaar and the Vim project, with contributions from
+many others.  It is distributed under the Vim license, which lets you use and
+copy it freely; if you find it useful, consider supporting the charity it asks
+for, the ICCF (https://iccf-holland.org).  The license text is at
+https://vimhelp.org/uganda.txt.html.
+
+This help file is an amended version of Vim's help.txt, rewritten for this
+device.  The rest of Vim here is unmodified apart from a few small patches
+needed to build it for the ESP32.
+
+------------------------------------------------------------------------------
+*bars*		Bars example
+
+Now that you've jumped here with CTRL-], g<LeftMouse>, or <C-LeftMouse>, you
+can use CTRL-T, CTRL-O, g<RightMouse>, or <C-RightMouse> to go back to where
+you were.
+
+Note that tags are within | characters, but when highlighting is enabled these
+characters are hidden.  That makes it easier to read a command.
+
+Anyway, you can use CTRL-] on any word, also when it is not within |, and Vim
+will try to find help for it.  Especially for options in single quotes, e.g.
+'hlsearch'.
+
+------------------------------------------------------------------------------
+LOCAL ADDITIONS:				*local-additions*
+
+------------------------------------------------------------------------------
+ vim:tw=78:isk=!-~,^*,^|,^":ts=8:noet:ft=help:norl:

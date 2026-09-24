@@ -121,12 +121,12 @@
 /* #undef HAVE_DIRFD */
 
 /*
- * ESP-IDF has NO working directory: chdir() is newlib's ENOSYS stub and
- * getcwd() always answers "/". There is no implementation in IDF v5.5.5 to
- * enable. The port supplies a userspace CWD and redefines mch_open/mch_fopen
- * (see the bottom of this file) so relative paths are resolved before they
- * reach the VFS. HAVE_GETCWD stays defined because mch_dirname() uses it --
- * it resolves to the port's getcwd, not newlib's.
+ * ESP-IDF has NO working directory: chdir() is an ENOSYS stub and getcwd()
+ * always answers "/" (newlib/src/realpath.c). The port supplies a userspace CWD
+ * and interposes every path-taking libc call with -Wl,--wrap so relative paths
+ * are resolved before they reach the VFS (see the bottom of this file).
+ * HAVE_GETCWD stays defined because mch_dirname() uses it -- the call lands in
+ * the port's __wrap_getcwd, not newlib's.
  */
 #define HAVE_GETCWD
 /* #undef HAVE_FCHDIR */
@@ -235,46 +235,14 @@
 #define HAVE_WCTYPE_H
 /* #undef HAVE_LIBGEN_H */
 
-/* ------------------------------------------------- userspace CWD wrappers -- */
+/* ---------------------------------------------------- userspace CWD -- */
 
 /*
- * ESP-IDF has no working directory (Phase 1), so every relative path Vim hands
- * to the VFS must be resolved first. Rather than patch Vim's call sites, we
- * redirect the macros it already funnels file access through -- patch 0005 adds
- * the #ifndef guards that make this possible, and port/esp_shims.c holds the
- * implementations.
- *
- * mch_rename is deliberately NOT overridden: unlike the others it is also a
- * real function, declared in proto/os_unix.pro, and a function-like macro
- * mangles that declaration. rename() itself is made CWD-aware in esp_shims.c
- * instead.
- *
- * chdir() and getcwd() are NOT redirected by macro. A function-like macro also
- * rewrites the declaration in <unistd.h> -- "getcwd(char *__buf, size_t __size)"
- * expands as though those parameter declarations were arguments, which is a
- * syntax error. port/esp_shims.c defines them under their real names instead,
- * overriding newlib's ENOSYS stubs at link time.
+ * ESP-IDF has no working directory (Phase 1), so relative paths must be
+ * resolved before they reach the VFS. That is done at LINK time with
+ * -Wl,--wrap in components/vim/CMakeLists.txt and port/esp_shims.c -- not by
+ * redirecting Vim's mch_* macros, which an earlier version did and which missed
+ * the direct stat()/open() calls inside os_unix.c itself.
  */
-#ifndef PROTO
-
-struct stat;
-struct _reent;
-
-int   esp_open(const char *path, int flags, ...);
-void *esp_fopen(const char *path, const char *mode);
-int   esp_stat(const char *path, struct stat *st);
-int   esp_access(const char *path, int mode);
-int   esp_unlink(const char *path);
-int   esp_rmdir(const char *path);
-
-# define mch_open(n, m, p)      esp_open((const char *)(n), (m), (p))
-# define mch_fopen(n, p)        ((FILE *)esp_fopen((const char *)(n), (p)))
-# define mch_stat(n, p)         esp_stat((const char *)(n), (p))
-# define mch_lstat(n, p)        esp_stat((const char *)(n), (p))
-# define mch_access(n, p)       esp_access((const char *)(n), (p))
-# define mch_remove(x)          esp_unlink((const char *)(x))
-# define mch_rmdir(x)           esp_rmdir((const char *)(x))
-
-#endif /* !PROTO */
 
 #endif /* ESP_VIM_CONFIG_H */

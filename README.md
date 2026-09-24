@@ -82,6 +82,13 @@ pixi run emu-tty                                    # terminal 2
 `emu-tty` uses `socat`, not `nc` — `nc` cannot put the terminal in raw mode, so arrow
 keys arrive as literal escape sequences and echo doubles. Detach with `Ctrl-]`.
 
+## Help on the device
+
+`:help` on the device opens a device-specific guide: an amended version of Vim's
+`help.txt` covering storage, filetypes, keys, settings and what isn't available. Edit it
+in `esp-vim/runtime-image/doc/help.txt.in`. The build generates the tags and rejects
+broken links.
+
 ## Choosing which filetypes the device supports
 
 Edit **`esp-vim/filetypes.conf`**: one line per filetype, followed by its file patterns.

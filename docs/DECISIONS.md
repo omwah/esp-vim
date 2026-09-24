@@ -344,3 +344,36 @@ fallback can't expand found only this one, so the class is closed for xterm.
 inside it. `sdkconfig.defaults` never names a target, and `sdkconfig.defaults.<target>`
 carries the chip-specific settings. `run-emu.sh` picks `build-<chip>/` when it exists,
 and still falls back to `build/` for single-target projects such as the spike.
+
+## 2026-09-24 — One interposition mechanism: link-time --wrap (supersedes the three)
+
+The "three interposition mechanisms" entry above is superseded. Redirecting Vim's `mch_*`
+macros turned out to be incomplete: `os_unix.c`, which *implements* `mch_getperm()`,
+`mch_isdir()` and others, calls `stat()`/`open()` directly, on purpose. Relative paths
+leaked past the userspace working directory, and filename completion found nothing.
+
+All path-taking calls are now interposed with `-Wl,--wrap`, which catches every caller
+however it's written. Patch 0005, which added `#ifndef` guards to the macros, is
+**retired**. The numbering gap is deliberate, so that references to 0006 stay valid.
+Absolute paths (everything ESP-IDF itself uses) pass through the wrappers unchanged,
+so the global scope that made macros look attractive costs nothing in practice.
+
+Plain definitions remain only for what ESP-IDF genuinely lacks (`getuid`, `signal`,
+`pipe`, …).
+
+## 2026-09-24 — Synthesized file identity (st_dev/st_ino)
+
+FATFS gives every file `st_dev = st_ino = 0`. Phase 1 recorded this and concluded only
+that "backup-by-rename must stay off". That underestimated it: Vim's same-file test
+(`fullpathcmp()`, buffer identity) compares exactly those fields, so all existing files
+were one file to Vim. `stat()`/`fstat()` now report an identity hashed from the
+normalised, case-folded path. `fstat()` must agree with `stat()` because `bufwrite.c`
+compares them on every overwrite (`E949` otherwise). See docs/PHASE5.md, addendum.
+
+## 2026-09-24 — The device's :help is generated and link-checked
+
+Only one help file ships: an amended `help.txt` rendered from
+`esp-vim/runtime-image/doc/help.txt.in`, plus a generated `doc/tags`. The build refuses a
+`|link|` to a nonexistent tag, so the help can't quietly point at documentation that
+isn't there. The filetype section is generated from `filetypes.conf`. Anything else asked
+of `:help` gives `E149`, and the file says so and points at vimhelp.org.

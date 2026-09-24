@@ -54,6 +54,10 @@ ROOT_FILES = [
 # Deliberately NOT shipped: menu.vim (only the GUI loads it), evim.vim (vim -y).
 C_REFERENCED = ["colors/lists/default.vim", "optwin.vim"]
 
+# Help buffers: Vim sets 'filetype' to "help" itself when :help opens a file,
+# independently of filetypes.conf, so these ship regardless.
+HELP_SUPPORT = ["syntax/help.vim", "ftplugin/help.vim"]
+
 SYNTAX_INFRA = ["syntax.vim", "synload.vim", "syncolor.vim", "nosyntax.vim", "manual.vim"]
 
 COLORS = ["default", "desert", "habamax", "slate", "lunaperche", "retrobox"]
@@ -188,6 +192,66 @@ unlet s:cpo_save
 '''.replace("TAB", "\t")
 
 
+HELP_TEMPLATE = OURS / "doc" / "help.txt.in"
+TAG_DEF = re.compile(r"(?:^|(?<=\s))\*([^*\s|]+)\*(?=\s|$)", re.M)
+TAG_LINK = re.compile(r"(?<!\\)\|([#-)!+-~]+)\|")
+
+
+def render_help(filetypes):
+    """doc/help.txt from esp-vim/runtime-image/doc/help.txt.in.
+
+    The device's help is an amended version of Vim's help.txt: the navigation
+    preamble is Vim's, the rest describes this device. The filetype table is
+    generated from filetypes.conf so it can never disagree with detection.
+    """
+    if not HELP_TEMPLATE.is_file():
+        die(f"missing {HELP_TEMPLATE}")
+    lines = []
+    for ft, pats in filetypes:
+        row, first = "", True
+        for pat in pats:
+            head = f"\t{ft:<12}\t" if first else "\t\t\t"
+            if row and len((row + " " + pat).expandtabs(8)) > 76:
+                lines.append(row)
+                row, first = "", False
+                head = "\t\t\t"
+            row = (row + " " + pat) if row else head + pat
+            first = False
+        lines.append(row)
+    text = HELP_TEMPLATE.read_text().replace("@FILETYPES@", "\n".join(lines))
+    (OUT / "doc").mkdir(exist_ok=True)
+    (OUT / "doc" / "help.txt").write_text(text)
+
+
+def write_help_tags():
+    """Generate doc/tags the way :helptags would, and refuse dangling links.
+
+    :help finds everything -- help.txt itself included -- through doc/tags, so
+    without it ":help" is E149 even though the file is there.
+    """
+    docs = sorted((OUT / "doc").glob("*.txt"))
+    tags = {}
+    for d in docs:
+        for t in TAG_DEF.findall(d.read_text(encoding="utf-8", errors="replace")):
+            if t in tags and tags[t] != d.name:
+                die(f"help tag *{t}* defined in both {tags[t]} and {d.name}")
+            tags[t] = d.name
+    dangling = []
+    for d in docs:
+        for n, line in enumerate(d.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+            for link in TAG_LINK.findall(line):
+                if link not in tags:
+                    dangling.append(f"{d.name}:{n}: |{link}|")
+    if dangling:
+        die("help links to tags that do not exist on the device:\n  " + "\n  ".join(dangling))
+
+    def esc(t):
+        return t.replace("\\", "\\\\").replace("/", "\\/")
+    rows = sorted(f"{t}\t{f}\t/*{esc(t)}*" for t, f in tags.items())
+    (OUT / "doc" / "tags").write_text("\n".join(rows) + "\n")
+    return len(tags)
+
+
 def partition_size(name):
     with open(PARTITIONS, newline="") as f:
         for row in csv.reader(f):
@@ -259,6 +323,8 @@ def main():
         img.add(f) or die(f"missing required runtime file {f}")
     for f in C_REFERENCED:
         img.add(f) or die(f"missing C-referenced runtime file {f}")
+    for f in HELP_SUPPORT:
+        img.add(f) or die(f"missing {f}")
     for f in SYNTAX_INFRA:
         img.add(f"syntax/{f}") or die(f"missing syntax/{f}")
     filetypes = read_filetypes()
@@ -292,11 +358,15 @@ def main():
     # Overlay our own files (system vimrc, and later plugin/esp.vim etc.).
     ours = 0
     for p in OURS.rglob("*"):
-        if p.is_file() and not p.name.startswith("."):
+        # *.in files are templates, rendered below rather than copied.
+        if p.is_file() and not p.name.startswith(".") and p.suffix != ".in":
             dst = OUT / p.relative_to(OURS)
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(p, dst)
             ours += 1
+
+    render_help(filetypes)
+    ntags = write_help_tags()
 
     # Budget check: FAT rounds every file up to a whole cluster, and this tree is
     # hundreds of small files, so raw bytes badly understate the real footprint.
@@ -316,6 +386,7 @@ def main():
           f"{len(filetypes)} filetypes from {FILETYPES_CONF.name}")
     print(f"  raw {raw / 1024:.0f} KB, FAT footprint ~{est / 1024:.0f} KB "
           f"of {cap / 1024:.0f} KB partition ({100 * est / cap:.0f}%)")
+    print(f"  help: doc/help.txt with {ntags} tags, all links resolve")
     print(f"  written to {OUT.relative_to(ROOT)}/, listing in build-deps/vimrt.manifest")
     if est > budget:
         die(f"estimated {est} bytes exceeds 90% of the {cap}-byte '{PARTITION_NAME}' partition")
