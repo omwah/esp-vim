@@ -1,0 +1,46 @@
+" System vimrc for Vim on ESP32-P4 / M5Stack Tab5.
+"
+" Vim sources this ($VIM/vimrc, and $VIM is /vimrt) before the user's own vimrc
+" and, when there is none, before defaults.vim. It sets what is different about
+" THIS platform; editing taste is left to defaults.vim and the user.
+"
+" Put personal settings in /fat/.vimrc -- /vimrt is a read-only partition.
+
+" No locale support on the device, so Vim would otherwise default to latin1.
+set encoding=utf-8
+scriptencoding utf-8
+
+" The medium is wear-levelled SPI flash. Swap files, backups, undo files and
+" viminfo would all be written continuously, and FATFS reports st_ino = 0, so
+" Vim's same-file detection for backups is blind anyway (docs/PHASE1.md).
+set noswapfile
+set nobackup nowritebackup
+set noundofile
+set viminfo=
+
+" Files arrive over SCP, SFTP, USB and the web interface. Modelines let a file
+" set options when it is opened, which is not something to trust by default.
+set nomodeline
+
+" The backtracking regexp engine. Measured on stock desktop Vim built from the
+" same source, the first file opened costs 26.5 MB under the default automatic
+" engine (compiling filetype.vim's ~1600 autocmd patterns as NFA programs) and
+" 0.6 MB under this one. On the P4 the difference is about 19 MB of the 32 MB of
+" PSRAM. It does not recurse on the C stack -- regexp_bt.c keeps its state on a
+" heap "regstack" capped by 'maxmempattern' -- and pathological patterns are cut
+" off by the regexp timeout, which the port implements (esp_shims.c, setitimer).
+set regexpengine=1
+
+" Colour. The builtin xterm termcap (term.c, builtin_xterm) has no colour
+" entries at all: an ordinary build gets them from terminfo, which this one does
+" not have (HAVE_TGETENT is off). Without this, t_Co is 0, defaults.vim never
+" turns syntax on, and highlighting would be monochrome regardless.
+"
+" Both terminals Vim talks to here do 256 colours: a host terminal over the
+" UART, and the Tab5's libvterm-based display console. Vim's term_color()
+" upgrades the plain "\e[3%dm" forms to 38;5;N / 48;5;N itself above 15.
+if &term =~# '^xterm'
+  set t_Co=256
+  let &t_AB = "\<Esc>[4%dm"
+  let &t_AF = "\<Esc>[3%dm"
+endif

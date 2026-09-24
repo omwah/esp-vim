@@ -34,6 +34,9 @@
 #include <sys/types.h>
 
 #include "esp_log.h"
+#include "esp_heap_caps.h"
+#include "esp_timer.h"
+#include <sys/time.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -53,6 +56,34 @@ static const char *TAG = "vim-shim";
                           "on this platform was taken", name);                \
         }                                                                     \
     } while (0)
+
+/* ======================================================================= */
+/*  Vim's heap: PSRAM first                                                 */
+/*                                                                          */
+/*  malloc/calloc/realloc are renamed to these by -D in the component's      */
+/*  CMakeLists, for Vim's sources only. Prefer the 32 MB of PSRAM; fall back */
+/*  to any heap rather than fail, since Vim treats NULL as out-of-memory.    */
+/* ======================================================================= */
+
+#define VIM_HEAP_CAPS (MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
+
+void *esp_vim_malloc(size_t size)
+{
+    void *p = heap_caps_malloc(size, VIM_HEAP_CAPS);
+    return p != NULL ? p : heap_caps_malloc(size, MALLOC_CAP_DEFAULT);
+}
+
+void *esp_vim_calloc(size_t n, size_t size)
+{
+    void *p = heap_caps_calloc(n, size, VIM_HEAP_CAPS);
+    return p != NULL ? p : heap_caps_calloc(n, size, MALLOC_CAP_DEFAULT);
+}
+
+void *esp_vim_realloc(void *ptr, size_t size)
+{
+    void *p = heap_caps_realloc(ptr, size, VIM_HEAP_CAPS);
+    return p != NULL ? p : heap_caps_realloc(ptr, size, MALLOC_CAP_DEFAULT);
+}
 
 /* ======================================================================= */
 /*  Userspace current working directory                                     */
@@ -408,17 +439,33 @@ pid_t waitpid(pid_t pid, int *status, int options)
  */
 typedef void (*esp_sighandler_t)(int);
 
+/*
+ * The one signal that IS delivered: SIGALRM, raised by the setitimer() below.
+ * Vim arms it around regexp matching and its handler (set_flag in os_unix.c)
+ * only sets a volatile flag both regexp engines poll -- safe to call from the
+ * esp_timer task.
+ */
+static volatile esp_sighandler_t s_alrm_handler;
+
 esp_sighandler_t signal(int signum, esp_sighandler_t handler)
 {
-    (void)signum; (void)handler;
-    return NULL;        /* NULL == previous handler was SIG_DFL */
+    if (signum == SIGALRM) {
+        esp_sighandler_t prev = s_alrm_handler;
+        s_alrm_handler = handler;
+        return prev;
+    }
+    return NULL;        /* nothing else is delivered; NULL == SIG_DFL */
 }
 
 int sigaction(int signum, const struct sigaction *act, struct sigaction *old)
 {
-    (void)signum; (void)act;
-    if (old != NULL)
+    if (old != NULL) {
         memset(old, 0, sizeof(*old));
+        if (signum == SIGALRM)
+            old->sa_handler = s_alrm_handler;
+    }
+    if (act != NULL && signum == SIGALRM)
+        s_alrm_handler = act->sa_handler;
     return 0;
 }
 
@@ -438,24 +485,56 @@ int sigpending(sigset_t *set)
 }
 
 /*
- * Vim arms an ITIMER_REAL + SIGALRM pair around regexp matching (start_timeout /
- * stop_timeout in os_unix.c, used only by regexp.c) so a pathological pattern can
- * be abandoned after 'redrawtime'. With no signal delivery the alarm can never
- * fire, so the honest behaviour is: accept the timer, never time out. A slow
- * regexp simply runs to completion.
+ * ITIMER_REAL, implemented with a one-shot esp_timer that "delivers" SIGALRM by
+ * calling the handler registered above.
  *
- * This must SUCCEED. It was first written as an ENOSYS stub, and Vim turned that
- * into "E1286: Could not set timeout" on every search -- a working editor
- * reporting an error for something that does not matter.
+ * Vim arms this around every regexp match (start_timeout/stop_timeout in
+ * os_unix.c) so a pathological pattern is abandoned after 'redrawtime' or a
+ * search() timeout. Without it the backtracking engine -- which this port uses
+ * by default, see the system vimrc -- could hang the editor on an exponential
+ * pattern. It was first a no-op; before that, an ENOSYS stub that Vim reported
+ * as "E1286: Could not set timeout" on every search.
  */
-struct itimerval;
+static esp_timer_handle_t s_itimer;
+
+static void itimer_fire(void *arg)
+{
+    (void)arg;
+    esp_sighandler_t h = s_alrm_handler;
+    if (h != NULL && h != SIG_IGN && h != SIG_DFL)
+        h(SIGALRM);
+}
+
 int setitimer(int which, const struct itimerval *new_value,
               struct itimerval *old_value)
 {
-    (void)which; (void)new_value;
+    if (which != ITIMER_REAL) {
+        errno = EINVAL;
+        return -1;
+    }
     if (old_value != NULL)
-        memset(old_value, 0, 4 * sizeof(long));   /* two struct timevals, disarmed */
-    return 0;
+        memset(old_value, 0, sizeof(*old_value));   /* remaining time not tracked */
+
+    if (s_itimer == NULL) {
+        const esp_timer_create_args_t args = {
+            .callback = itimer_fire,
+            .name = "vim-itimer",
+        };
+        if (esp_timer_create(&args, &s_itimer) != ESP_OK) {
+            errno = ENOMEM;
+            return -1;
+        }
+    }
+
+    esp_timer_stop(s_itimer);       /* fails harmlessly if not running */
+    if (new_value == NULL)
+        return 0;
+
+    uint64_t us = (uint64_t)new_value->it_value.tv_sec * 1000000u
+                + (uint64_t)new_value->it_value.tv_usec;
+    if (us == 0)
+        return 0;                   /* an all-zero it_value disarms */
+    return esp_timer_start_once(s_itimer, us) == ESP_OK ? 0 : -1;
 }
 
 /*
@@ -472,7 +551,14 @@ void __wrap_exit(int status)
     /* ESPVIM-END terminates the line so a harness using esp-emu --exit-on can
      * trigger on it: --exit-on stops the emulator the moment its string appears,
      * so triggering on "ESPVIM-EXIT" itself truncated the " rc=N" after it. */
-    printf("\nESPVIM-EXIT rc=%d ESPVIM-END\n", status);
+    /* Heap telemetry rides on the exit line so every gate run records it.
+     * int_min is the internal-RAM low-water mark: the number that went to zero
+     * before Vim's heap was moved to PSRAM (docs/PHASE4.md). */
+    printf("\nESPVIM-EXIT rc=%d int_free=%u int_min=%u psram_free=%u ESPVIM-END\n",
+           status,
+           (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+           (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL),
+           (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
     fflush(stdout);
     vTaskDelete(NULL);          /* does not return */
     for (;;)

@@ -14,6 +14,7 @@
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_vfs_fat.h"
+#include "esp_heap_caps.h"
 #include "driver/uart.h"
 #include "driver/uart_vfs.h"
 #include "freertos/FreeRTOS.h"
@@ -78,6 +79,13 @@ static void environment_init(void)
     setenv("HOME", "/fat", 1);
     setenv("TERM", "xterm", 1);      /* resolves to builtin_xterm, no termcap file */
     setenv("SHELL", "", 1);          /* no shell exists; keep Vim from guessing */
+    /*
+     * With $PATH unset, Vim's mch_can_exe() returns -1 ("cannot tell"), which Vim
+     * script treats as TRUE -- so every plugin probing executable('shellcheck')
+     * and the like concluded the tool was installed and tried to use it. A real
+     * but empty directory makes executable() answer an honest 0.
+     */
+    setenv("PATH", "/fat/bin", 1);
     setenv("VIM", "/vimrt", 1);
     setenv("VIMRUNTIME", "/vimrt", 1);
     setenv("LINES", "24", 1);
@@ -112,6 +120,10 @@ static void vim_task(void *arg)
     char *argv[] = { "vim", NULL };
 
     report_test_artifact();
+    printf("ESPVIM-HEAP int_free=%u psram_free=%u psram_total=%u\n",
+           (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+           (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+           (unsigned)heap_caps_get_total_size(MALLOC_CAP_SPIRAM));
     printf("\nESPVIM-READY\n");     /* stable marker for esp-emu --inject-on */
     int rc = vim_main(1, argv);
     printf("\nESPVIM-EXIT rc=%d ESPVIM-END\n", rc);

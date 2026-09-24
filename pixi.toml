@@ -63,7 +63,9 @@ spike-report = { cmd = 'bash -c ". scripts/env.sh >/dev/null && cd esp-vim/test/
 
 mkpatch = { cmd = "scripts/mkpatch.sh", description = "Generate a patch from edits in build-deps/<dep> (see docs/DECISIONS.md)" }
 
-vim-build = { cmd = 'bash -c ". scripts/env.sh >/dev/null && cd esp-vim && idf.py build"', description = "Build the Vim firmware" }
+runtime = { cmd = "python scripts/make-runtime-image.py", description = "Curate $VIMRUNTIME into build-deps/vimrt/ (checks it fits the partition)" }
+
+vim-build = { cmd = 'bash -c ". scripts/env.sh >/dev/null && cd esp-vim && idf.py build"', depends-on = ["runtime"], description = "Build the Vim firmware (curates the runtime first)" }
 
 vim-size = { cmd = 'bash -c ". scripts/env.sh >/dev/null && cd esp-vim && riscv32-esp-elf-size -t $(find build -path \"*__idf_vim.dir*\" -name \"*.c.obj\") | tail -1"', description = "Report the Vim component's text/data/bss" }
 

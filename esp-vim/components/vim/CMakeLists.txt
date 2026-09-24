@@ -14,6 +14,17 @@ cmake_minimum_required(VERSION 3.16)
 set(VIM_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../build-deps/vim")
 set(VIM_SRC  "${VIM_ROOT}/src")
 
+# vim.h includes "auto/config.h" with quotes, which searches vim.h's OWN
+# directory before any -I path. Running Vim's configure on the host (pixi run
+# configure-vim) writes a host config.h there, and the firmware would then be
+# built with the HOST's settings -- silently. Refuse instead.
+if(EXISTS "${VIM_SRC}/auto/config.h")
+    message(FATAL_ERROR
+        "${VIM_SRC}/auto/config.h exists: a HOST configure output would shadow "
+        "port/auto/config.h and be compiled into the firmware.\n"
+        "Run: pixi run deps   (re-extracts a clean tree)")
+endif()
+
 if(NOT EXISTS "${VIM_SRC}/main.c")
     message(FATAL_ERROR
         "Vim source not found at ${VIM_SRC}.\n"
@@ -187,6 +198,18 @@ target_compile_options(${COMPONENT_LIB} PRIVATE
     -Df_mkdir=vim_f_mkdir
     -Df_readdir=vim_f_readdir
     -Dtimer_start=vim_timer_start
+
+    # Vim's heap goes to PSRAM. Left to IDF's default policy, every allocation
+    # under CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL (16 KB) lands in internal RAM
+    # first -- which is nearly all of Vim's allocations. Sourcing the real runtime
+    # then exhausted internal RAM and ESP-IDF's own internal-only allocations
+    # failed: flash reads returned ESP_ERR_NO_MEM and newlib aborted creating a
+    # FILE lock. Renaming inside this component only keeps internal RAM for
+    # FreeRTOS, drivers and (later) networking. free() needs no rename: it
+    # releases memory from any heap.
+    -Dmalloc=esp_vim_malloc
+    -Dcalloc=esp_vim_calloc
+    -Drealloc=esp_vim_realloc
 )
 
 # ESP-IDF defines chdir(), getcwd() and system(), so the port cannot simply

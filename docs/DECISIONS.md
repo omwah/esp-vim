@@ -264,3 +264,50 @@ The rule now:
 
 Log-on-first-call is what exposed the misclassification within one run. Keep it on
 every stub in the first group.
+
+## 2026-09-24 — Vim's heap lives in PSRAM (reverses the Phase 3 plan)
+
+The plan said "heap from PSRAM, small allocations kept internal". Under ESP-IDF's
+`SPIRAM_MALLOC_ALWAYSINTERNAL=16384`, that meant nearly all of Vim's allocations went to
+internal RAM, and loading the real runtime exhausted it. ESP-IDF's internal-only
+allocations then failed (flash reads with `ESP_ERR_NO_MEM`, an `abort()` in newlib's lock
+init).
+
+Vim's `malloc`/`calloc`/`realloc` are renamed by `-D` inside the Vim component, to
+wrappers that prefer PSRAM and fall back to any heap. The change was deliberately *not*
+made globally (e.g. `ALWAYSINTERNAL=0`), because drivers and networking benefit from
+internal RAM. `free()` needs no rename. The exit line prints `int_min`, the internal-RAM
+low-water mark, on every run so a regression is visible.
+
+## 2026-09-24 — Backtracking regexp engine, with a real timeout
+
+`regexpengine=1`, set in the system vimrc. Measured on stock desktop Vim, the first file
+opened costs 26.5 MB under the automatic/NFA engine and 0.6 MB under backtracking. The
+reason originally given for NFA ("backtracking recurses on the stack") was wrong:
+`regexp_bt.c` uses a heap `regstack`.
+
+Backtracking's real risk is exponential time. That's covered by making Vim's regexp
+timeout work: `setitimer()` arms an `esp_timer`, which invokes the SIGALRM handler Vim
+registered through `sigaction()`. The gate proves a pathological search is cut off at
+300 ms.
+
+## 2026-09-24 — Filetypes are a configured subset, and filetype.vim is generated
+
+Stock `filetype.vim` has ~1600 detection rules, each compiled into a regexp program on
+first use. The device needs perhaps 30. `esp-vim/filetypes.conf` lists them, and
+`make-runtime-image.py` generates `filetype.vim` from it and ships only those types'
+syntax/ftplugin/indent files. Idle memory dropped from 1.7 MB to 0.35 MB, and startup
+no longer sources a 56 KB detector.
+
+Extensibility is preserved without reflashing through Vim's standard `ftdetect/` hook
+(`/fat/.vim/ftdetect/*.vim`). The `scripts.vim` fallback still recognises `#!` scripts.
+
+Consequence to remember: a filetype that isn't in the config gets **no** detection at
+all, not a best-effort guess. That's intentional and tested (`x.php` → no filetype).
+
+## 2026-09-24 — PATH is set to an empty directory
+
+Leaving `$PATH` unset looked harmless, since there are no programs. But Vim's
+`mch_can_exe()` returns -1 when it can't search, and Vim script treats -1 as true, so
+`executable()` claimed every tool existed. `PATH=/fat/bin` (nonexistent/empty) makes it
+answer 0. Anything that probes for an external program now gets the honest answer.

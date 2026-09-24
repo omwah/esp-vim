@@ -13,7 +13,7 @@
 | 1 — Capability spike (GO/NO-GO) | **done — GO** (2026-09-23), see [PHASE1.md](PHASE1.md) |
 | 2 — Build system + generated files | **done** (2026-09-23), see [PHASE2.md](PHASE2.md) — Vim compiles, 1.82 MB text at `-Os` |
 | 3 — OS shim layer | **done** (2026-09-23), see [PHASE3.md](PHASE3.md) — Vim runs, edits, saves; `pixi run vim-test` |
-| 4 — Storage + curated runtime | not started |
+| 4 — Storage + curated runtime | **done** (2026-09-24), see [PHASE4.md](PHASE4.md) — runtime 74% of `vimrt`, 30 filetypes, 0.47 MB PSRAM to open a file |
 | 5 — Emulator bring-up over UART | not started |
 | 6 — `:Esp*` commands, file manager, transports, web | not started |
 | 7 — MicroPython | not started |
@@ -23,8 +23,10 @@
 
 Toolchain: ESP-IDF **v5.5.5**, riscv32-esp-elf 14.2.0, emulator esp-emu 0.43.0.
 
-Measured: Vim component **1.82 MB `.text`** at `-Os` (Phase 2). Still outstanding: the
-final partition table (Phase 4), once MicroPython and git are in.
+Measured: Vim component **1.82 MB `.text`** at `-Os` (Phase 2); firmware 2.18 MB of a
+7 MB app partition; curated runtime **~2.2 MB of the 3 MB `vimrt` partition (74%)**;
+Vim uses **0.35 MB** of PSRAM idle and **0.47 MB** after opening a file (Phase 4). The
+partition table stays provisional until MicroPython and git are in (Phases 7–8).
 
 **Phase 1 changed the plan** — see [PHASE1.md](PHASE1.md). In short: the `isatty(0)` gate
 passed, but ESP-IDF has **no working directory** (`chdir` is `ENOSYS`, `getcwd` always
@@ -343,7 +345,7 @@ vim-tiny-p4/
     env.sh                        # source: enters pixi + ESP-IDF in one step
     prepare-deps.sh               # verify sha256, extract to build-deps/, apply patches
     add-dep.sh                    # the ONLY networked script: onboard a new upstream archive
-    make-runtime-image.sh         # curate $VIMRUNTIME -> vimrt.img
+    make-runtime-image.py         # curate $VIMRUNTIME -> build-deps/vimrt/, generate filetype.vim
     merge-image.sh                # esptool merge-bin incl. vimrt + data
     run-emu.sh                    # esp-emu wrappers, incl. the two-process hosted fixture
   build-deps/                     # .gitignore'd: extracted + patched upstream
@@ -387,7 +389,7 @@ vim-tiny-p4/
 
 Note `runtime-image/` holds only files we author. netrw and the curated `syntax/`,
 `colors/`, `autoload/` and `spellfile.vim` are copied out of `build-deps/vim/runtime/` by
-`make-runtime-image.sh` — committing them would be checking in third-party source under
+`make-runtime-image.py`: committing them would be checking in third-party source under
 another name.
 
 `-Dmain=vim_main` renames Vim's entry point; no patch needed for that.
@@ -511,10 +513,15 @@ deliberately.
 encoding=utf-8 nomodeline`. FATFS reports `st_ino`/`st_dev` as 0, so Vim's same-file
 detection degrades — another reason backup-by-rename stays off.
 
-**Memory and stack.** Heap from PSRAM (`CONFIG_SPIRAM_USE_MALLOC`, small allocations kept
-internal). Vim's old regexp engine and `eval` recurse: give the Vim task **48–64 KB** of
-stack as a per-target Kconfig value (higher on S3 for the windowed ABI), default `re=2`
-(NFA engine), and cap `'maxmem'`/`'maxmemtot'` well under PSRAM.
+**Memory and stack.** *(Amended in Phase 4. The original plan said "small allocations kept
+internal" and "default `re=2` (NFA engine)". Both were wrong; see
+[PHASE4.md](PHASE4.md).)* **All of Vim's heap goes to PSRAM**. Under IDF's default
+policy, Vim's thousands of small allocations exhausted internal RAM and starved ESP-IDF
+itself. The **backtracking regexp engine (`re=1`)** is used, not NFA. It keeps its state
+on a heap `regstack` rather than the C stack, and NFA cost ~20 MB just to open a file.
+The regexp timeout is implemented for real (`esp_timer` → SIGALRM) so pathological
+patterns are cut off. Give the Vim task **48–64 KB** of stack as a per-target Kconfig
+value (higher on S3 for the windowed ABI).
 
 ---
 
@@ -550,8 +557,10 @@ that was already spent.
 
 **Curated runtime image**, built by a script from `build-deps/vim/runtime/`:
 
-- `defaults.vim`, `filetype.vim`, `syntax/synload.vim`, `syntax/syntax.vim`
-- ~20 chosen `syntax/*.vim` (`c`, `python`, `sh`, `vim`, `make`, `json`, `markdown`, …)
+- `defaults.vim`, `syntax/synload.vim`, `syntax/syntax.vim`
+- **a generated `filetype.vim`** covering only the filetypes in `esp-vim/filetypes.conf`
+  (30 as shipped), instead of stock Vim's ~1600 rules. The same file selects which
+  `syntax/`, `ftplugin/` and `indent/` files ship.
 - `colors/` (a few), and only the `autoload/` that `synload` pulls
 - `autoload/spellfile.vim` + `plugin/spellfile.vim` (**203 lines total** — the downloader)
 - `pack/dist/opt/netrw/` (628 KB, transports rerouted — Phase 6) **and the top-level

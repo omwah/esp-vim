@@ -7,6 +7,7 @@ Porting [Vim](https://github.com/vim/vim) to the ESP32-P4, targeting the
 - **[docs/PHASE1.md](docs/PHASE1.md)**: capability spike results (verdict: **GO**)
 - **[docs/PHASE2.md](docs/PHASE2.md)**: Vim compiles for the P4 (1.82 MB text at `-Os`)
 - **[docs/PHASE3.md](docs/PHASE3.md)**: Vim runs, edits and saves in the emulator
+- **[docs/PHASE4.md](docs/PHASE4.md)**: curated runtime, generated filetype detection, memory
 - **[docs/DECISIONS.md](docs/DECISIONS.md)** — why things are the way they are
 
 ## Getting set up
@@ -52,7 +53,8 @@ someone's shell history. `pixi task list` shows them all.
 | `pixi run spike-build` | Build the spike only |
 | `pixi run spike-report` | Re-record spike output into `docs/phase1-spike-results.txt` |
 | `pixi run configure-vim` | Run Vim's `configure` on the host to emit a baseline `auto/config.h` |
-| `pixi run vim-build` | Build the Vim firmware (`esp-vim/`) |
+| `pixi run runtime` | Curate `$VIMRUNTIME` into `build-deps/vimrt/` and generate `filetype.vim` (checks it fits the partition) |
+| `pixi run vim-build` | Build the Vim firmware (`esp-vim/`); runs `runtime` first |
 | `pixi run vim-test` | **The regression gate.** Builds, then runs the edit and working-directory round trips across a reboot in the emulator |
 | `pixi run vim-size` | Report the Vim component's text/data/bss |
 | `pixi run mkpatch <dep> <name>` | Turn edits in `build-deps/<dep>` into a new patch (see *Patch authoring*) |
@@ -75,6 +77,14 @@ pixi run emu-tty                                               # terminal 2
 
 `emu-tty` uses `socat`, not `nc` — `nc` cannot put the terminal in raw mode, so arrow
 keys arrive as literal escape sequences and echo doubles. Detach with `Ctrl-]`.
+
+## Choosing which filetypes the device supports
+
+Edit **`esp-vim/filetypes.conf`**: one line per filetype, followed by its file patterns.
+It generates the device's `filetype.vim` and decides which syntax, ftplugin and indent
+files are shipped. Then run `pixi run vim-build`. Types not listed there aren't detected
+at all. To add one on a running device without reflashing, use a standard Vim
+`ftdetect/` script in `/fat/.vim/ftdetect/`.
 
 ## Why the host tools are pinned
 
