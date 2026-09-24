@@ -161,3 +161,24 @@ around this by creating IDF's venv with a third-party tool; pinning a Python tha
 Consequence: ESP-IDF's venv is built against pixi's Python, so **pixi must be active
 before `export.sh`**. `scripts/env.sh` does both in order, and every pixi task that
 touches the cross toolchain sources it.
+
+## 2026-09-23 — The spike is kept as a regression test
+
+`esp-vim/test/spike/` outlived Phase 1 deliberately. Its findings are not documentation —
+they are the assumptions the entire shim layer is built on ("chdir is ENOSYS", "signal is
+absent", "termios is partial", "st_ino is 0"), and those can change underneath us.
+
+Re-run it at exactly two points:
+
+1. **On real Tab5 silicon (Phase 9).** Every Phase 1 answer came from an emulator. Diff
+   the output against `docs/phase1-spike-results.txt`.
+2. **On any ESP-IDF version change.** IDF 6.x already flipped the VFS TERMIOS default. The
+   case worth catching is the inverse: if IDF gains a real `chdir`, the userspace CWD shim
+   should be *deleted*, not carried forever.
+
+It is **not** a per-board test. An ESP32-S3 run would answer nearly identically, because
+the POSIX surface comes from newlib + VFS and is chip-independent; what differs between P4
+and S3 is ISA, PSRAM ceiling and peripherals, none of which the spike probes.
+
+If a future maintainer finds neither trigger has fired in a long time, deleting it is a
+reasonable call — but delete it consciously, not by letting it rot.

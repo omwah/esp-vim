@@ -1038,6 +1038,7 @@ changes for this phase** — which is the point of doing it this way.
 | Phase 8 | Stage 2: push to a bare repo on the host over both HTTPS and SSH; host-side `git log` shows the commits |
 | Phase 8 | Stage 3: clone and verify checked-out blobs byte-for-byte. **Both delta forms must be exercised deliberately** — real servers send `ofs-delta` almost exclusively once the client advertises it, so `ref-delta` is only reached by omitting that capability from our advertisement (or by constructing such a packfile by hand). Test both paths explicitly or the gate silently covers one |
 | Phase 8 | `:EspGitGc` packs loose objects; repo still passes host-side `git fsck` afterwards |
+| Phase 9 | **Re-run the Phase 1 spike on real silicon** (`pixi run spike-build` + flash) and diff against `docs/phase1-spike-results.txt` — the emulator's answers are assumptions until confirmed on a real UART and real flash |
 | Phase 9 | Scripted round trip on Tab5 over real UART; heap, redraw timing and C6 latency recorded |
 | Phase 9 | **Transports re-tested over the production path** — SCP, SFTP, git push and the web manager over the C6 link on real hardware, not EMAC, including the co-processor-unresponsive error path |
 | Phase 9 | `:EspUsbMsc on` with a host PC — `/fat` mounts as a drive, refuses while a buffer is modified or the web server runs, and the volume is intact after remount (the concurrency hazard is the thing being tested) |
