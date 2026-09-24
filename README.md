@@ -10,7 +10,7 @@ for writing, scripting and tinkering with hardware.
 - **Real Vim 9.2**: windows, buffers, registers, macros, Vim script, `:vimgrep`, diff,
   syntax highlighting and indenting for 30 file types, spell checking
 - **Its own screen and keyboard**: runs on the Tab5's display with its keyboard, USB
-  keyboards and touch, or on any serial terminal
+  and Bluetooth (BLE) keyboards, and touch, or on any serial terminal
 - **Files everywhere**: flash, SD card, and remote machines over SCP and SFTP, in
   **`:EspFiles`**, a two-pane file manager in the style of Midnight Commander
 - **File transfer**: SCP, SFTP, HTTP(S) downloads, and USB-C mass storage
@@ -36,8 +36,9 @@ terminal emulator that runs on the chip. On any board it can also draw on a **se
 terminal**: the chip's console UART carries Vim's screen, and a terminal program on
 your computer displays it, like logging in to a remote machine.
 
-**Typing.** On the Tab5, use its clip-on keyboard, a USB keyboard, or touch (tap to
-move the cursor, drag to scroll). The Tab5 keyboard has no F-keys, so its `Sym` layer
+**Typing.** On the Tab5, use its clip-on keyboard, a USB keyboard, a Bluetooth keyboard
+paired with `:EspBtKeyboard` (BLE keyboards only: neither chip has Bluetooth Classic), or
+touch (tap to move the cursor, drag to scroll). The Tab5 keyboard has no F-keys, so its `Sym` layer
 provides F1–F12, and every function-key command also has a letter. Over serial, keys
 typed in your terminal go down the line to Vim, mouse included. Everything works as in
 desktop Vim, including arrows, Backspace and CTRL-C.

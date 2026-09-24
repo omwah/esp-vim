@@ -20,6 +20,7 @@
 | 8 — Git | not started. **Being reconsidered:** libgit2 instead of pure Python; test build scheduled after Phase 6 (see Phase 8) |
 | 9 — Tab5 hardware over UART | not started |
 | 10 — Tab5 display console | not started |
+| 11 — Bluetooth keyboards (late-stage goal) | not started; BLE (HOGP) only, see Phase 11 |
 
 Toolchain: ESP-IDF **v5.5.5**, riscv32-esp-elf 14.2.0, emulator esp-emu 0.43.0.
 
@@ -642,7 +643,7 @@ for one:
 | 6c | networking in the emulator (EMAC + `--net user`), `esp_http_get`, spell download | next |
 | 6d | libssh2: SCP/SFTP builtins, netrw transports, remote panes | |
 | 6e | web file manager, settings, live status | |
-| 6f | radio via esp-hosted/C6 (`:EspWifi*`, `:EspBle*`), `:EspSerial`, `:EspI2cScan`, `:EspAdc`, `:EspSensors` | |
+| 6f | radio via esp-hosted/C6 (`:EspWifi*`, `:EspBle*`), `:EspSerial`, `:EspI2cScan`, `:EspAdc`, `:EspSensors`. Also establish, for Phase 11: can esp-hosted carry a BLE **HID host** (NimBLE on the P4, controller on the C6), and what does `esp-emu --ble-hci` bridge to? | |
 | — | `:EspUsbMsc` | hardware only, Phase 9 |
 | 6z | **libgit2 feasibility build** (see Phase 8): decides how Phase 8 is built | after 6f, before Phase 7 |
 
@@ -1056,6 +1057,78 @@ changes for this phase** — which is the point of doing it this way.
 - **Console selection:** a Kconfig choice (UART / DSI / both mirrored) so the emulator path
   keeps working unchanged. Mirroring both is very useful when debugging the display.
 
+## Phase 11 — Bluetooth keyboards (late-stage goal)
+
+Pair a Bluetooth keyboard and type into Vim, on the Tab5 or any board, with the keyboard
+reconnecting by itself after a reboot.
+
+**BLE keyboards only, and this has to be said everywhere.** Neither target has Bluetooth
+Classic: the Tab5's radio is its ESP32-C6, which is BLE-only, and so is the ESP32-S3.
+Supported keyboards are those speaking **HID over GATT (HOGP)**. Most current keyboards do,
+often alongside Classic. Older Classic-only keyboards can't be supported on this
+hardware.
+
+**Depends on:** Phase 6f (BLE through esp-hosted on the P4, native on the S3) and Phase
+10's input layer (`components/esp_kbd`). It doesn't depend on the display, so it also works
+on UART-console builds, e.g. an S3 dev board with a BLE keyboard.
+
+### Stack
+
+- **Host stack NimBLE on the P4, controller on the C6**, with HCI carried over the
+  esp-hosted link. Whether esp-hosted-mcu supports that split for a HID host (not just
+  scanning) is **the first thing to verify**, and belongs in Phase 6f's BLE bring-up. On
+  the S3, NimBLE and the controller are both native.
+- **ESP-IDF's `esp_hidh`** (HID host) does GATT discovery and report-map parsing, with
+  boot-protocol keyboards as the fallback.
+- Flash cost of NimBLE plus `esp_hidh`: **to be measured** against the app partition,
+  alongside MicroPython and (if Phase 8 goes that way) libgit2.
+
+### Input path
+
+HID reports become the **same normalised key events** as USB HID and the Tab5 keyboard
+(Phase 10), and join the single input queue feeding Vim's one input fd. The keymap, the
+F-key handling and the file manager's bindings stay written once. Specific to Bluetooth:
+
+- **Auto-repeat is ours.** A HID keyboard reports key state, not repeats, so the input
+  layer generates repeat, as for USB HID.
+- **Layouts:** HID usage codes are positions, not characters. The layout table (US by
+  default, selectable) is shared with USB HID, not duplicated.
+- **Latency:** request a short connection interval (7.5–15 ms) for typing. On the Tab5,
+  WiFi and BLE share the C6's single radio, so **measure keystroke latency during a
+  WiFi transfer** and tune coexistence if it's noticeable.
+- **Battery level** from the keyboard's Battery Service, shown by `:EspBtKeyboard` and
+  available to the status line.
+
+### Commands
+
+| Command | Does |
+|---|---|
+| `:EspBtKeyboard scan` | list advertising BLE keyboards (HID appearance) in a view |
+| `:EspBtKeyboard pair {n}` | pair and bond with entry {n}; shows a passkey to type on the keyboard if it asks |
+| `:EspBtKeyboard` | status: bonded keyboards, which is connected, battery, latency |
+| `:EspBtKeyboard forget [{n}]` | remove a bond (all, with no argument) |
+
+Bonds are stored in NVS by the BT stack. On boot, bonded keyboards reconnect when you
+press a key; nothing scans unless asked, to save power on battery.
+
+### Threading and security
+
+- NimBLE callbacks run on the BT host task. As with the web server (Phase 6), they
+  **never touch Vim**. Key events go into the input queue, which is already
+  multi-producer. Pairing prompts, passkeys and connect/disconnect notices go on a queue
+  the **Vim task** drains, a fourth entry in Phase 6's short list of shared objects.
+- **A keyboard is a keystroke injector** into an editor that writes files and runs
+  MicroPython. Input is accepted **only from bonded devices**, bonding needs an explicit
+  `:EspBtKeyboard pair` with passkey or numeric comparison where the keyboard supports
+  it, and "Just Works" pairing is refused unless the user confirms it.
+
+### Testing
+
+`esp-emu` has a `--ble-hci` option. **Find out in Phase 6f what it bridges.** If it can
+reach the host's BlueZ adapter, a real keyboard (or a software HOGP peripheral on the
+host) can drive the emulated device, and pairing, typing, reconnection and forgetting
+become part of the gate. If not, this phase is tested on hardware only.
+
 ---
 
 ## Verification
@@ -1087,6 +1160,7 @@ changes for this phase** — which is the point of doing it this way.
 | Phase 9 | `:EspUsbMsc on` with a host PC — `/fat` mounts as a drive, refuses while a buffer is modified or the web server runs, and the volume is intact after remount (the concurrency hazard is the thing being tested) |
 | Phase 10 | USB keyboard drives an interactive session on the panel with no UART attached; F-keys reach the file manager |
 | Phase 10 | Tab5 keyboard: `Esc` reaches Vim, `Ctrl-W`/`Ctrl-R`/`Ctrl-[` work, `Sym`+digit produces F-keys, and the file manager is fully drivable from it |
+| Phase 11 | Pair a BLE keyboard (passkey), type into Vim with no other input attached, reboot and confirm it reconnects on a keypress, `:EspBtKeyboard forget` stops its input; an unbonded device's input is refused; keystroke latency measured with and without a WiFi transfer (Tab5) |
 
 The Phase 5 scripted round trip is the regression test for everything after it, and the
 thing to re-run after each upstream Vim re-sync.
@@ -1121,3 +1195,5 @@ plan that quietly diverges from the build is worse than no plan.
 - FATFS `st_ino`/`st_dev` are 0, so same-file detection is weaker than on Unix.
 - `:make` cannot run; `:vimgrep` is the working half of quickfix.
 - On P4, every WiFi/BLE command depends on the C6 co-processor being alive.
+- Bluetooth keyboards must support **BLE** (HID over GATT). Neither chip has Bluetooth
+  Classic, so Classic-only keyboards can't pair.
