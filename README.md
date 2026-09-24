@@ -1,4 +1,4 @@
-# vim-tiny-p4
+# esp-vim
 
 Porting [Vim](https://github.com/vim/vim) to the ESP32-P4, targeting the
 [M5Stack Tab5](https://docs.m5stack.com/en/core/Tab5).
@@ -14,7 +14,7 @@ Porting [Vim](https://github.com/vim/vim) to the ESP32-P4, targeting the
 ## Getting set up
 
 ```sh
-git clone <this repo> && cd vim-tiny-p4
+git clone https://github.com/omwah/esp-vim.git && cd esp-vim
 git lfs pull              # fetch the vendored upstream archives
 pixi install              # host toolchain (ncurses, socat, openssh, python)
 pixi run deps             # verify, extract and patch upstream into build-deps/

@@ -322,7 +322,7 @@ Upstream source is never committed and never edited in place — it is an archiv
 patch series, which is also what makes re-syncing to a newer Vim a tractable operation.
 
 ```
-vim-tiny-p4/
+esp-vim/
   .gitattributes                  # LFS: third_party/**/*.tar.gz etc.
   docs/
     PLAN.md                       # this document, kept current

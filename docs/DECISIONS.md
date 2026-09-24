@@ -65,7 +65,7 @@ surface.
 
 ## 2026-09-23 — FEAT_NORMAL, not FEAT_TINY
 
-The directory is named `vim-tiny-p4`, but `+small`/`+big` no longer exist upstream
+The project was first named `vim-tiny-p4`, but `+small`/`+big` no longer exist upstream
 (`feature.h:44-59` aliases them to `TINY`/`NORMAL`) and 16 MB flash / 32 MB PSRAM means
 size is not the binding constraint. `FEAT_TINY` has no `+eval` at all — no `defaults.vim`,
 no syntax, no scripting — and upstream issue #18393 suggests it is a lightly exercised

@@ -1,4 +1,4 @@
-# Host-side toolchain for the vim-tiny-p4 build.
+# Host-side toolchain for the esp-vim build.
 #
 # This pins the tools the BUILD HOST needs -- not the firmware's dependencies,
 # which are vendored in third_party/ (see docs/PLAN.md Phase 0). Using pixi keeps
@@ -17,7 +17,7 @@ authors = ["James McDuffie"]
 license = "Apache-2.0"
 license-file = "LICENSE"
 channels = ["conda-forge"]
-name = "vim-tiny-p4"
+name = "esp-vim"
 platforms = ["linux-64"]
 version = "0.1.0"
 
