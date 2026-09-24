@@ -269,12 +269,18 @@ installed on this machine; the directory is **not yet a repository**.
      working tree** so it cannot be edited by accident.
    - `tools/esp-emu-0.43.0-x86_64-unknown-linux-gnu.tar.gz` is already the upstream archive
      and moves to `third_party/` as-is, keeping the verified `SHA256SUMS`.
-3. **The LFS archive is the source of truth — a fresh clone needs zero network beyond
+3. **Host toolchain is pinned in `pixi.toml`** — ncurses (Vim's `configure` will not
+   finish without a terminal library, even though the ESP build undefines
+   `HAVE_TGETENT`), socat (raw-mode terminal for the emulator UART; `nc` cannot do it),
+   openssh (local `sshd` for Phase 8 push tests), and python 3.13 (ESP-IDF's venv
+   bootstrap needs `ensurepip`, which the system Python lacks). `scripts/env.sh` enters
+   pixi + ESP-IDF in one step; `pixi task list` is the task index. No root required.
+4. **The LFS archive is the source of truth — a fresh clone needs zero network beyond
    `git lfs pull`.** There is deliberately no fetch-at-build-time step: LFS holds the
    archive, and `scripts/prepare-deps.sh` extracts it into a git-ignored `build-deps/` and
    applies our patch series in order. It must be **idempotent**: re-extract clean rather
    than patch an already-patched tree. Nothing in `build-deps/` is ever committed.
-4. `third_party/manifest.txt` records name, version, upstream URL and sha256 — and its
+5. `third_party/manifest.txt` records name, version, upstream URL and sha256 — and its
    hash **attests the committed LFS blob, not upstream**. That distinction is deliberate:
    a tarball we generate with `git archive` depends on our local git and gzip, and GitHub's
    auto-generated tag tarballs are not byte-stable over time, so neither can be checked
@@ -282,7 +288,7 @@ installed on this machine; the directory is **not yet a repository**.
    what we vendored. `scripts/add-dep.sh` is the only thing that touches the network — used
    when onboarding a *new* upstream archive, it downloads, records the hash, and stages the
    file into LFS.
-5. **Patch authoring workflow** — write this into `docs/DECISIONS.md`, because Phase 2
+6. **Patch authoring workflow** — write this into `docs/DECISIONS.md`, because Phase 2
    opens by producing four patches and nobody hand-writes a `.patch`:
    `prepare-deps.sh` to get a clean `build-deps/vim/` → `git init && git add -A && git
    commit` a throwaway repo *inside the extracted tree* → edit → `git diff >
@@ -291,13 +297,13 @@ installed on this machine; the directory is **not yet a repository**.
    the shallow clone — context lines can differ. `prepare-deps.sh` applies them with
    `git apply --whitespace=nowarn` (falling back to `patch -p1`), and stops on first
    failure rather than continuing with a half-patched tree.
-6. `docs/PLAN.md` — this document becomes **the canonical living plan**; any earlier
+7. `docs/PLAN.md` — this document becomes **the canonical living plan**; any earlier
    draft outside the repository is abandoned at that point so there is only ever one. Keep it
    current as work lands: check off phases, replace provisional numbers with measured ones
    (the `size-components` output, the final partition table), and amend decisions in place
    when reality disagrees. `docs/DECISIONS.md` carries the reasoning so the plan stays
    readable.
-7. Initial commit, `main` branch.
+8. Initial commit, `main` branch.
 
 **Which dependencies get the archive+patch treatment:** everything we build from source or
 patch — Vim and MicroPython certainly. ESP-IDF **managed components** (`libssh2_esp`, the
@@ -332,7 +338,9 @@ vim-tiny-p4/
       0004-netrw-native-transports.patch
     micropython/
       0001-idf-assert-func-clash.patch
+  pixi.toml                       # pinned host toolchain + task index
   scripts/
+    env.sh                        # source: enters pixi + ESP-IDF in one step
     prepare-deps.sh               # verify sha256, extract to build-deps/, apply patches
     add-dep.sh                    # the ONLY networked script: onboard a new upstream archive
     make-runtime-image.sh         # curate $VIMRUNTIME -> vimrt.img

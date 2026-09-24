@@ -1,0 +1,75 @@
+# Host-side toolchain for the vim-tiny-p4 build.
+#
+# This pins the tools the BUILD HOST needs -- not the firmware's dependencies,
+# which are vendored in third_party/ (see docs/PLAN.md Phase 0). Using pixi keeps
+# them reproducible across clones and avoids needing root, which apt would.
+#
+#   pixi install          # materialise .pixi/envs/default
+#   pixi shell            # enter it, then: . ~/esp/esp-idf/export.sh
+#   scripts/env.sh        # does both in one step
+#
+# ESP-IDF itself is NOT pinned here: it is a large SDK installed out-of-tree at
+# ~/esp/esp-idf (v5.5.5), with its own toolchain installer. docs/PLAN.md records
+# the version.
+
+[workspace]
+authors = ["James McDuffie"]
+channels = ["conda-forge"]
+name = "vim-tiny-p4"
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[dependencies]
+# Vim's ./configure hard-fails without a terminal library, even though the ESP
+# build deliberately runs with HAVE_TGETENT undefined and uses builtin termcaps.
+# We only need configure to COMPLETE so it emits a config.h to curate.
+ncurses = ">=6.6"
+
+# Phase 5: interactive Vim over the emulator's UART needs a raw-mode client.
+# `nc` cannot do raw mode -- it produces doubled echo and literal escapes.
+socat = ">=1.8"
+
+# Phase 8: a local sshd + bare repo to test git push over SSH, and SCP/SFTP.
+openssh = ">=10"
+
+# ESP-IDF's installer builds its own venv with `python -m venv`, which needs
+# ensurepip. The system python3.14 has no ensurepip and no python3.14-venv
+# package installed, so IDF's bootstrap fails against it. Pinning a Python here
+# gives IDF one that works, with no root and no third-party venv tooling.
+python = "3.13.*"
+
+# Tasks are the documented way to run everything -- they keep the incantations in
+# one place instead of in someone's shell history. Anything touching the cross
+# toolchain sources scripts/env.sh first, because pixi alone does not put idf.py
+# on PATH.
+#
+#   pixi task list        # see them all
+#   pixi run <task>       # run one
+#   pixi run emu <dir> -- --gdb 1234     # extra args pass through
+[tasks]
+
+deps = { cmd = "scripts/prepare-deps.sh", description = "Verify, extract and patch vendored upstream into build-deps/" }
+
+add-dep = { cmd = "scripts/add-dep.sh", description = "Onboard a new third-party archive into LFS (the only networked script)" }
+
+env-check = { cmd = 'bash -c ". scripts/env.sh"', description = "Show the active python / ESP-IDF / cross-compiler versions" }
+
+# Phase 1
+spike-build = { cmd = 'bash -c ". scripts/env.sh >/dev/null && cd esp-vim/test/spike && idf.py build"', description = "Build the Phase 1 capability spike" }
+
+spike = { cmd = 'bash -c ". scripts/env.sh >/dev/null && cd esp-vim/test/spike && ../../../scripts/run-emu.sh . --exit-on SPIKE-DONE --timeout 60s"', depends-on = ["spike-build"], description = "Build and run the Phase 1 spike under esp-emu (the GO/NO-GO gate)" }
+
+spike-report = { cmd = 'bash -c ". scripts/env.sh >/dev/null && cd esp-vim/test/spike && ../../../scripts/run-emu.sh . --exit-on SPIKE-DONE --timeout 60s | sed -n \"/SPIKE-BEGIN/,/SPIKE-DONE/p\" > ../../../docs/phase1-spike-results.txt && echo wrote docs/phase1-spike-results.txt"', depends-on = ["spike-build"], description = "Re-record the spike results into docs/" }
+
+# Phase 2: generate a baseline config.h on the HOST, to be curated by hand.
+# Needs pixi's ncurses: Vim's configure refuses to finish without a terminal
+# library, even though the ESP build undefines HAVE_TGETENT and uses the
+# builtin termcaps.
+configure-vim = { cmd = 'bash -c "cd build-deps/vim/src && CPPFLAGS=-I$CONDA_PREFIX/include LDFLAGS=-L$CONDA_PREFIX/lib ./configure --with-features=normal --enable-gui=no --without-x --disable-gpm --disable-sysmouse --disable-netbeans --disable-channel --disable-nls --disable-selinux --disable-canberra --disable-libsodium --disable-acl --disable-xsmp --disable-gtktest && echo && echo generated: build-deps/vim/src/auto/config.h"', description = "Run Vim's configure on the host to emit a baseline auto/config.h" }
+
+# Generic emulator runner: pixi run emu <project-dir> -- <extra esp-emu args>
+emu = { cmd = 'bash -c ". scripts/env.sh >/dev/null && scripts/run-emu.sh \"$@\"" --', description = "Run a built project under esp-emu (merges the flash image first)" }
+
+# Interactive session over the emulator UART. socat, not nc: nc cannot do raw
+# mode, so arrows arrive as literal escapes. Detach with Ctrl-] .
+emu-tty = { cmd = 'socat -,raw,echo=0,escape=0x1d TCP:127.0.0.1:5555', description = "Attach a raw terminal to an emulator started with --uart-tcp 127.0.0.1:5555" }

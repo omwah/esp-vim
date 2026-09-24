@@ -3,9 +3,8 @@
 Porting [Vim](https://github.com/vim/vim) to the ESP32-P4, targeting the
 [M5Stack Tab5](https://docs.m5stack.com/en/core/Tab5).
 
-The plan, its current status, and the reasoning behind it:
-
-- **[docs/PLAN.md](docs/PLAN.md)** — the living plan, phase by phase
+- **[docs/PLAN.md](docs/PLAN.md)** — the living plan, phase by phase, with status
+- **[docs/PHASE1.md](docs/PHASE1.md)** — capability spike results (verdict: **GO**)
 - **[docs/DECISIONS.md](docs/DECISIONS.md)** — why things are the way they are
 
 ## Getting set up
@@ -13,11 +12,78 @@ The plan, its current status, and the reasoning behind it:
 ```sh
 git clone <this repo> && cd vim-tiny-p4
 git lfs pull              # fetch the vendored upstream archives
-scripts/prepare-deps.sh   # verify, extract and patch into build-deps/
+pixi install              # host toolchain (ncurses, socat, openssh, python)
+pixi run deps             # verify, extract and patch upstream into build-deps/
 ```
 
-`prepare-deps.sh` uses **no network** — everything it needs is in `third_party/` as Git LFS
-blobs. It is idempotent: re-running resets `build-deps/` from the archives.
+Then install ESP-IDF **v5.5.5** out-of-tree, from inside the pixi environment so
+IDF builds its venv against pixi's Python:
+
+```sh
+git clone -b v5.5.5 --depth 1 --recurse-submodules --shallow-submodules \
+    https://github.com/espressif/esp-idf.git ~/esp/esp-idf
+pixi run -- bash -c 'cd ~/esp/esp-idf && ./install.sh esp32p4'
+pixi run -- bash -c 'cd ~/esp/esp-idf && \
+    python tools/idf_tools.py install cmake ninja'   # not installed by default on Linux
+```
+
+Check it took:
+
+```sh
+pixi run env-check
+#   env: python 3.13.15
+#        idf     ESP-IDF v5.5.5
+#        target  14.2.0 (riscv32-esp-elf)
+```
+
+## Tasks
+
+Everything runs through pixi, so the incantations live in the repo rather than in
+someone's shell history. `pixi task list` shows them all.
+
+| Task | What |
+|---|---|
+| `pixi run deps` | Verify, extract and patch vendored upstream into `build-deps/` |
+| `pixi run add-dep` | Onboard a new third-party archive into LFS — the only networked script |
+| `pixi run env-check` | Print the active python / ESP-IDF / cross-compiler versions |
+| `pixi run spike` | Build and run the Phase 1 capability spike under the emulator |
+| `pixi run spike-build` | Build the spike only |
+| `pixi run spike-report` | Re-record spike output into `docs/phase1-spike-results.txt` |
+| `pixi run configure-vim` | Run Vim's `configure` on the host to emit a baseline `auto/config.h` |
+| `pixi run emu <dir>` | Run any built project under `esp-emu` (merges the flash image first) |
+| `pixi run emu-tty` | Attach a raw terminal to an emulator started with `--uart-tcp 127.0.0.1:5555` |
+
+Extra arguments pass through after `--`:
+
+```sh
+pixi run emu esp-vim/test/spike -- --gdb 1234 --gdb-halt
+```
+
+For an interactive session, start the emulator with a TCP UART in one terminal and
+attach from another:
+
+```sh
+pixi run emu esp-vim/test/spike -- --uart-tcp 127.0.0.1:5555   # terminal 1
+pixi run emu-tty                                               # terminal 2
+```
+
+`emu-tty` uses `socat`, not `nc` — `nc` cannot put the terminal in raw mode, so arrow
+keys arrive as literal escape sequences and echo doubles. Detach with `Ctrl-]`.
+
+## Why the host tools are pinned
+
+`pixi.toml` pins four host tools, each for a specific reason:
+
+- **ncurses** — Vim's `./configure` refuses to finish without a terminal library, even
+  though the ESP build deliberately runs with `HAVE_TGETENT` undefined and uses Vim's
+  builtin termcaps. We only need configure to *complete* so it emits a `config.h` to
+  curate.
+- **socat** — raw-mode terminal for interactive sessions over the emulated UART.
+- **openssh** — a local `sshd` and bare repo to test SCP/SFTP and `git push` (Phase 8).
+- **python 3.13** — ESP-IDF builds its own venv with `python -m venv`, which needs
+  `ensurepip`. The system Python has none, so IDF's bootstrap fails against it.
+
+Pinning them here keeps a fresh clone reproducible and needs no root, which `apt` would.
 
 ## How third-party source is handled
 
@@ -30,18 +96,15 @@ changes to upstream explicit, and makes re-syncing to a newer Vim a bounded job.
 attests the blob *we vendored*, not an upstream-published digest — see the manifest header
 for why that distinction is necessary.
 
-To add a dependency: `scripts/add-dep.sh --name NAME --version V --url URL`. It is the only
-script that touches the network.
-
 To change upstream source: see *Patch authoring* in [docs/DECISIONS.md](docs/DECISIONS.md).
 
 ## Layout
 
 | Path | What |
 |---|---|
-| `docs/` | plan and decisions |
+| `docs/` | plan, phase results, decisions |
 | `third_party/` | LFS archives + manifest. No source files. |
 | `patches/<dep>/` | our changes to upstream, applied in lexical order |
-| `scripts/` | dependency prep, image build, emulator harness |
-| `esp-vim/` | the ESP-IDF project |
+| `scripts/` | dependency prep, environment, emulator harness |
+| `esp-vim/` | the ESP-IDF project (`test/spike/` is Phase 1) |
 | `build-deps/` | extracted + patched upstream (git-ignored) |

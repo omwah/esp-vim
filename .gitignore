@@ -20,3 +20,6 @@ managed_components/
 *.swo
 *~
 .DS_Store
+# pixi environments
+.pixi/*
+!.pixi/config.toml

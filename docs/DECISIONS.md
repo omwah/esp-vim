@@ -141,3 +141,23 @@ sourcing.
 So `mch_expand_wildcards()` can safely return `FAIL` and everything routes to Vim's
 internal matcher. Cost: no brace or backtick expansion. Accepted — there is no shell to
 expand them with anyway.
+
+## 2026-09-23 — Host tools via pixi, not apt
+
+Phase 2 needs ncurses headers (Vim's `configure` refuses to finish without a terminal
+library, even though the ESP build undefines `HAVE_TGETENT`), Phase 5 needs `socat`, and
+Phase 8 needs a local `sshd`. None were installed.
+
+Chose pixi over `apt` for three reasons: no root, versions pinned so a fresh clone gets
+the same host toolchain, and it is the tool already in use here. All three are on
+conda-forge.
+
+Pinning **python 3.13** in the same environment solved a separate problem. The system
+Python is 3.14 with no `ensurepip` and no `python3.14-venv` package, so ESP-IDF's
+installer — which runs `python -m venv` — could not bootstrap. The first attempt worked
+around this by creating IDF's venv with a third-party tool; pinning a Python that has
+`ensurepip` removes the workaround entirely and lets IDF bootstrap itself the normal way.
+
+Consequence: ESP-IDF's venv is built against pixi's Python, so **pixi must be active
+before `export.sh`**. `scripts/env.sh` does both in order, and every pixi task that
+touches the cross toolchain sources it.

@@ -1,7 +1,7 @@
 # Phase 1 — Capability spike results
 
 **Verdict: GO.** `isatty(0)` is true, so Vim will render rather than fall into filter
-mode. 20 of 21 gates pass; the one failure is `chdir`, which has a known shim.
+mode. 19 of 20 gates pass; the one failure is `chdir`, which has a known shim.
 
 Run on emulated ESP32-P4 (rev 3.01, 2 cores) under `esp-emu` 0.43.0 with
 `--psram-size 32M`, ESP-IDF **v5.5.5**, 2026-09-23. Raw output:
