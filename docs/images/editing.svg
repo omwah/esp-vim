@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="836" height="556" viewBox="0 0 836 556" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="14">
+<rect width="100%" height="100%" rx="8" fill="#fdfdfd" stroke="#c8c8c8"/>
+<path d="M0 8 a8 8 0 0 1 8 -8 H828 a8 8 0 0 1 8 8 V28 H0 Z" fill="#e6e6e6"/>
+<circle cx="18" cy="14.0" r="6" fill="#ff5f57"/>
+<circle cx="36" cy="14.0" r="6" fill="#febc2e"/>
+<circle cx="54" cy="14.0" r="6" fill="#28c840"/>
+<text x="418" y="19.0" text-anchor="middle" fill="#555" font-family="sans-serif" font-size="13">Vim on ESP32-P4: editing, with :EspInfo</text>
+<text x="12.0" y="53" fill="#cd0000" xml:space="preserve" textLength="470.4" lengthAdjust="spacingAndGlyphs">&quot;&quot;&quot;Summarise a notes file: word count and TODO items.&quot;&quot;&quot;</text>
+<text x="12.0" y="89" fill="#cd00cd" xml:space="preserve" textLength="50.4" lengthAdjust="spacingAndGlyphs">import</text>
+<text x="62.4" y="89" fill="#1a1a1a" xml:space="preserve" textLength="756.0" lengthAdjust="spacingAndGlyphs"> sys                                                                                      </text>
+<text x="12.0" y="143" fill="#af5f00" xml:space="preserve" textLength="25.2" lengthAdjust="spacingAndGlyphs">def</text>
+<text x="45.6" y="143" fill="#00cdcd" xml:space="preserve" textLength="75.6" lengthAdjust="spacingAndGlyphs">summarise</text>
+<text x="121.2" y="143" fill="#1a1a1a" xml:space="preserve" textLength="697.2" lengthAdjust="spacingAndGlyphs">(path):                                                                            </text>
+<text x="12.0" y="161" fill="#1a1a1a" xml:space="preserve" textLength="806.4" lengthAdjust="spacingAndGlyphs">    todos = []                                                                                  </text>
+<text x="12.0" y="179" fill="#1a1a1a" xml:space="preserve" textLength="100.8" lengthAdjust="spacingAndGlyphs">    words = </text>
+<text x="112.8" y="179" fill="#cd0000" xml:space="preserve" textLength="8.4" lengthAdjust="spacingAndGlyphs">0</text>
+<text x="45.6" y="197" fill="#af5f00" xml:space="preserve" textLength="33.6" lengthAdjust="spacingAndGlyphs">with</text>
+<text x="87.6" y="197" fill="#00cdcd" xml:space="preserve" textLength="33.6" lengthAdjust="spacingAndGlyphs">open</text>
+<text x="121.2" y="197" fill="#1a1a1a" xml:space="preserve" textLength="58.8" lengthAdjust="spacingAndGlyphs">(path) </text>
+<text x="180.0" y="197" fill="#af5f00" xml:space="preserve" textLength="16.8" lengthAdjust="spacingAndGlyphs">as</text>
+<text x="196.8" y="197" fill="#1a1a1a" xml:space="preserve" textLength="621.6" lengthAdjust="spacingAndGlyphs"> f:                                                                       </text>
+<text x="79.2" y="215" fill="#af5f00" xml:space="preserve" textLength="25.2" lengthAdjust="spacingAndGlyphs">for</text>
+<text x="104.4" y="215" fill="#1a1a1a" xml:space="preserve" textLength="75.6" lengthAdjust="spacingAndGlyphs"> n, line </text>
+<text x="180.0" y="215" fill="#af5f00" xml:space="preserve" textLength="16.8" lengthAdjust="spacingAndGlyphs">in</text>
+<text x="205.2" y="215" fill="#00cdcd" xml:space="preserve" textLength="75.6" lengthAdjust="spacingAndGlyphs">enumerate</text>
+<text x="280.8" y="215" fill="#1a1a1a" xml:space="preserve" textLength="33.6" lengthAdjust="spacingAndGlyphs">(f, </text>
+<text x="314.4" y="215" fill="#cd0000" xml:space="preserve" textLength="8.4" lengthAdjust="spacingAndGlyphs">1</text>
+<text x="322.8" y="215" fill="#1a1a1a" xml:space="preserve" textLength="495.6" lengthAdjust="spacingAndGlyphs">):                                                         </text>
+<text x="12.0" y="233" fill="#1a1a1a" xml:space="preserve" textLength="176.4" lengthAdjust="spacingAndGlyphs">            words += </text>
+<text x="188.4" y="233" fill="#00cdcd" xml:space="preserve" textLength="25.2" lengthAdjust="spacingAndGlyphs">len</text>
+<text x="213.6" y="233" fill="#1a1a1a" xml:space="preserve" textLength="604.8" lengthAdjust="spacingAndGlyphs">(line.split())                                                          </text>
+<text x="112.8" y="251" fill="#af5f00" xml:space="preserve" textLength="16.8" lengthAdjust="spacingAndGlyphs">if</text>
+<text x="138.0" y="251" fill="#cd0000" xml:space="preserve" textLength="50.4" lengthAdjust="spacingAndGlyphs">&quot;TODO&quot;</text>
+<text x="196.8" y="251" fill="#af5f00" xml:space="preserve" textLength="16.8" lengthAdjust="spacingAndGlyphs">in</text>
+<text x="213.6" y="251" fill="#1a1a1a" xml:space="preserve" textLength="604.8" lengthAdjust="spacingAndGlyphs"> line:                                                                  </text>
+<text x="12.0" y="269" fill="#1a1a1a" xml:space="preserve" textLength="806.4" lengthAdjust="spacingAndGlyphs">                todos.append((n, line.strip()))                                                 </text>
+<text x="45.6" y="287" fill="#af5f00" xml:space="preserve" textLength="50.4" lengthAdjust="spacingAndGlyphs">return</text>
+<text x="96.0" y="287" fill="#1a1a1a" xml:space="preserve" textLength="722.4" lengthAdjust="spacingAndGlyphs"> words, todos                                                                         </text>
+<rect x="12.0" y="292" width="806.4" height="18" fill="#1a1a1a"/>
+<text x="12.0" y="305" fill="#fdfdfd" xml:space="preserve" textLength="806.4" lengthAdjust="spacingAndGlyphs">~/scripts/summarise.py                                                        1,1            Top</text>
+<text x="12.0" y="323" fill="#cd00cd" xml:space="preserve" textLength="445.2" lengthAdjust="spacingAndGlyphs">ESP32-P4 -- system information   (R refresh, q close)</text>
+<text x="12.0" y="341" fill="#00cdcd" xml:space="preserve" textLength="33.6" lengthAdjust="spacingAndGlyphs">Chip</text>
+<text x="45.6" y="341" fill="#1a1a1a" xml:space="preserve" textLength="772.8" lengthAdjust="spacingAndGlyphs">       ESP32-P4, revision v3.1                                                              </text>
+<text x="12.0" y="359" fill="#00cdcd" xml:space="preserve" textLength="25.2" lengthAdjust="spacingAndGlyphs">CPU</text>
+<text x="37.2" y="359" fill="#1a1a1a" xml:space="preserve" textLength="781.2" lengthAdjust="spacingAndGlyphs">        2 cores at 400 MHz                                                                   </text>
+<text x="12.0" y="377" fill="#00cdcd" xml:space="preserve" textLength="67.2" lengthAdjust="spacingAndGlyphs">Features</text>
+<text x="79.2" y="377" fill="#1a1a1a" xml:space="preserve" textLength="739.2" lengthAdjust="spacingAndGlyphs">   none                                                                                 </text>
+<text x="12.0" y="395" fill="#00cdcd" xml:space="preserve" textLength="42.0" lengthAdjust="spacingAndGlyphs">Flash</text>
+<text x="54.0" y="395" fill="#1a1a1a" xml:space="preserve" textLength="764.4" lengthAdjust="spacingAndGlyphs">      16.0 MB                                                                              </text>
+<text x="12.0" y="413" fill="#00cdcd" xml:space="preserve" textLength="42.0" lengthAdjust="spacingAndGlyphs">PSRAM</text>
+<text x="54.0" y="413" fill="#1a1a1a" xml:space="preserve" textLength="764.4" lengthAdjust="spacingAndGlyphs">      32.0 MB                                                                              </text>
+<text x="12.0" y="431" fill="#00cdcd" xml:space="preserve" textLength="25.2" lengthAdjust="spacingAndGlyphs">MAC</text>
+<text x="37.2" y="431" fill="#1a1a1a" xml:space="preserve" textLength="781.2" lengthAdjust="spacingAndGlyphs">        24:0a:c4:00:00:01                                                                    </text>
+<text x="12.0" y="449" fill="#00cdcd" xml:space="preserve" textLength="58.8" lengthAdjust="spacingAndGlyphs">ESP-IDF</text>
+<text x="70.8" y="449" fill="#1a1a1a" xml:space="preserve" textLength="747.6" lengthAdjust="spacingAndGlyphs">    v5.5.5                                                                               </text>
+<text x="12.0" y="467" fill="#00cdcd" xml:space="preserve" textLength="25.2" lengthAdjust="spacingAndGlyphs">Vim</text>
+<text x="37.2" y="467" fill="#1a1a1a" xml:space="preserve" textLength="781.2" lengthAdjust="spacingAndGlyphs">        9.2.1125                                                                             </text>
+<text x="12.0" y="485" fill="#00cdcd" xml:space="preserve" textLength="50.4" lengthAdjust="spacingAndGlyphs">Uptime</text>
+<text x="62.4" y="485" fill="#1a1a1a" xml:space="preserve" textLength="756.0" lengthAdjust="spacingAndGlyphs">     0:00:23                                                                              </text>
+<text x="12.0" y="503" fill="#00cdcd" xml:space="preserve" textLength="42.0" lengthAdjust="spacingAndGlyphs">Reset</text>
+<text x="54.0" y="503" fill="#1a1a1a" xml:space="preserve" textLength="764.4" lengthAdjust="spacingAndGlyphs">      power-on                                                                             </text>
+<rect x="12.0" y="508" width="806.4" height="18" fill="#1a1a1a"/>
+<text x="12.0" y="521" fill="#fdfdfd" font-weight="bold" xml:space="preserve" textLength="806.4" lengthAdjust="spacingAndGlyphs">EspInfo                                                                       1,1            All</text>
+<rect x="12.0" y="310" width="8.4" height="18" fill="#1a1a1a" fill-opacity="0.45"/>
+</svg>

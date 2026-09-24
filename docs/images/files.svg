@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="836" height="556" viewBox="0 0 836 556" font-family="DejaVu Sans Mono, Menlo, Consolas, monospace" font-size="14">
+<rect width="100%" height="100%" rx="8" fill="#fdfdfd" stroke="#c8c8c8"/>
+<path d="M0 8 a8 8 0 0 1 8 -8 H828 a8 8 0 0 1 8 8 V28 H0 Z" fill="#e6e6e6"/>
+<circle cx="18" cy="14.0" r="6" fill="#ff5f57"/>
+<circle cx="36" cy="14.0" r="6" fill="#febc2e"/>
+<circle cx="54" cy="14.0" r="6" fill="#28c840"/>
+<text x="418" y="19.0" text-anchor="middle" fill="#555" font-family="sans-serif" font-size="13">Vim on ESP32-P4: :EspFiles</text>
+<rect x="12.0" y="40" width="92.4" height="18" fill="#e5e5e5"/>
+<text x="12.0" y="53" fill="#000000" xml:space="preserve" textLength="92.4" lengthAdjust="spacingAndGlyphs"> [No Name] </text>
+<text x="112.8" y="53" fill="#cd00cd" font-weight="bold" xml:space="preserve" textLength="8.4" lengthAdjust="spacingAndGlyphs">2</text>
+<text x="121.2" y="53" fill="#1a1a1a" font-weight="bold" xml:space="preserve" textLength="126.0" lengthAdjust="spacingAndGlyphs"> EspFiles-left </text>
+<rect x="247.2" y="40" width="562.8" height="18" fill="#1a1a1a"/>
+<rect x="810.0" y="40" width="8.4" height="18" fill="#e5e5e5"/>
+<text x="810.0" y="53" fill="#000000" xml:space="preserve" textLength="8.4" lengthAdjust="spacingAndGlyphs">X</text>
+<text x="12.0" y="71" fill="#0000ee" xml:space="preserve" textLength="42.0" lengthAdjust="spacingAndGlyphs">  ../</text>
+<rect x="406.8" y="58" width="8.4" height="18" fill="#1a1a1a"/>
+<text x="406.8" y="71" fill="#fdfdfd" xml:space="preserve" textLength="8.4" lengthAdjust="spacingAndGlyphs">|</text>
+<text x="415.2" y="71" fill="#0000ee" xml:space="preserve" textLength="42.0" lengthAdjust="spacingAndGlyphs">  ../</text>
+<text x="12.0" y="89" fill="#0000ee" xml:space="preserve" textLength="84.0" lengthAdjust="spacingAndGlyphs">  scripts/</text>
+<text x="96.0" y="89" fill="#1a1a1a" xml:space="preserve" textLength="310.8" lengthAdjust="spacingAndGlyphs">                               &lt;DIR&gt; </text>
+<rect x="406.8" y="76" width="8.4" height="18" fill="#1a1a1a"/>
+<text x="406.8" y="89" fill="#fdfdfd" xml:space="preserve" textLength="8.4" lengthAdjust="spacingAndGlyphs">|</text>
+<text x="415.2" y="89" fill="#1a1a1a" xml:space="preserve" textLength="403.2" lengthAdjust="spacingAndGlyphs">  summarise.py                            548 B </text>
+<rect x="12.0" y="94" width="386.4" height="18" fill="#ffff00"/>
+<text x="12.0" y="107" fill="#1a1a1a" xml:space="preserve" textLength="386.4" lengthAdjust="spacingAndGlyphs">* config.json                             16 B</text>
+<rect x="406.8" y="94" width="8.4" height="18" fill="#1a1a1a"/>
+<text x="406.8" y="107" fill="#fdfdfd" xml:space="preserve" textLength="8.4" lengthAdjust="spacingAndGlyphs">|</text>
+<text x="12.0" y="125" fill="#1a1a1a" xml:space="preserve" textLength="394.8" lengthAdjust="spacingAndGlyphs">  notes.md                                33 B </text>
+<rect x="406.8" y="112" width="8.4" height="18" fill="#1a1a1a"/>
+<text x="406.8" y="125" fill="#fdfdfd" xml:space="preserve" textLength="8.4" lengthAdjust="spacingAndGlyphs">|</text>
+<rect x="406.8" y="130" width="8.4" height="18" fill="#1a1a1a"/>
+<text x="406.8" y="143" fill="#fdfdfd" xml:space="preserve" textLength="8.4" lengthAdjust="spacingAndGlyphs">|</text>
+<rect x="406.8" y="148" width="8.4" height="18" fill="#1a1a1a"/>
+<text x="406.8" y="161" fill="#fdfdfd" xml:space="preserve" textLength="8.4" lengthAdjust="spacingAndGlyphs">|</text>
+<rect x="406.8" y="166" width="8.4" height="18" fill="#1a1a1a"/>
+<text x="406.8" y="179" fill="#fdfdfd" xml:space="preserve" textLength="8.4" lengthAdjust="spacingAndGlyphs">|</text>
+<rect x="406.8" y="184" width="8.4" height="18" fill="#1a1a1a"/>
+<text x="406.8" y="197" fill="#fdfdfd" xml:space="preserve" textLength="8.4" lengthAdjust="spacingAndGlyphs">|</text>
+<rect x="406.8" y="202" width="8.4" height="18" fill="#1a1a1a"/>
+<text x="406.8" y="215" fill="#fdfdfd" xml:space="preserve" textLength="8.4" lengthAdjust="spacingAndGlyphs">|</text>
+<rect x="406.8" y="220" width="8.4" height="18" fill="#1a1a1a"/>
+<text x="406.8" y="233" fill="#fdfdfd" xml:space="preserve" textLength="8.4" lengthAdjust="spacingAndGlyphs">|</text>
+<rect x="406.8" y="238" width="8.4" height="18" fill="#1a1a1a"/>
+<text x="406.8" y="251" fill="#fdfdfd" xml:space="preserve" textLength="8.4" lengthAdjust="spacingAndGlyphs">|</text>
+<rect x="406.8" y="256" width="8.4" height="18" fill="#1a1a1a"/>
+<text x="406.8" y="269" fill="#fdfdfd" xml:space="preserve" textLength="8.4" lengthAdjust="spacingAndGlyphs">|</text>
+<rect x="406.8" y="274" width="8.4" height="18" fill="#1a1a1a"/>
+<text x="406.8" y="287" fill="#fdfdfd" xml:space="preserve" textLength="8.4" lengthAdjust="spacingAndGlyphs">|</text>
+<rect x="406.8" y="292" width="8.4" height="18" fill="#1a1a1a"/>
+<text x="406.8" y="305" fill="#fdfdfd" xml:space="preserve" textLength="8.4" lengthAdjust="spacingAndGlyphs">|</text>
+<rect x="406.8" y="310" width="8.4" height="18" fill="#1a1a1a"/>
+<text x="406.8" y="323" fill="#fdfdfd" xml:space="preserve" textLength="8.4" lengthAdjust="spacingAndGlyphs">|</text>
+<rect x="406.8" y="328" width="8.4" height="18" fill="#1a1a1a"/>
+<text x="406.8" y="341" fill="#fdfdfd" xml:space="preserve" textLength="8.4" lengthAdjust="spacingAndGlyphs">|</text>
+<rect x="406.8" y="346" width="8.4" height="18" fill="#1a1a1a"/>
+<text x="406.8" y="359" fill="#fdfdfd" xml:space="preserve" textLength="8.4" lengthAdjust="spacingAndGlyphs">|</text>
+<rect x="406.8" y="364" width="8.4" height="18" fill="#1a1a1a"/>
+<text x="406.8" y="377" fill="#fdfdfd" xml:space="preserve" textLength="8.4" lengthAdjust="spacingAndGlyphs">|</text>
+<rect x="406.8" y="382" width="8.4" height="18" fill="#1a1a1a"/>
+<text x="406.8" y="395" fill="#fdfdfd" xml:space="preserve" textLength="8.4" lengthAdjust="spacingAndGlyphs">|</text>
+<rect x="406.8" y="400" width="8.4" height="18" fill="#1a1a1a"/>
+<text x="406.8" y="413" fill="#fdfdfd" xml:space="preserve" textLength="8.4" lengthAdjust="spacingAndGlyphs">|</text>
+<rect x="406.8" y="418" width="8.4" height="18" fill="#1a1a1a"/>
+<text x="406.8" y="431" fill="#fdfdfd" xml:space="preserve" textLength="8.4" lengthAdjust="spacingAndGlyphs">|</text>
+<rect x="406.8" y="436" width="8.4" height="18" fill="#1a1a1a"/>
+<text x="406.8" y="449" fill="#fdfdfd" xml:space="preserve" textLength="8.4" lengthAdjust="spacingAndGlyphs">|</text>
+<rect x="406.8" y="454" width="8.4" height="18" fill="#1a1a1a"/>
+<text x="406.8" y="467" fill="#fdfdfd" xml:space="preserve" textLength="8.4" lengthAdjust="spacingAndGlyphs">|</text>
+<rect x="406.8" y="472" width="8.4" height="18" fill="#1a1a1a"/>
+<text x="406.8" y="485" fill="#fdfdfd" xml:space="preserve" textLength="8.4" lengthAdjust="spacingAndGlyphs">|</text>
+<rect x="406.8" y="490" width="8.4" height="18" fill="#1a1a1a"/>
+<text x="406.8" y="503" fill="#fdfdfd" xml:space="preserve" textLength="8.4" lengthAdjust="spacingAndGlyphs">|</text>
+<rect x="12.0" y="508" width="403.2" height="18" fill="#1a1a1a"/>
+<text x="12.0" y="521" fill="#fdfdfd" font-weight="bold" xml:space="preserve" textLength="403.2" lengthAdjust="spacingAndGlyphs"> /fat   [1 tagged]           5.4M free of 5.4M  </text>
+<rect x="415.2" y="508" width="403.2" height="18" fill="#1a1a1a"/>
+<text x="415.2" y="521" fill="#fdfdfd" xml:space="preserve" textLength="403.2" lengthAdjust="spacingAndGlyphs"> /fat/scripts                 5.4M free of 5.4M </text>
+<rect x="12.0" y="112" width="8.4" height="18" fill="#1a1a1a" fill-opacity="0.45"/>
+</svg>

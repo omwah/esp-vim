@@ -39,6 +39,7 @@ openssh = ">=10"
 # package installed, so IDF's bootstrap fails against it. Pinning a Python here
 # gives IDF one that works, with no root and no third-party venv tooling.
 python = "3.13.*"
+pyte = ">=0.8.2,<0.9"
 
 # Tasks are the documented way to run everything -- they keep the incantations in
 # one place instead of in someone's shell history. Anything touching the cross
@@ -72,6 +73,7 @@ vim-build = { cmd = 'bash -c ". scripts/env.sh >/dev/null && scripts/vim-build.s
 vim-build-s3 = { cmd = 'bash -c ". scripts/env.sh >/dev/null && scripts/vim-build.sh esp32s3"', depends-on = ["runtime"], description = "Build the Vim firmware for the ESP32-S3 variant" }
 
 vim-size = { cmd = 'bash -c ". scripts/env.sh >/dev/null && cd esp-vim && riscv32-esp-elf-size -t $(find build-esp32p4 -path \"*__idf_vim.dir*\" -name \"*.c.obj\") | tail -1"', description = "Report the Vim component's text/data/bss" }
+screenshots = { cmd = 'bash -c ". scripts/env.sh >/dev/null && \"$CONDA_PREFIX/bin/python\" scripts/screenshots.py"', description = "Regenerate docs/images/*.svg from the firmware running in the emulator (build first)" }
 
 vim-test = { cmd = 'bash -c ". scripts/env.sh >/dev/null && esp-vim/test/roundtrip.sh && python esp-vim/test/interactive.py"', depends-on = ["vim-build"], description = "Emulator gate on ESP32-P4: round trips across reboots + interactive console checks" }
 
