@@ -1,0 +1,39 @@
+# Vendored third-party archives.
+#
+# IMPORTANT -- what the sha256 here means:
+#   It attests the integrity of the LFS blob WE vendored, not a digest published
+#   upstream.  Neither of these archives can be checked against an upstream hash:
+#   vim-*.tar.gz is produced locally with `git archive` (output depends on the
+#   local git and gzip), and GitHub's auto-generated tag tarballs are not
+#   byte-stable over time.  The `url` field is therefore PROVENANCE -- where the
+#   bits came from -- while `sha256` is INTEGRITY of what is committed here.
+#
+# A fresh clone needs no network: `git lfs pull` retrieves these, and
+# scripts/prepare-deps.sh verifies and extracts them.  Only scripts/add-dep.sh
+# ever downloads anything, and it is used solely to onboard a NEW dependency.
+#
+# Format: one record per archive, blank-line separated, `key: value`.
+
+name:     vim
+version:  9.2.1125
+file:     vim-9.2.1125.tar.gz
+sha256:   1c24375811f58ad996d6cee37d79ace58ee8990b1515cf6df7b2406790cbb2d5
+prefix:   vim-9.2.1125
+url:      https://github.com/vim/vim.git
+commit:   12c69acc0a1f1530dc0f0618c763bd9c07b7b6b3
+date:     2026-09-21
+origin:   git archive --prefix=vim-9.2.1125/ <commit>
+patches:  vim
+notes:    Upstream Vim. Built as an ESP-IDF component; see docs/PLAN.md Phase 2.
+
+name:     esp-emu
+version:  0.43.0
+file:     esp-emu-0.43.0-x86_64-unknown-linux-gnu.tar.gz
+sha256:   ec875a317c671a40c32833c6caba92efca4a5b1b89ce09a74efba82f99200243
+prefix:   esp-emu-0.43.0-x86_64-unknown-linux-gnu
+url:      https://github.com/espressif/esp-emulator/releases/download/v0.43.0/esp-emu-0.43.0-x86_64-unknown-linux-gnu.tar.gz
+origin:   upstream release asset, verified against its published SHA256SUMS
+patches:  -
+notes:    Host-side emulator, not firmware. x86_64 Linux only; other hosts must
+          add their own arch archive. Upstream SHA256SUMS kept alongside as
+          esp-emu-0.43.0.SHA256SUMS.

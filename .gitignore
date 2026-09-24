@@ -1,0 +1,22 @@
+# Extracted + patched upstream source.  Produced by scripts/prepare-deps.sh,
+# never committed.  See docs/PLAN.md, Phase 0.
+/build-deps/
+
+# ESP-IDF build output
+build/
+build-*/
+sdkconfig
+sdkconfig.old
+dependencies.lock.bak
+managed_components/
+
+# Emulator scratch
+*.merged.bin
+*.run.bin
+/run/
+
+# Editor / OS noise
+*.swp
+*.swo
+*~
+.DS_Store

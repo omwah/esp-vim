@@ -1,0 +1,13 @@
+# Third-party upstream archives are vendored through Git LFS.
+# Upstream source is NEVER committed as individual files -- only these archives
+# plus our patch series in patches/.  See docs/PLAN.md, Phase 0.
+third_party/**/*.tar.gz  filter=lfs diff=lfs merge=lfs -text
+third_party/**/*.tar.xz  filter=lfs diff=lfs merge=lfs -text
+third_party/**/*.tar.bz2 filter=lfs diff=lfs merge=lfs -text
+third_party/**/*.tgz     filter=lfs diff=lfs merge=lfs -text
+third_party/**/*.zip     filter=lfs diff=lfs merge=lfs -text
+
+# Patches and manifests stay as normal text so they diff and review cleanly.
+patches/**/*.patch           text
+third_party/manifest.txt     text
+third_party/*.SHA256SUMS     text

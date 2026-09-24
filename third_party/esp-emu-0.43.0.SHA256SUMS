@@ -1,0 +1,4 @@
+ec875a317c671a40c32833c6caba92efca4a5b1b89ce09a74efba82f99200243  esp-emu-0.43.0-x86_64-unknown-linux-gnu.tar.gz
+f2aa58e6928e4420f1e6a7cd6bce6659fd7521a086c4dec1156904db9101fba9  esp-emu-0.43.0-aarch64-unknown-linux-gnu.tar.gz
+2a8395d86f43a7330dff452336f5a6b1803c9fac30fac2c5242e5ba30ba05f7e  esp-emu-0.43.0-aarch64-apple-darwin.tar.gz
+7f19e9fcecc4aa05634d232ee659b05c8505e8cfa5633274726cba443f60a312  esp-emu-0.43.0-wasm.tar.gz
