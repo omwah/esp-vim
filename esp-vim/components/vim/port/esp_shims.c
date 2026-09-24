@@ -36,6 +36,8 @@
 #include "esp_log.h"
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
+#include "esp_vim_port.h"
+#include <sys/select.h>
 #include <sys/time.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -83,6 +85,69 @@ void *esp_vim_realloc(void *ptr, size_t size)
 {
     void *p = heap_caps_realloc(ptr, size, VIM_HEAP_CAPS);
     return p != NULL ? p : heap_caps_realloc(ptr, size, MALLOC_CAP_DEFAULT);
+}
+
+/* ======================================================================= */
+/*  Zero-timeout select() for console fds                                   */
+/*  (see esp_vim_port.h for why this exists)                                */
+/* ======================================================================= */
+
+#define ESP_POLL_MAX 4
+
+static struct {
+    int fd;
+    bool (*pending)(void);
+} s_polls[ESP_POLL_MAX];
+
+void esp_vim_register_input_poll(int fd, bool (*input_pending)(void))
+{
+    for (int i = 0; i < ESP_POLL_MAX; i++) {
+        if (s_polls[i].pending == NULL || s_polls[i].fd == fd) {
+            s_polls[i].fd = fd;
+            s_polls[i].pending = input_pending;
+            return;
+        }
+    }
+    ESP_LOGE(TAG, "too many console polls registered; fd %d ignored", fd);
+}
+
+static bool (*poll_for(int fd))(void)
+{
+    for (int i = 0; i < ESP_POLL_MAX; i++)
+        if (s_polls[i].pending != NULL && s_polls[i].fd == fd)
+            return s_polls[i].pending;
+    return NULL;
+}
+
+extern int __real_select(int, fd_set *, fd_set *, fd_set *, struct timeval *);
+
+int __wrap_select(int nfds, fd_set *r, fd_set *w, fd_set *e, struct timeval *tv)
+{
+    if (tv == NULL || tv->tv_sec != 0 || tv->tv_usec != 0)
+        return __real_select(nfds, r, w, e, tv);        /* a real wait */
+
+    /* Only short-circuit when EVERY fd asked about has a registered poll. */
+    for (int fd = 0; fd < nfds; fd++) {
+        bool asked = (r && FD_ISSET(fd, r)) || (w && FD_ISSET(fd, w))
+                  || (e && FD_ISSET(fd, e));
+        if (asked && poll_for(fd) == NULL)
+            return __real_select(nfds, r, w, e, tv);
+    }
+
+    int ready = 0;
+    for (int fd = 0; fd < nfds; fd++) {
+        if (r && FD_ISSET(fd, r)) {
+            if (poll_for(fd)())
+                ready++;
+            else
+                FD_CLR(fd, r);
+        }
+        if (w && FD_ISSET(fd, w))
+            ready++;                    /* a console is always writable */
+        if (e && FD_ISSET(fd, e))
+            FD_CLR(fd, e);              /* and never in an error state */
+    }
+    return ready;
 }
 
 /* ======================================================================= */

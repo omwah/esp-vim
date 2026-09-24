@@ -9,6 +9,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+#include <sys/select.h>
+#include "esp_timer.h"
 
 #include "esp_err.h"
 #include "esp_log.h"
@@ -17,6 +20,7 @@
 #include "esp_heap_caps.h"
 #include "driver/uart.h"
 #include "driver/uart_vfs.h"
+#include "esp_vim_port.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -42,12 +46,20 @@ TaskHandle_t g_vim_task;
  * is installed and the VFS is routed through it. isatty(0) is true either way,
  * but Vim calls termios during startup, so the driver must come first.
  */
+/* Non-blocking "has a key arrived?" for the UART console (see esp_vim_port.h). */
+static bool uart_console_pending(void)
+{
+    size_t n = 0;
+    return uart_get_buffered_data_len(UART_NUM_0, &n) == ESP_OK && n > 0;
+}
+
 static void console_init(void)
 {
     ESP_ERROR_CHECK(uart_driver_install(UART_NUM_0, 4096, 4096, 0, NULL, 0));
     uart_vfs_dev_use_driver(UART_NUM_0);
     uart_vfs_dev_port_set_rx_line_endings(UART_NUM_0, ESP_LINE_ENDINGS_LF);
     uart_vfs_dev_port_set_tx_line_endings(UART_NUM_0, ESP_LINE_ENDINGS_LF);
+    esp_vim_register_input_poll(0, uart_console_pending);
 }
 
 static void storage_init(void)
@@ -112,6 +124,57 @@ static void report_test_artifact(void)
     printf("ESPVIM-ARTIFACT<<%s>>\n", buf);
 }
 
+/*
+ * Learn the terminal's size, since a UART has no TIOCGWINSZ.
+ *
+ * Park the cursor at an impossible position and ask where it ended up (CSI 6n,
+ * a cursor position report): a real terminal clamps to its last row and column
+ * and answers "ESC [ rows ; cols R". Save/restore the cursor around it so the
+ * screen is left as found. No answer within the timeout -- a scripted session,
+ * a log capture, a dumb serial monitor -- keeps the 24x80 default.
+ */
+static void probe_terminal_size(void)
+{
+    static const char query[] = "\0337\033[999;999H\033[6n\0338";
+    char buf[32];
+    size_t n = 0;
+    int rows = 0, cols = 0;
+
+    write(STDOUT_FILENO, query, sizeof(query) - 1);
+
+    int64_t deadline = esp_timer_get_time() + 300 * 1000;
+    while (n < sizeof(buf) - 1) {
+        int64_t left = deadline - esp_timer_get_time();
+        if (left <= 0)
+            break;
+        fd_set r;
+        FD_ZERO(&r);
+        FD_SET(STDIN_FILENO, &r);
+        struct timeval tv = { .tv_sec = 0, .tv_usec = (suseconds_t)left };
+        if (select(STDIN_FILENO + 1, &r, NULL, NULL, &tv) <= 0)
+            break;
+        if (read(STDIN_FILENO, buf + n, 1) != 1)
+            break;
+        if (buf[n++] == 'R')
+            break;
+    }
+    buf[n] = '\0';
+
+    const char *csi = strstr(buf, "\033[");
+    if (csi != NULL && sscanf(csi, "\033[%d;%dR", &rows, &cols) == 2
+            && rows >= 5 && rows < 1000 && cols >= 20 && cols < 1000) {
+        char v[8];
+        snprintf(v, sizeof(v), "%d", rows);
+        setenv("LINES", v, 1);
+        snprintf(v, sizeof(v), "%d", cols);
+        setenv("COLUMNS", v, 1);
+        printf("ESPVIM-TERM %dx%d (probed)\n", rows, cols);
+    } else {
+        printf("ESPVIM-TERM %sx%s (default: no answer from terminal)\n",
+               getenv("LINES"), getenv("COLUMNS"));
+    }
+}
+
 static void vim_task(void *arg)
 {
     (void)arg;
@@ -119,6 +182,7 @@ static void vim_task(void *arg)
      * isolates "is Vim's core working" from "is the console working". */
     char *argv[] = { "vim", NULL };
 
+    probe_terminal_size();
     report_test_artifact();
     printf("ESPVIM-HEAP int_free=%u psram_free=%u psram_total=%u\n",
            (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),

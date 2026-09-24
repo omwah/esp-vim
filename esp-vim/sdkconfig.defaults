@@ -1,37 +1,38 @@
-CONFIG_IDF_TARGET="esp32p4"
+# Settings common to every target. Chip-specific settings live in
+# sdkconfig.defaults.<target> (esp32p4, esp32s3), which ESP-IDF applies on top
+# of this file automatically for that target. The target itself is chosen with
+# `idf.py set-target`, never here -- that would force every build to one chip.
 
-# 16 MB flash, custom table (see partitions.csv)
+# 16 MB flash, custom partition table (see partitions.csv).
 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
 CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
 
-# The spike exists to test these three.
+# POSIX console behaviour Vim relies on (docs/PHASE1.md).
 CONFIG_VFS_SUPPORT_TERMIOS=y
 CONFIG_VFS_SUPPORT_SELECT=y
 CONFIG_VFS_SUPPORT_DIR=y
 
-# Vim needs long filenames and a sane codepage.
+# Long filenames and UTF-8 names on FAT.
 CONFIG_FATFS_LFN_HEAP=y
 CONFIG_FATFS_MAX_LFN=255
 CONFIG_FATFS_API_ENCODING_UTF_8=y
 
-# PSRAM: the Tab5 has 32 MB. esp-emu is told the size with --psram-size.
+# PSRAM holds Vim's whole heap (docs/PHASE4.md). The size is detected from the
+# device; under esp-emu it is set with --psram-size.
 CONFIG_SPIRAM=y
 CONFIG_SPIRAM_USE_MALLOC=y
 
-# Console on UART0, which is what esp-emu bridges to stdio.
+# Console on UART0, which esp-emu bridges to stdio or --uart-tcp.
 CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+# Panic output to UART only. With a USB-Serial-JTAG secondary console the panic
+# handler spins forever on a TX FIFO nothing drains (the emulator, or a board
+# with no USB host attached), so a crash looked like a silent hang.
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
 
-# Vim recurses (regexp, eval); the spike only needs room to be honest about it.
+# app_main only sets up and spawns the Vim task, which has its own stack.
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
 
-# Optimize for size: Vim is ~2 MB of text at -Og and the app partition is the
-# one thing that cannot be resized once /fat holds user data (docs/PLAN.md Ph.4).
+# Optimize for size: the app partition cannot be resized once /fat holds data.
 CONFIG_COMPILER_OPTIMIZATION_SIZE=y
-
-# Panic output to UART only. With the P4's default secondary console
-# (USB-Serial-JTAG), the panic handler spins forever on a TX FIFO that nothing
-# drains -- in the emulator, or on a board with no USB host attached -- so a
-# crash looked like a silent hang with no message at all.
-CONFIG_ESP_CONSOLE_SECONDARY_NONE=y

@@ -22,12 +22,24 @@
 # message (Exxx:) on screen -- that is what catches a runtime file gone missing.
 #
 # Usage: esp-vim/test/roundtrip.sh          (from anywhere; builds nothing)
+#        ESPVIM_TARGET=esp32s3 esp-vim/test/roundtrip.sh
 
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT="$(cd "$HERE/.." && pwd)"
 RUN_EMU="$PROJECT/../scripts/run-emu.sh"
+
+# Target chip, and the PSRAM the emulated board is given: the Tab5's 32 MB for
+# the P4, a typical N16R8 module's 8 MB for the S3.
+CHIP="${ESPVIM_TARGET:-esp32p4}"
+case "$CHIP" in
+    esp32p4) PSRAM=32M ;;
+    esp32s3) PSRAM=8M ;;
+    *) echo "roundtrip: unsupported ESPVIM_TARGET '$CHIP'" >&2; exit 2 ;;
+esac
+EMU_TARGET=(--chip "$CHIP" --psram "$PSRAM")
+echo "target: $CHIP (PSRAM $PSRAM)"
 OUT="$(mktemp -d)"
 trap 'rm -rf "$OUT"' EXIT
 
@@ -42,10 +54,10 @@ ESC=$'\033'
 run_pair() {
     local name="$1" keys="$2"
     # stdin is held open by `sleep`: an immediate EOF on the UART makes Vim quit.
-    sleep 40 | timeout 150 "$RUN_EMU" "$PROJECT" --save-state --timeout 35s -- \
+    sleep 40 | timeout 150 "$RUN_EMU" "$PROJECT" "${EMU_TARGET[@]}" --save-state --timeout 35s -- \
         --inject-on ESPVIM-READY --inject "$keys" --exit-on ESPVIM-END \
         > "$OUT/$name.1" 2>&1
-    sleep 25 | timeout 120 "$RUN_EMU" "$PROJECT" --reuse --timeout 20s \
+    sleep 25 | timeout 120 "$RUN_EMU" "$PROJECT" "${EMU_TARGET[@]}" --reuse --timeout 20s \
         --exit-on ESPVIM-READY > "$OUT/$name.2" 2>&1
 }
 

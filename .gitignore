@@ -23,3 +23,6 @@ managed_components/
 # pixi environments
 .pixi/*
 !.pixi/config.toml
+
+# Python bytecode from the test harness
+__pycache__/

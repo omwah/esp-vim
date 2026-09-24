@@ -311,3 +311,36 @@ Leaving `$PATH` unset looked harmless, since there are no programs. But Vim's
 `mch_can_exe()` returns -1 when it can't search, and Vim script treats -1 as true, so
 `executable()` claimed every tool existed. `PATH=/fat/bin` (nonexistent/empty) makes it
 answer 0. Anything that probes for an external program now gets the honest answer.
+
+## 2026-09-24 — Zero-timeout select() is answered by the port
+
+ESP-IDF's `select()` turns a zero timeout into a wait of up to one tick. Vim polls
+"is a key waiting?" with a zero timeout constantly, and each poll measured 2 ms. The
+port wraps `select()` and answers zero-timeout calls itself, but **only** for fds
+that have a registered non-blocking "input pending?" callback
+(`esp_vim_register_input_poll`). Any other fd, or any real timeout, goes to ESP-IDF
+untouched.
+
+The callback is registered by whoever owns the console (the UART in `app_main`
+today, the display console in Phase 10), so the shim never hard-codes a device.
+
+## 2026-09-24 — Terminal size by cursor-position probe
+
+With no `TIOCGWINSZ` over a UART, `app_main` asks the terminal directly: cursor to
+`999;999`, then `CSI 6n`. The reply becomes `LINES`/`COLUMNS`. A 300 ms timeout keeps
+the 24×80 default for non-interactive runs. A live resize isn't tracked (no
+`SIGWINCH`), and that's an accepted limitation.
+
+## 2026-09-24 — Patch 0006: t_XM is terminfo-only
+
+Third upstream fix of the same class as 0002/0003: a terminfo-only construct not
+guarded by `#ifdef TERMINFO`. Here it was the mouse enable string, which the fallback
+`tgoto()` turns into the literal `OOPS`. A scan of `builtin_xterm` for directives the
+fallback can't expand found only this one, so the class is closed for xterm.
+
+## 2026-09-24 — Per-target build directories
+
+`scripts/vim-build.sh <target>` builds in `esp-vim/build-<target>/` with its sdkconfig
+inside it. `sdkconfig.defaults` never names a target, and `sdkconfig.defaults.<target>`
+carries the chip-specific settings. `run-emu.sh` picks `build-<chip>/` when it exists,
+and still falls back to `build/` for single-target projects such as the spike.

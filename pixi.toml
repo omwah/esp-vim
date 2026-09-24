@@ -65,11 +65,15 @@ mkpatch = { cmd = "scripts/mkpatch.sh", description = "Generate a patch from edi
 
 runtime = { cmd = "python scripts/make-runtime-image.py", description = "Curate $VIMRUNTIME into build-deps/vimrt/ (checks it fits the partition)" }
 
-vim-build = { cmd = 'bash -c ". scripts/env.sh >/dev/null && cd esp-vim && idf.py build"', depends-on = ["runtime"], description = "Build the Vim firmware (curates the runtime first)" }
+vim-build = { cmd = 'bash -c ". scripts/env.sh >/dev/null && scripts/vim-build.sh esp32p4"', depends-on = ["runtime"], description = "Build the Vim firmware for ESP32-P4 (curates the runtime first)" }
 
-vim-size = { cmd = 'bash -c ". scripts/env.sh >/dev/null && cd esp-vim && riscv32-esp-elf-size -t $(find build -path \"*__idf_vim.dir*\" -name \"*.c.obj\") | tail -1"', description = "Report the Vim component's text/data/bss" }
+vim-build-s3 = { cmd = 'bash -c ". scripts/env.sh >/dev/null && scripts/vim-build.sh esp32s3"', depends-on = ["runtime"], description = "Build the Vim firmware for the ESP32-S3 variant" }
 
-vim-test = { cmd = 'bash -c ". scripts/env.sh >/dev/null && esp-vim/test/roundtrip.sh"', depends-on = ["vim-build"], description = "Emulator gate: edit + CWD round trips across a reboot (build first)" }
+vim-size = { cmd = 'bash -c ". scripts/env.sh >/dev/null && cd esp-vim && riscv32-esp-elf-size -t $(find build-esp32p4 -path \"*__idf_vim.dir*\" -name \"*.c.obj\") | tail -1"', description = "Report the Vim component's text/data/bss" }
+
+vim-test = { cmd = 'bash -c ". scripts/env.sh >/dev/null && esp-vim/test/roundtrip.sh && python esp-vim/test/interactive.py"', depends-on = ["vim-build"], description = "Emulator gate on ESP32-P4: round trips across reboots + interactive console checks" }
+
+vim-test-s3 = { cmd = 'bash -c ". scripts/env.sh >/dev/null && export ESPVIM_TARGET=esp32s3 && esp-vim/test/roundtrip.sh && python esp-vim/test/interactive.py"', depends-on = ["vim-build-s3"], description = "The same emulator gate on the ESP32-S3 variant" }
 
 # Phase 2: generate a baseline config.h on the HOST, to be curated by hand.
 # Needs pixi's ncurses: Vim's configure refuses to finish without a terminal

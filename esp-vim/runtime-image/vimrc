@@ -44,3 +44,10 @@ if &term =~# '^xterm'
   let &t_AB = "\<Esc>[4%dm"
   let &t_AF = "\<Esc>[3%dm"
 endif
+
+" Mouse: SGR reporting. It is the only xterm mouse protocol that works beyond
+" column 223 (the Tab5 console is 160 columns at 8 px, wider in future), and
+" both terminals used here -- host terminals and libvterm -- support it.
+" Pinned rather than detected: detection needs a terminal version response,
+" which a scripted or piped session never sends.
+set ttymouse=sgr

@@ -41,8 +41,14 @@ done
 [ -x "$EMU" ] || die "esp-emu not found at $EMU -- run scripts/prepare-deps.sh"
 
 PROJECT="$(cd "$PROJECT" && pwd)"
-BUILD="$PROJECT/build"
-[ -d "$BUILD" ] || die "no build/ in $PROJECT -- run 'idf.py build' first"
+# Per-target build directories (build-esp32p4, build-esp32s3: see
+# scripts/vim-build.sh); a plain build/ for single-target projects like the spike.
+if [ -d "$PROJECT/build-$CHIP" ]; then
+    BUILD="$PROJECT/build-$CHIP"
+else
+    BUILD="$PROJECT/build"
+fi
+[ -d "$BUILD" ] || die "no build-$CHIP/ or build/ in $PROJECT -- build it first"
 
 # idf.py can produce the merged image for us, and it knows every partition's
 # offset -- including the generated FAT images. Far safer than hand-listing
@@ -56,7 +62,12 @@ MERGED="$BUILD/merged.bin"
 command -v idf.py >/dev/null 2>&1 \
     || die "idf.py not on PATH -- source \$IDF_PATH/export.sh"
 printf 'Merging flash image...\n'
-( cd "$PROJECT" && idf.py merge-bin -o merged.bin >/dev/null )
+# Point idf.py at the build's own sdkconfig only if it keeps one there (the
+# per-target builds do); single-target projects like the spike keep theirs in
+# the project root, and naming a missing file would make idf.py invent one.
+SDKCFG=()
+[ -f "$BUILD/sdkconfig" ] && SDKCFG=(-D "SDKCONFIG=$BUILD/sdkconfig")
+( cd "$PROJECT" && idf.py -B "$BUILD" "${SDKCFG[@]}" merge-bin -o merged.bin >/dev/null )
 [ -f "$MERGED" ] || die "merge produced no $MERGED"
 
 # Always run a copy: --save-state overwrites the image it was given, and the

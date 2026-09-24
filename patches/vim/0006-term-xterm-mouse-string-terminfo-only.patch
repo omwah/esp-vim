@@ -1,0 +1,17 @@
+diff -ruN '--exclude=.git' '--exclude=*.o' '--exclude=*.rej' '--exclude=*.orig' a/src/term.c b/src/term.c
+--- a/src/term.c	2026-09-21 13:40:41.000000000 -0700
++++ b/src/term.c	2026-09-24 07:49:01.708769832 -0700
+@@ -526,7 +526,13 @@
+     {(int)KS_CGP,	"\033[13t"},
+ #endif
+     {(int)KS_CRV,	"\033[>c"},
++#ifdef TERMINFO
++    // Terminfo-only: the conditional below cannot be expanded by the minimal
++    // tgoto() used without a terminal library, which returns the literal
++    // "OOPS" -- sent to the terminal on every mouse on/off, leaving the mouse
++    // disabled. Without it, mch_setmouse() uses the ttymouse sequences.
+     {(int)KS_CXM,	"\033[?1006;1000%?%p1%{1}%=%th%el%;"},
++#endif
+     {(int)KS_RFG,	"\033]10;?\007"},
+     {(int)KS_RBG,	"\033]11;?\007"},
+     {(int)KS_U7,	"\033[6n"},

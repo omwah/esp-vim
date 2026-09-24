@@ -1,0 +1,5 @@
+# ESP32-P4 (M5Stack Tab5: ESP32-P4NRW32, 16 MB flash, 32 MB PSRAM).
+#
+# Nothing here yet beyond the common defaults: the P4's PSRAM is the in-package
+# hex-mode die and needs no mode selection, and 400 MHz is the default clock.
+# This file exists so that P4-only settings have an obvious home.
