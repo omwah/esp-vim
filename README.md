@@ -135,3 +135,16 @@ To change upstream source: see *Patch authoring* in [docs/DECISIONS.md](docs/DEC
 | `scripts/` | dependency prep, environment, emulator harness |
 | `esp-vim/` | the ESP-IDF project (`test/spike/` is Phase 1) |
 | `build-deps/` | extracted + patched upstream (git-ignored) |
+
+## License
+
+This project's own code, scripts and documentation are licensed under the
+[Apache License 2.0](LICENSE).
+
+Third-party components keep their own licenses:
+
+| Component | License |
+|---|---|
+| Vim (`third_party/vim-*.tar.gz`) and our patches to it (`patches/vim/`) | the [Vim license](https://vimhelp.org/uganda.txt.html) |
+| esp-emu (`third_party/esp-emu-*.tar.gz`) | Apache-2.0, see [`third_party/licenses/esp-emu-LICENSE`](third_party/licenses/esp-emu-LICENSE) |
+| ESP-IDF (fetched separately, not vendored) | Apache-2.0 |

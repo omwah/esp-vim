@@ -14,6 +14,8 @@
 
 [workspace]
 authors = ["James McDuffie"]
+license = "Apache-2.0"
+license-file = "LICENSE"
 channels = ["conda-forge"]
 name = "vim-tiny-p4"
 platforms = ["linux-64"]
