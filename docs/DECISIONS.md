@@ -182,3 +182,29 @@ and S3 is ISA, PSRAM ceiling and peripherals, none of which the spike probes.
 
 If a future maintainer finds neither trigger has fired in a long time, deleting it is a
 reasonable call — but delete it consciously, not by letting it rot.
+
+## 2026-09-23 — scripts/mkpatch.sh, and never running git inside build-deps/
+
+The patch-authoring workflow first written here said to `git init` a throwaway repo
+inside `build-deps/<dep>`. That is a trap, for two compounding reasons:
+
+1. `scripts/prepare-deps.sh` re-extracts the tree on every run, deleting that `.git`.
+2. `build-deps/` sits **inside this repository's worktree**, so once the throwaway
+   `.git` is gone, a git command run there silently operates on the *outer* repo
+   instead. `git diff` then produces an empty patch, and `git stash` touches real work.
+
+The same root cause produced a worse bug: `git apply` resolves patch paths against the
+repository root, so `a/src/feature.h` was read as `<repo>/src/feature.h`, fell outside
+`build-deps/vim`, and was **silently ignored with exit code 0** — reporting success
+having changed nothing.
+
+Two fixes:
+
+- `prepare-deps.sh` applies patches with `patch -p1`, never `git apply`, and verifies
+  by hashing the files each patch claims to touch before and after. A patch that
+  reports success but changes nothing is now a hard error.
+- `scripts/mkpatch.sh` generates patches without any git involvement: it extracts a
+  pristine reference copy, applies the existing series to it, and diffs that against
+  the edited tree. The difference is exactly the new change.
+
+**Do not run git commands inside `build-deps/`.**

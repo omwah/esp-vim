@@ -1,0 +1,8 @@
+# Phase 1 spike -- mirrors the partition layout planned in docs/PLAN.md Phase 4
+# so the spike validates the real thing, not a toy.
+# Name,     Type, SubType, Offset,   Size,     Flags
+nvs,        data, nvs,     0x9000,   0x10000,
+phy_init,   data, phy,     ,         0x1000,
+factory,    app,  factory, 0x20000,  0x700000,
+vimrt,      data, fat,     ,         0x300000,
+storage,    data, fat,     ,         0x580000,

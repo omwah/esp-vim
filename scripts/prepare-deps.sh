@@ -119,8 +119,17 @@ prepare_one() {
     fi
 }
 
-# Apply patches/<dir>/*.patch in lexical order.  Stop on the first failure
-# rather than leaving a half-patched tree behind.
+# Apply patches/<dir>/*.patch in lexical order.
+#
+# Uses `patch`, deliberately NOT `git apply`. build-deps/ lives inside this
+# repository's worktree, and git apply resolves patch paths against the REPO
+# ROOT -- so "a/src/feature.h" is read as <repo>/src/feature.h, falls outside
+# build-deps/vim, and is silently ignored with EXIT CODE 0. It reports success
+# having changed nothing.
+#
+# Because a tool lying about success is the worst failure mode here, every patch
+# is also verified: we hash the files it claims to touch before and after, and
+# fail if nothing actually changed.
 apply_patches() {
     local tree="$1" dir="$2"
     [ -d "$dir" ] || { info "no patch dir ($dir) -- skipping"; return 0; }
@@ -136,16 +145,41 @@ apply_patches() {
 
     local p
     for p in "${patches[@]}"; do
-        if git -C "$tree" apply --whitespace=nowarn "$p" 2>/dev/null; then
-            info "applied $(basename "$p")"
-        elif patch -d "$tree" -p1 --forward --silent < "$p"; then
-            info "applied $(basename "$p") (via patch -p1)"
-        else
+        local before after
+        before="$(patch_target_hash "$tree" "$p")"
+
+        if ! patch -d "$tree" -p1 --forward --silent --no-backup-if-mismatch < "$p"; then
             die "FAILED to apply $(basename "$p") to $tree
-       The tree is now half-patched; re-run this script to reset it.
+       The tree may be half-patched; re-run this script to reset it.
        To refresh a patch, see 'Patch authoring' in docs/DECISIONS.md."
         fi
+
+        after="$(patch_target_hash "$tree" "$p")"
+        if [ "$before" = "$after" ]; then
+            die "$(basename "$p") reported success but changed NOTHING in $tree.
+       The patch is a no-op against this tree -- wrong paths, or already
+       applied. Refusing to continue with an unpatched tree."
+        fi
+        info "applied $(basename "$p")"
     done
+}
+
+# Hash the files a patch claims to modify, so a no-op apply cannot pass silently.
+# Missing files hash as absent, which still differs once the patch creates them.
+patch_target_hash() {
+    local tree="$1" patchfile="$2" f
+    {
+        # Strip the leading path component, matching `patch -p1`. Do NOT assume
+        # git's "b/": scripts/mkpatch.sh emits its own prefix names.
+        awk '/^\+\+\+ /{ p=$2; if (p == "/dev/null") next; sub(/^[^\/]*\//, "", p); print p }' \
+            "$patchfile" | sort -u | while IFS= read -r f; do
+            if [ -f "$tree/$f" ]; then
+                sha256sum "$tree/$f"
+            else
+                printf 'absent  %s\n' "$f"
+            fi
+        done
+    } | sha256sum
 }
 
 main() {

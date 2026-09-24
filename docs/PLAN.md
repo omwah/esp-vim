@@ -11,7 +11,7 @@
 |---|---|
 | 0 — Repository bootstrap | **done** (2026-09-23) |
 | 1 — Capability spike (GO/NO-GO) | **done — GO** (2026-09-23), see [PHASE1.md](PHASE1.md) |
-| 2 — Build system + generated files | not started |
+| 2 — Build system + generated files | **done** (2026-09-23), see [PHASE2.md](PHASE2.md) — Vim compiles, 1.82 MB text at `-Os` |
 | 3 — OS shim layer | not started |
 | 4 — Storage + curated runtime | not started |
 | 5 — Emulator bring-up over UART | not started |
@@ -23,8 +23,8 @@
 
 Toolchain: ESP-IDF **v5.5.5**, riscv32-esp-elf 14.2.0, emulator esp-emu 0.43.0.
 
-Measured numbers still outstanding: app-partition size after first link (Phase 2), final
-partition table (Phase 4).
+Measured: Vim component **1.82 MB `.text`** at `-Os` (Phase 2). Still outstanding: the
+final partition table (Phase 4), once MicroPython and git are in.
 
 **Phase 1 changed the plan** — see [PHASE1.md](PHASE1.md). In short: the `isatty(0)` gate
 passed, but ESP-IDF has **no working directory** (`chdir` is `ENOSYS`, `getcwd` always

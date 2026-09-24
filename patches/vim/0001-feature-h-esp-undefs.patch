@@ -1,0 +1,62 @@
+diff --git a/src/feature.h b/src/feature.h
+index ee74752..cc4349a 100644
+--- a/src/feature.h
++++ b/src/feature.h
+@@ -1256,3 +1256,57 @@
+ #if defined(FEAT_NORMAL) && defined(HAVE_XATTR) && !defined(MACOS_X)
+ # define FEAT_XATTR
+ #endif
++
++/*
++ * ===========================================================================
++ * ESP-IDF port: disable what the platform cannot serve.
++ * ===========================================================================
++ *
++ * Appended by patches/vim/0001-feature-h-esp-undefs.patch. Kept at the very end
++ * so it overrides every preceding decision, and in one block so re-syncing to a
++ * newer Vim is a single conflict rather than a scattered dozen.
++ *
++ * What is NOT disabled here is as deliberate as what is: FEAT_EVAL, FEAT_SYN_HL,
++ * FEAT_QUICKFIX (:vimgrep works even though :make cannot), FEAT_DIFF (Vim's
++ * bundled xdiff is internal -- no external diff binary needed), FEAT_SPELL (the
++ * code compiles in; only the .spl data is fetched at runtime) and
++ * FEAT_PERSISTENT_UNDO all stay on. See docs/PLAN.md.
++ */
++#ifdef ESP_PLATFORM
++
++/* No X11, no Wayland, no system clipboard of any kind. */
++# undef FEAT_CLIPBOARD
++# undef FEAT_XCLIPBOARD
++# undef FEAT_WAYLAND
++# undef FEAT_WAYLAND_CLIPBOARD
++# undef FEAT_X11
++# undef FEAT_XCLIPBOARD
++
++/* No printer, and hardcopy.c drags in PostScript generation we cannot use. */
++# undef FEAT_PRINTER
++# undef FEAT_POSTSCRIPT
++
++/* No external tooling to talk to. */
++# undef FEAT_CSCOPE
++# undef FEAT_NETBEANS_INTG
++# undef FEAT_SOUND
++# undef FEAT_SODIUM
++# undef FEAT_XATTR
++
++/*
++ * Profiling pulls in timers and reltime plumbing that is not worth the flash on
++ * a device whose bottleneck is the display, not the script engine.
++ */
++# undef FEAT_PROFILE
++
++/*
++ * The decisive one for globbing. SPECIAL_WILDCHAR is "`'{" (os_unix.h) and is
++ * what makes gen_expand_wildcards() hand a pattern to mch_expand_wildcards(),
++ * which on Unix forks a shell. With it undefined, every pattern goes to Vim's
++ * internal matcher instead, so mch_expand_wildcards() can safely fail -- which
++ * matters because runtime-file sourcing globs during startup under FEAT_NORMAL.
++ * Cost: no brace or backtick expansion. There is no shell to do them anyway.
++ */
++# undef SPECIAL_WILDCHAR
++
++#endif /* ESP_PLATFORM */

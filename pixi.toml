@@ -61,6 +61,12 @@ spike = { cmd = 'bash -c ". scripts/env.sh >/dev/null && cd esp-vim/test/spike &
 
 spike-report = { cmd = 'bash -c ". scripts/env.sh >/dev/null && cd esp-vim/test/spike && ../../../scripts/run-emu.sh . --exit-on SPIKE-DONE --timeout 60s | sed -n \"/SPIKE-BEGIN/,/SPIKE-DONE/p\" > ../../../docs/phase1-spike-results.txt && echo wrote docs/phase1-spike-results.txt"', depends-on = ["spike-build"], description = "Re-record the spike results into docs/" }
 
+mkpatch = { cmd = "scripts/mkpatch.sh", description = "Generate a patch from edits in build-deps/<dep> (see docs/DECISIONS.md)" }
+
+vim-build = { cmd = 'bash -c ". scripts/env.sh >/dev/null && cd esp-vim && idf.py build"', description = "Build the Vim firmware" }
+
+vim-size = { cmd = 'bash -c ". scripts/env.sh >/dev/null && cd esp-vim && riscv32-esp-elf-size -t $(find build -path \"*__idf_vim.dir*\" -name \"*.c.obj\") | tail -1"', description = "Report the Vim component's text/data/bss" }
+
 # Phase 2: generate a baseline config.h on the HOST, to be curated by hand.
 # Needs pixi's ncurses: Vim's configure refuses to finish without a terminal
 # library, even though the ESP build undefines HAVE_TGETENT and uses the
