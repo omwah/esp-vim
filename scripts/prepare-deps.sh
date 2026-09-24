@@ -27,22 +27,40 @@ info() { printf '  %s\n' "$*"; }
 
 [ -f "$MANIFEST" ] || die "manifest not found: $MANIFEST"
 
+# build-deps/ holds ~100 MB of extracted upstream source and must never be
+# committed.  If it is not ignored, a later `git add -A` would swallow all of it,
+# so refuse to populate it rather than set that trap.
+if git -C "$REPO_ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    if ! git -C "$REPO_ROOT" check-ignore -q build-deps 2>/dev/null; then
+        die "build-deps/ is not git-ignored -- refusing to extract into a tracked path.
+       Add '/build-deps/' to .gitignore first."
+    fi
+fi
+
 # Read one field of one record from the manifest.
+#
+# Records are blank-line separated; fields are "key: value" anchored at column 1.
+# Indented lines are continuations of the previous field's value and are ignored
+# here -- only the first line of a value is returned.  Anchoring matters: a value
+# that happens to contain "name:" must not be mistaken for a new record.
 manifest_field() {
     local want_name="$1" key="$2"
     awk -v want="$want_name" -v key="$key" '
-        /^[[:space:]]*#/ { next }
-        /^name:/ { split($0, a, ":"); cur = $2 }
-        cur == want && $1 == key ":" {
-            sub(/^[a-z0-9]+:[[:space:]]*/, "")
-            print
-            exit
+        /^[[:space:]]*#/  { next }          # comment
+        /^[[:space:]]/    { next }          # continuation line
+        $0 !~ /^[a-z0-9_]+:/ { next }       # not a field at all
+
+        {
+            k = $0; sub(/:.*$/, "", k)                  # key
+            v = $0; sub(/^[a-z0-9_]+:[[:space:]]*/, "", v)  # value
         }
+        k == "name" { cur = v; next }
+        cur == want && k == key { print v; exit }
     ' "$MANIFEST"
 }
 
 manifest_names() {
-    awk '/^name:/ { print $2 }' "$MANIFEST"
+    awk '/^name:[[:space:]]/ { sub(/^name:[[:space:]]*/, ""); print }' "$MANIFEST"
 }
 
 # An LFS pointer file is ~130 bytes of text beginning with a version line.  If
