@@ -1209,6 +1209,51 @@ grid; a renderer paints damaged cells), on a different panel:
 - **Board definitions:** one per supported CYD variant (panel, pins, touch, backlight).
   Start with one widely available N16R8 variant and add others as they're tested.
 
+#### First CYD board: Hosyond ES3C28P (2.8", 240×320, capacitive)
+
+Sold as "Hosyond ESP32-S3 2.8" 240x320 IPS Touchscreen"; the board is the **ES3C28P**
+(LCD Wiki: "2.8inch ESP32-S3 Display"; ES3N28P is the same board without touch). Details
+below come from the user's hands-on notes for this exact board, verified on it:
+
+| | |
+|---|---|
+| Module | ESP32-S3-WROOM-1 **N16R8**: 16 MB flash (quad), 8 MB PSRAM (**octal**, `CONFIG_SPIRAM_MODE_OCT`, as already set) |
+| USB | the S3's **USB-Serial/JTAG only**; no UART bridge |
+| Panel | **ILI9341V**, 240×320 IPS, SPI: SCLK 12, MOSI 11, MISO 13, CS 10, DC 46, backlight 45; **no reset GPIO** (tied to chip reset: software reset only); **colour inversion required**; landscape is 320×240 |
+| SPI clock | **60 MHz** ceiling (80 MHz drops bytes, and the whole image shifts sideways); a full frame is about 20 ms; use SPI3 |
+| Touch | **FT6336G** capacitive, I2C SDA 16 / SCL 15, INT 17, RST 18, address **0x38** (the audio codec also answers, at 0x18: bind 0x38 explicitly); reports portrait coordinates, landscape mapping `x = raw_y, y = 240 - raw_x`; hardware reset before the first read |
+| SD card | SDMMC 4-bit: CLK 38, CMD 40, D0–D3 39/41/48/47, which becomes `/sd` |
+| Other | ES8311 codec + FM8002E amplifier (I2S 4/5/7/8/6, amplifier enable GPIO1 active LOW), battery ADC GPIO9, BOOT button GPIO0, UART0 43/44 |
+
+What it changes in the plan:
+
+- **Console over USB-Serial/JTAG.** The port's console is UART0, which this board only
+  exposes on pins. Add a Kconfig choice for the console transport (UART or USB-Serial/JTAG;
+  ESP-IDF has a VFS driver with `select()` support for the latter). Then check the
+  port's assumptions against it: raw mode, line endings, the zero-timeout poll, the size
+  probe, and CTRL-C. The Phase 5 note about USB-JTAG panic output hanging the console
+  (hence `CONSOLE_SECONDARY_NONE`) needs re-checking in that configuration.
+- **Do this before 10b, as the first real-hardware run.** Vim over USB-Serial/JTAG on this
+  board needs no display work, and it **settles the open S3 heap corruption**
+  (PHASE5.md, known issue): run the S3 gate on real silicon. If it passes there
+  repeatedly, the emulator is the suspect; if it fails, the bug is ours and now
+  debuggable on hardware.
+- **A tiny grid.** 320×240 is 40×15 cells at 8×16, 53×20 at 6×12, 64×30 at 5×8.
+  Which font, and whether Vim is usable at that size, **is a decision for when 10b starts**.
+  Every `:Esp` view and `:EspFiles` must work at 40–60 columns.
+- **Input:** no built-in keyboard, and the USB-C port is the debug console, so **BLE
+  keyboards paired by touch (Phase 11) are the input**, plus serial for development.
+- **Extras worth taking:** the speaker for Vim's bell; the battery ADC for `:EspInfo` and
+  the status line; `/sd`.
+- **Flashing safety:**
+  - The board ships with a single `app0` partition and no OTA slot, so the factory
+    firmware has no other copy. **Dump the full 16 MB flash before the first write**
+    (`esptool read-flash 0x0 0x1000000 …`, with `--after no-reset`: the board
+    re-enumerates on reset) and keep the dump outside the repo.
+  - Always address the board by its `/dev/serial/by-id/…` path, never `/dev/ttyACM*`,
+    whose numbering changes between replugs. Other Espressif boards with the same USB
+    VID:PID may be attached.
+
 ---
 
 ## Verification
