@@ -400,6 +400,11 @@ Keyboards		Besides the terminal, a Bluetooth keyboard can type into
 Mouse			Enabled, using SGR mouse reporting.  Click to move
 			the cursor, drag to select, wheel to scroll.
 
+Touch			On boards with a touch screen it is the mouse: tap
+			to move the cursor (or click), slide sideways to
+			select -- or press, hold still a moment, then move --
+			and swipe up or down to scroll.
+
 Screen size		Measured from your terminal when Vim starts.  If you
 			resize the terminal window afterwards, tell Vim: >
 				:set lines=40 columns=120

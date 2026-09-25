@@ -8,6 +8,7 @@
 
 #include "vim.h"
 #include "esp_vim_api.h"
+#include "esp_touch.h"
 
 #include "driver/i2c_master.h"
 #include "driver/uart.h"
@@ -128,6 +129,15 @@ typedef bool (*i2c_found_cb)(void *ctx, i2c_master_bus_handle_t bus, int addr);
 /* Probe every 7-bit address on a bus built on {sda}/{scl} for the call. */
 static bool i2c_scan(int sda, int scl, i2c_found_cb cb, void *ctx, const char *fn)
 {
+    /* The touch panel's bus (the board's own, on the ES3C28P) is shared, not
+     * claimed a second time; its pins are otherwise reserved. */
+    i2c_master_bus_handle_t shared = esp_touch_i2c_bus(sda, scl);
+    if (shared != NULL) {
+        for (int a = 0x08; a < 0x78; a++)
+            if (i2c_master_probe(shared, a, 20) == ESP_OK && !cb(ctx, shared, a))
+                break;
+        return true;
+    }
     if (!pin_ok(sda, fn) || !pin_ok(scl, fn))
         return false;
     i2c_master_bus_config_t cfg = {

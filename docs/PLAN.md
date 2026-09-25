@@ -1338,8 +1338,15 @@ What it changes in the plan:
     typed there turns the output back on and redraws the whole screen for it.
   - The device help is reflowed to the screen's 53 columns (scripts/helpfmt.py, from
     the same source as the 78-column help the other builds keep).
+  - **Touch** (`components/esp_touch`, FT6336G, 2026-09-25): the mouse. A tap clicks,
+    a swipe scrolls, and a sideways slide (or press-hold-move) drags to select. These
+    go to Vim as xterm SGR mouse reports through the keyboard queue, only while Vim has
+    mouse reporting on. The touch panel owns its I2C bus, and `:EspI2cScan`/
+    `:EspSensors` share it rather than claiming the same pins twice. The system vimrc
+    sets `background=dark` and a visible Visual colour when `esp_display()` reports a
+    display.
   - Still to do: the web server's RAM headroom on this board (it needs WiFi to test),
-    output speed with no serial terminal attached, touch, backlight control, and
+    output speed with no serial terminal attached, the touch pairing overlay, backlight control, and
     `:Esp` views at 53 columns.
 - **Input:** no built-in keyboard, and the USB-C port is the debug console, so **BLE
   keyboards paired by touch (Phase 11) are the input**, plus serial for development.

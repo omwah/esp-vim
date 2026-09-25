@@ -12,6 +12,7 @@
 #include "esp_display.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "driver/gpio.h"
@@ -30,6 +31,9 @@
 #include "vterm.h"
 
 #include "esp_display_font.h"
+#include "esp_kbd.h"
+#include "esp_timer.h"
+#include "esp_touch.h"
 
 static const char *TAG = "esp_display";
 
@@ -82,6 +86,7 @@ static VTerm *s_vt;
 static VTermScreen *s_screen;
 static VTermPos s_cursor;
 static bool s_cursor_visible = true;
+static volatile int s_mouse;            /* the terminal's mouse mode: VTERM_PROP_MOUSE_* */
 static int s_dirty_lo[ROWS], s_dirty_hi[ROWS];  /* damaged columns [lo, hi) per row */
 
 /* -------------------------------------------------------------- damage -- */
@@ -113,6 +118,8 @@ static int on_movecursor(VTermPos pos, VTermPos old, int visible, void *user)
 
 static int on_settermprop(VTermProp prop, VTermValue *val, void *user)
 {
+    if (prop == VTERM_PROP_MOUSE)
+        s_mouse = val->number;
     if (prop == VTERM_PROP_CURSORVISIBLE) {
         s_cursor_visible = val->boolean;
         mark(s_cursor.row, s_cursor.col, s_cursor.col + 1);
@@ -217,6 +224,85 @@ static void display_task(void *arg)
         while ((n = xStreamBufferReceive(s_stream, buf, sizeof buf, 0)) > 0)
             vterm_input_write(s_vt, buf, n);
         paint_damage();
+    }
+}
+
+/* ---------------------------------------------------------- touch-as-mouse -- */
+
+#define HOLD_US   (400 * 1000)          /* press this long before moving: a drag */
+#define SLOP_PX   12                    /* movement smaller than this is a tap */
+#define WHEEL_PX  (3 * FONT_H)          /* a wheel step per 3 rows: Vim scrolls 3 */
+
+/* Runs on the touch task; only it touches this state. */
+static enum { G_IDLE, G_PENDING, G_SCROLL, G_DRAG } s_gesture;
+static int s_x0, s_y0, s_wheel_y, s_row0, s_col0, s_row, s_col;
+static int64_t s_t0;
+
+static void cell_at(int x, int y, int *row, int *col)
+{
+    int c = (x - X0) / FONT_W, r = (y - Y0) / FONT_H;
+    *col = (c < 0 ? 0 : c >= COLS ? COLS - 1 : c) + 1;
+    *row = (r < 0 ? 0 : r >= ROWS ? ROWS - 1 : r) + 1;
+}
+
+/* An xterm SGR mouse report: button 0 = left, 32 = left moved while held,
+ * 64/65 = wheel up/down. */
+static void mouse(int button, int row, int col, bool release)
+{
+    char b[24];
+    int n = snprintf(b, sizeof b, "\033[<%d;%d;%d%c", button, col, row, release ? 'm' : 'M');
+    esp_kbd_push(b, n);
+}
+
+void esp_display_touch(int ev, int x, int y, void *ctx)
+{
+    if (!s_active || s_mouse == VTERM_PROP_MOUSE_NONE) {
+        s_gesture = G_IDLE;
+        return;
+    }
+    int row, col;
+    cell_at(x, y, &row, &col);
+    int64_t now = esp_timer_get_time();
+    switch (ev) {
+    case ESP_TOUCH_DOWN:
+        s_gesture = G_PENDING;
+        s_x0 = x, s_y0 = y, s_t0 = now;
+        s_row0 = s_row = row, s_col0 = s_col = col;
+        break;
+    case ESP_TOUCH_MOVE:
+        if (s_gesture == G_PENDING) {
+            int dx = abs(x - s_x0), dy = abs(y - s_y0);
+            bool moved = dx > SLOP_PX || dy > SLOP_PX;
+            if (now - s_t0 >= HOLD_US || (moved && dx >= dy)) {
+                /* Held still first, or moving sideways: a drag, pressing
+                 * where it started. */
+                s_gesture = G_DRAG;
+                mouse(0, s_row0, s_col0, false);
+            } else if (moved) {                 /* up or down, straight away */
+                s_gesture = G_SCROLL;
+                s_wheel_y = s_y0;
+            }
+        }
+        if (s_gesture == G_SCROLL) {
+            /* The content follows the finger: moving up shows what's below. */
+            for (; y - s_wheel_y <= -WHEEL_PX; s_wheel_y -= WHEEL_PX)
+                mouse(65, s_row0, s_col0, false);
+            for (; y - s_wheel_y >= WHEEL_PX; s_wheel_y += WHEEL_PX)
+                mouse(64, s_row0, s_col0, false);
+        } else if (s_gesture == G_DRAG && (row != s_row || col != s_col)) {
+            mouse(32, row, col, false);
+            s_row = row, s_col = col;
+        }
+        break;
+    case ESP_TOUCH_UP:
+        if (s_gesture == G_PENDING) {           /* a tap: click */
+            mouse(0, s_row0, s_col0, false);
+            mouse(0, s_row0, s_col0, true);
+        } else if (s_gesture == G_DRAG) {
+            mouse(0, s_row, s_col, true);
+        }
+        s_gesture = G_IDLE;
+        break;
     }
 }
 

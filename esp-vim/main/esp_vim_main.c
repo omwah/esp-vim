@@ -26,6 +26,7 @@
 #include "esp_display.h"
 #include "esp_ble.h"
 #include "esp_kbd.h"
+#include "esp_touch.h"
 #include "esp_heap_caps.h"
 #include "driver/uart.h"
 #include "driver/uart_vfs.h"
@@ -391,9 +392,16 @@ void app_main(void)
     nvs_init();
     esp_net_init();
     console_init();
+    esp_kbd_init();                     /* keyboards and touch feed console input */
 #if CONFIG_ESP_VIM_DISPLAY
     if (esp_display_init() != ESP_OK)   /* each session hooks it up (vim_task) */
         ESP_LOGE(TAG, "display: not available -- the console is serial only");
+#endif
+#if CONFIG_ESP_VIM_TOUCH
+    if (esp_touch_init() == ESP_OK)
+        esp_touch_set_handler((esp_touch_handler_t)esp_display_touch, NULL);
+    else
+        ESP_LOGE(TAG, "touch: not available");
 #endif
     storage_init();
     environment_init();

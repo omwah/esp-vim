@@ -1,0 +1,50 @@
+menu "esp-vim touch"
+
+    config ESP_VIM_TOUCH
+        bool "FT6336G/FT6x06 capacitive touch panel"
+        default n
+        help
+            Touches become mouse events in Vim (tap, drag, swipe to scroll)
+            and drive the Bluetooth pairing overlay. The defaults below are
+            the Hosyond ES3C28P's (docs/PLAN.md, 10b).
+
+    if ESP_VIM_TOUCH
+
+    config ESP_VIM_TOUCH_SDA
+        int "SDA GPIO"
+        default 16
+    config ESP_VIM_TOUCH_SCL
+        int "SCL GPIO"
+        default 15
+    config ESP_VIM_TOUCH_INT
+        int "Interrupt GPIO (active low)"
+        default 17
+    config ESP_VIM_TOUCH_RST
+        int "Reset GPIO (active low; -1: none)"
+        default 18
+    config ESP_VIM_TOUCH_ADDR
+        hex "I2C address"
+        default 0x38
+
+    config ESP_VIM_TOUCH_WIDTH
+        int "Screen width, as mounted"
+        default 320
+    config ESP_VIM_TOUCH_HEIGHT
+        int "Screen height, as mounted"
+        default 240
+
+    # The panel reports portrait coordinates. The ES3C28P, landscape with the
+    # USB port on the right (as esp_display draws it): swap, then mirror X.
+    config ESP_VIM_TOUCH_SWAP_XY
+        bool "Swap X and Y"
+        default y
+    config ESP_VIM_TOUCH_MIRROR_X
+        bool "Mirror X (after swapping)"
+        default y
+    config ESP_VIM_TOUCH_MIRROR_Y
+        bool "Mirror Y (after swapping)"
+        default n
+
+    endif
+
+endmenu

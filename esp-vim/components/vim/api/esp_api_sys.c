@@ -7,6 +7,7 @@
 #include "version.h"          /* VIM_VERSION_SHORT */
 #include "esp_vim_api.h"
 #include "esp_vim_port.h"
+#include "esp_display.h"
 
 #include "esp_chip_info.h"
 #include "esp_flash.h"
@@ -201,4 +202,19 @@ void f_esp_console_output(typval_T *argvars, typval_T *rettv)
     }
     rettv->v_type = VAR_BOOL;
     rettv->vval.v_number = esp_vim_console_output() ? VVAL_TRUE : VVAL_FALSE;
+}
+
+/* esp_display() -> Dict: active (a display shows the console), rows, cols.
+ * The system vimrc uses it to set 'background' and colours for the panel. */
+void f_esp_display(typval_T *argvars UNUSED, typval_T *rettv)
+{
+    if (rettv_dict_alloc(rettv) == FAIL)
+        return;
+    int rows = 0, cols = 0;
+    bool on = esp_display_active();
+    if (on)
+        esp_display_size(&rows, &cols);
+    dict_add_bool(rettv->vval.v_dict, "active", on);
+    dict_add_number(rettv->vval.v_dict, "rows", rows);
+    dict_add_number(rettv->vval.v_dict, "cols", cols);
 }

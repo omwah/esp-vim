@@ -185,7 +185,7 @@ idf_component_register(
     REQUIRES fatfs vfs esp_partition esp_driver_uart esp_timer heap
              # the esp_*() builtins (api/)
              nvs_flash esp_driver_gpio esp_psram spi_flash esp_hw_support esp_fs esp_net esp_ssh esp_web
-             esp_adc esp_driver_i2c esp_ble
+             esp_adc esp_driver_i2c esp_ble esp_touch esp_display
     LDFRAGMENTS "linker.lf"     # brackets Vim's .data/.bss for session restarts
 )
 

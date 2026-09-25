@@ -112,6 +112,12 @@ static bool send_key(uint8_t usage, uint8_t mods)
     return true;
 }
 
+void esp_kbd_push(const char *bytes, size_t len)
+{
+    if (s_queue != NULL)
+        queue(bytes, len);
+}
+
 static void on_repeat(void *arg)
 {
     if (s_repeat_key)

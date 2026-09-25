@@ -32,6 +32,18 @@ void esp_display_size(int *rows, int *cols);
 /* Console output to show. Blocks only while the display falls behind. */
 void esp_display_write(const void *buf, size_t len);
 
+/*
+ * A touch on the panel, as a mouse in the terminal -- only while the program on
+ * it (Vim) has asked for mouse reports, so a stray tap never types anything:
+ *   tap                          a click
+ *   swipe up or down             the scroll wheel, a step per 3 rows moved
+ *   slide sideways, or press,    a drag (selects, in Vim)
+ *   hold still, then move
+ * Reports go to the console input (esp_kbd) as xterm SGR mouse sequences. For
+ * esp_touch_set_handler(): ev is an esp_touch_event_t.
+ */
+void esp_display_touch(int ev, int x, int y, void *ctx);
+
 #ifdef __cplusplus
 }
 #endif

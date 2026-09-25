@@ -22,3 +22,7 @@ CONFIG_ESP_VIM_DISPLAY=y
 # with its HAL). The display doesn't need it IRAM-safe: a transfer that ends
 # during a flash write is simply noticed a moment later.
 # CONFIG_SPI_MASTER_ISR_IN_IRAM is not set
+
+# The FT6336G touch panel (esp_touch; the Kconfig defaults are this board's):
+# taps, drags and swipes become mouse events in Vim.
+CONFIG_ESP_VIM_TOUCH=y

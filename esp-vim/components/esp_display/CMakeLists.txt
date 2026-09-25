@@ -16,7 +16,7 @@ if(CONFIG_ESP_VIM_DISPLAY)
              "${VTERM}/src/state.c" "${VTERM}/src/unicode.c" "${VTERM}/src/vterm.c"
         INCLUDE_DIRS "include"
         PRIV_INCLUDE_DIRS "${VTERM}/include" "${VTERM}/src"
-        PRIV_REQUIRES esp_lcd esp_driver_spi esp_driver_gpio heap log
+        PRIV_REQUIRES esp_lcd esp_driver_spi esp_driver_gpio heap log esp_kbd esp_touch esp_timer
     )
     add_custom_command(
         OUTPUT "${FONT_C}"
@@ -34,5 +34,8 @@ if(CONFIG_ESP_VIM_DISPLAY)
         "${VTERM}/src/state.c" "${VTERM}/src/unicode.c" "${VTERM}/src/vterm.c"
         PROPERTIES COMPILE_OPTIONS "-Wno-unused-variable;-Wno-unused-function;-Wno-sign-compare;-Wno-unused-but-set-variable;-Wno-implicit-fallthrough;-Wno-enum-conversion;-Wno-type-limits;-Wno-missing-field-initializers;-Wno-char-subscripts")
 else()
-    idf_component_register(SRCS "esp_display_stub.c" INCLUDE_DIRS "include")
+    # The same requirements as above: ESP-IDF works them out before the
+    # configuration is known.
+    idf_component_register(SRCS "esp_display_stub.c" INCLUDE_DIRS "include"
+        PRIV_REQUIRES esp_lcd esp_driver_spi esp_driver_gpio heap log esp_kbd esp_touch esp_timer)
 endif()

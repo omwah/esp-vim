@@ -31,6 +31,10 @@ esp_err_t esp_kbd_init(void);
  */
 void esp_kbd_report(const uint8_t *report, size_t len);
 
+/* Bytes for the console as they are: other input devices (touch-as-mouse
+ * sends xterm mouse reports). Dropped if the queue is full. */
+void esp_kbd_push(const char *bytes, size_t len);
+
 /* All keys released (the keyboard went away): stop any repeat. */
 void esp_kbd_release_all(void);
 
