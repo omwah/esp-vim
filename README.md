@@ -121,6 +121,7 @@ Targeted boards:
 |---|---|---|---|
 | [M5Stack Tab5](https://docs.m5stack.com/en/core/Tab5) | ESP32-P4 | 16 MB / 32 MB | 1280×720 touch screen; clip-on keyboard (no F-keys: its `Sym` layer gives F1–F12), USB keyboards, BLE keyboards through its ESP32-C6 radio |
 | ESP32-S3 "Cheap Yellow Display" (CYD) boards, starting with the Hosyond **ES3C28P** (2.8", 320×240, capacitive touch) | ESP32-S3 | 16 MB / 8 MB required | built-in touch LCD; BLE keyboards, paired by touch; console over the S3's own USB |
+| Freenove ESP32-S3 Display **FNK0115Q** (5.0", 800×480, capacitive touch) | ESP32-S3 | 16 MB / 8 MB | touch LCD; BLE keyboards, and USB keyboards if its USB port can host (to be confirmed); **build only until tested** |
 | ESP32-S3 development boards | ESP32-S3 | 16 MB / 8 MB required | none: a serial terminal |
 
 - **CYD boards:** only the **ESP32-S3** variants with 16 MB flash and 8 MB PSRAM (the

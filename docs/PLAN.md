@@ -1254,6 +1254,37 @@ What it changes in the plan:
     whose numbering changes between replugs. Other Espressif boards with the same USB
     VID:PID may be attached.
 
+#### Second CYD board (build-only until it arrives): Freenove FNK0115Q, 5.0" 800×480
+
+Freenove ESP32-S3 Display, **FNK0115, 5.0" variant FNK0115Q** (Amazon B0H93PLQVX).
+The user doesn't have it yet, so it's **build-only**: its board definition and
+configuration must compile in `pixi run vim-build-s3` (or a per-board variant), but nothing
+is flashed or run until it arrives.
+
+| | Known (listing, and a project built for this board) |
+|---|---|
+| Module | ESP32-S3, 16 MB flash, 8 MB PSRAM (PSRAM mode: **to confirm**) |
+| Panel | 800×480 IPS, **parallel RGB** (ST7262-class). The listing says "SPI"; take the RGB reading as the working assumption and confirm from the schematic |
+| Touch | **GT911** capacitive, up to 5 points; I2C pins to confirm |
+| SD card | SPI: MISO 13, MOSI 11, SCLK 12, CS 10 (confirmed on the 4.3" FNK0115L) |
+| Audio | speaker (only the 5.0" has one) |
+| USB | "USB-C code uploader": **native USB or a USB-UART bridge is unknown** |
+
+Why it matters:
+
+- **Grid:** 800×480 gives 100×30 cells at 8×16. That is comfortably Vim-sized, unlike the
+  ES3C28P's 40×15.
+- **Possible USB keyboard.** If its USB-C port is the S3's native USB (OTG-capable) and
+  the board can supply 5 V to a device, it could host a USB keyboard (ESP-IDF `usb_host` +
+  the HID class driver, full-speed, the same normalised key events as Phase 10). **Confirm
+  on arrival:** is the USB-C wired to GPIO19/20 (native USB) or to a bridge chip, does
+  VBUS get 5 V in host mode, and is there then any console left (UART pins, or USB-Serial/JTAG
+  when not hosting)? Hosting a keyboard on the only USB port means the console must move
+  to UART pins or to the screen.
+- **RGB panel and PSRAM bandwidth**, as noted above for RGB CYDs: this is the board that
+  measures it.
+
+
 ---
 
 ## Verification
