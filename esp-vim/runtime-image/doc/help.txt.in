@@ -1,3 +1,4 @@
+@WIDE@
 *help.txt*	For Vim version 9.2 on the @CHIP@.  Last change: 2026 Sep 25
 
 		   VIM on @CHIP@ - main help file
@@ -13,6 +14,26 @@ Jump to a subject:  Position the cursor on a tag (e.g. |bars|) and hit CTRL-].
    With the mouse:  Double-click the left mouse button on a tag, e.g. |bars|.
 		    The mouse is already enabled.
 	Jump back:  Type CTRL-O.  Repeat to go further back.
+@NARROW@
+*help.txt*	Vim 9.2 on the @CHIP@
+		Last change: 2026 Sep 25
+
+	  VIM on @CHIP@ - main help file
+
+Move around:	The cursor keys, or "h" left,
+		"j" down, "k" up, "l" right.
+Close window:	":q<Enter>".
+Get out of Vim:	":qa!<Enter>" (careful, all
+		changes are lost!).  Vim is the
+		whole device, so it then offers
+		a fresh session.  |esp-quit|
+
+Jump to a tag:	Put the cursor on a tag (e.g.
+		|bars|) and hit CTRL-].
+With the mouse:	Double-click a tag, e.g. |bars|.
+		The mouse is already enabled.
+Jump back:	CTRL-O.  Repeat to go further.
+@END@
 
 This is Vim 9.2 running directly on an @CHIP@ microcontroller.  It is real
 Vim: the same editor, the same commands, Vim script, syntax highlighting,

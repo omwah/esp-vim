@@ -5,8 +5,9 @@ Build the curated $VIMRUNTIME for the read-only /vimrt partition.
 Vim's runtime tree is 51 MB; the partition is 3 MB. This copies a deliberate
 subset out of build-deps/vim/runtime (extracted by prepare-deps.sh -- never
 committed), overlays OUR files from esp-vim/runtime-image/, and writes the
-result to build-deps/vimrt-<target>/, which the firmware build turns into a
-FAT image. It is per target only because :help names the chip it runs on.
+result to build-deps/vimrt-<variant>/, which the firmware build turns into a
+FAT image. It is per build variant only because :help names the chip it runs
+on, and is reflowed for boards with narrow screens.
 
 Curation is safe because Vim finds almost all runtime files with `runtime!`,
 which silently does nothing when a file is absent: a filetype with no ftplugin
@@ -17,11 +18,12 @@ than hand-picked.
 
 Fails if the estimated FAT footprint will not fit the partition.
 
-Usage: scripts/make-runtime-image.py [esp32p4|esp32s3 ...]
-       (no target: every supported one; or: pixi run runtime)
+Usage: scripts/make-runtime-image.py [esp32p4|esp32s3|es3c28p ...]
+       (no variant: every one; or: pixi run runtime)
 """
 
 import csv
+import helpfmt
 import fnmatch
 import os
 import re
@@ -32,8 +34,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "build-deps" / "vim" / "runtime"
 OURS = ROOT / "esp-vim" / "runtime-image"
-TARGETS = ["esp32p4", "esp32s3"]
-OUT = None                  # build-deps/vimrt-<target>, set per target in main()
+# One image per build variant (scripts/vim-build.sh): its chip, and the width its
+# help is written for. The ES3C28P's screen is 53 columns (320 px, 6 px font), so
+# its help.txt is reflowed to fit (scripts/helpfmt.py); the others keep Vim's 78.
+# A variant with nothing of its own (tab5) uses its chip's image.
+VARIANTS = {
+    "esp32p4": ("esp32p4", 78),
+    "esp32s3": ("esp32s3", 78),
+    "es3c28p": ("esp32s3", 53),
+}
+OUT = None                  # build-deps/vimrt-<variant>, set per variant in build()
 PARTITIONS = ROOT / "esp-vim" / "partitions.csv"
 FILETYPES_CONF = ROOT / "esp-vim" / "filetypes.conf"
 PARTITION_NAME = "vimrt"
@@ -259,7 +269,23 @@ def copy_upstream_docs():
         (OUT / "doc" / name).write_text(text, encoding="utf-8")
 
 
-def render_help(filetypes, chip):
+def choose_alternatives(text, narrow):
+    """Keep one side of each @WIDE@ ... @NARROW@ ... @END@ block. Returns the
+    text, and the narrow parts (verbatim: already written to fit) replaced by
+    numbered placeholders, with the list to put back after reflowing."""
+    kept = []
+
+    def pick(m):
+        if not narrow:
+            return m.group(1)
+        kept.append(m.group(2))
+        return f"@KEPT{len(kept) - 1}@"
+
+    text = re.sub(r"@WIDE@\n(.*?)\n@NARROW@\n(.*?)\n@END@", pick, text, flags=re.S)
+    return text, kept
+
+
+def render_help(filetypes, chip, width):
     """doc/help.txt from esp-vim/runtime-image/doc/help.txt.in.
 
     The device's help is an amended version of Vim's help.txt: the navigation
@@ -282,7 +308,15 @@ def render_help(filetypes, chip):
         lines.append(row)
     text = (HELP_TEMPLATE.read_text().replace("@FILETYPES@", "\n".join(lines))
             .replace("@CHIP@", chip))
-    left = re.search(r"@[A-Z]+@", text)
+    text, kept = choose_alternatives(text, width < 78)
+    if width < 78:
+        text, too_long = helpfmt.reflow(text, width)
+        for n, part in enumerate(kept):
+            text = text.replace(f"@KEPT{n}@", part)
+        for l in too_long:
+            print(f"  note: help line wider than {width} columns: {l.strip()[:60]}",
+                  file=sys.stderr)
+    left = re.search(r"@[A-Z]+[0-9]*@", text)
     if left:
         die(f"unrendered placeholder {left.group(0)} in {HELP_TEMPLATE.name}")
     (OUT / "doc").mkdir(exist_ok=True)
@@ -423,17 +457,18 @@ class Image:
 def main():
     if not (SRC / "defaults.vim").is_file():
         die(f"no Vim runtime at {SRC} -- run: pixi run deps")
-    targets = sys.argv[1:] or TARGETS
-    for t in targets:
-        if t not in TARGETS:
-            die(f"unknown target {t!r} (known: {' '.join(TARGETS)})")
-    for t in targets:
-        build(t)
+    variants = sys.argv[1:] or list(VARIANTS)
+    for v in variants:
+        if v not in VARIANTS:
+            die(f"unknown variant {v!r} (known: {' '.join(VARIANTS)})")
+    for v in variants:
+        build(v)
 
 
-def build(target):
+def build(variant):
     global OUT
-    OUT = ROOT / "build-deps" / f"vimrt-{target}"
+    target, help_width = VARIANTS[variant]
+    OUT = ROOT / "build-deps" / f"vimrt-{variant}"
     chip = chip_name(target)
 
     img = Image()
@@ -491,7 +526,7 @@ def build(target):
             shutil.copy2(p, dst)
             ours += 1
 
-    render_help(filetypes, chip)
+    render_help(filetypes, chip, help_width)
     copy_upstream_docs()
     ntags, unlinked = write_help_tags()
 
@@ -506,17 +541,17 @@ def build(target):
     # Leave room for the FAT itself, the root directory and long-name entries.
     budget = int(cap * 0.90)
 
-    (ROOT / "build-deps" / f"vimrt-{target}.manifest").write_text(
+    (ROOT / "build-deps" / f"vimrt-{variant}.manifest").write_text(
         "".join(f"{p.relative_to(OUT)}\t{p.stat().st_size}\n" for p in sorted(files)))
 
-    print(f"vimrt-{target}: {len(files)} files ({ours} ours), {len(dirs)} dirs, "
+    print(f"vimrt-{variant}: {len(files)} files ({ours} ours), {len(dirs)} dirs, "
           f"{len(filetypes)} filetypes from {FILETYPES_CONF.name}")
     print(f"  raw {raw / 1024:.0f} KB, FAT footprint ~{est / 1024:.0f} KB "
           f"of {cap / 1024:.0f} KB partition ({100 * est / cap:.0f}%)")
     docs = ", ".join(["help.txt"] + sorted(UPSTREAM_DOCS.values()))
-    print(f"  help for {chip}: {docs}; {ntags} tags")
+    print(f"  help for {chip}, {help_width} columns: {docs}; {ntags} tags")
     print(f"    our links all resolve; {unlinked} upstream links to absent docs made plain text")
-    print(f"  written to {OUT.relative_to(ROOT)}/, listing in build-deps/vimrt-{target}.manifest")
+    print(f"  written to {OUT.relative_to(ROOT)}/, listing in build-deps/vimrt-{variant}.manifest")
     if est > budget:
         die(f"estimated {est} bytes exceeds 90% of the {cap}-byte '{PARTITION_NAME}' partition")
 

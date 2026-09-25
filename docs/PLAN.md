@@ -1333,6 +1333,8 @@ What it changes in the plan:
     start. Otherwise the 2 px the 318 px grid doesn't cover kept an earlier firmware's
     pixels, which looked like column 0 wrapping to the right edge. The grid is centred,
     with a 1 px margin each side.
+  - The device help is reflowed to the screen's 53 columns (scripts/helpfmt.py, from
+    the same source as the 78-column help the other builds keep).
   - Still to do: the web server's RAM headroom on this board (it needs WiFi to test),
     output speed with no serial terminal attached, touch, backlight control, and
     `:Esp` views at 53 columns.

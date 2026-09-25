@@ -596,3 +596,23 @@ display driver, esp-hosted. A later incremental build of another variant then
 fails on missing sources. `scripts/vim-build.sh` records which variant configured
 last (`build-deps/managed-components-variant`) and reconfigures when it changes,
 which fetches that variant's components back.
+
+## 2026-09-25 — Narrow screens get their help reflowed, from the same source
+
+The ES3C28P's screen is 53 columns and Vim's help is written for 78, so on it
+nearly every line of help.txt wrapped. A second, hand-written narrow help would
+drift from the real one with every edit. So `scripts/helpfmt.py` reflows the one
+source at runtime-image build time, for variants that declare a narrow screen
+(`VARIANTS` in make-runtime-image.py: es3c28p, 53). It knows the constructs our
+help uses:
+- rules, and headings and commands with right-aligned tags;
+- paragraphs, keeping Vim's two spaces after a sentence;
+- two-column tables, kept as columns when the terms are short, with each
+  description under its term otherwise;
+- examples, re-indented, with trailing comments moved to their own line.
+
+The one part that doesn't reflow sensibly, the navigation block at the top, has
+a hand-written narrow alternative in the template (`@WIDE@ … @NARROW@ … @END@`).
+Every other variant gets the 78-column help exactly as before. Runtime images are
+now per variant: `vimrt-<variant>`, falling back to the chip's for a variant
+without one. Upstream help files (netrw, version9, ...) are not reflowed.
