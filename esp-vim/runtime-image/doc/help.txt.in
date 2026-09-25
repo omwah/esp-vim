@@ -1,4 +1,4 @@
-*help.txt*	For Vim version 9.2 on the @CHIP@.  Last change: 2026 Sep 24
+*help.txt*	For Vim version 9.2 on the @CHIP@.  Last change: 2026 Sep 25
 
 		   VIM on @CHIP@ - main help file
 									 k
@@ -169,6 +169,33 @@ NETWORK							*esp-network*
 		checked against a built-in list of public certificate
 		authorities.  CTRL-C stops a download; a stopped or failed
 		download never leaves a partial file behind.
+
+The WiFi commands work on boards with WiFi, including boards where it comes from
+a separate radio chip.  Elsewhere they say the build has no WiFi.
+
+:EspWifiScan						*:EspWifiScan*
+		WiFi networks in range, strongest first: name, signal,
+		channel and security.
+
+:EspWifiConnect {network} [{password}]			*:EspWifiConnect*
+		Join {network}.  Without {password}, asks for it (leave it
+		empty for an open network).  Waits for an address and shows
+		it; CTRL-C stops waiting.  The network is remembered and
+		joined again at every start.
+
+:EspWifiDisconnect					*:EspWifiDisconnect*
+		Leave the network and forget it.
+
+:EspWifiStatus						*:EspWifiStatus*
+		The same as |:EspNet|, including the network's name and
+		signal strength.
+
+:EspBleScan [{seconds}]					*:EspBleScan*
+		Bluetooth LE devices in range, strongest first: name,
+		address, address type, signal, and whether it accepts
+		connections.  Listens for {seconds}, 5 by default, at most
+		30.  Bluetooth starts the first time it is used.  Boards
+		without Bluetooth say so.
 
 Reading a web page or file works like on any Vim: >
 	:e https://example.com/notes.txt

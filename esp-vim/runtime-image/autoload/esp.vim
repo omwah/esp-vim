@@ -290,6 +290,23 @@ function! esp#WifiScan() abort
   call s:Show('WifiScan', lines, 2, function('esp#WifiScan'))
 endfunction
 
+" ----------------------------------------------------------------- :EspBle* --
+
+" :EspBleScan [{seconds}]: Bluetooth LE devices in range, strongest first.
+function! esp#BleScan(...) abort
+  let secs = a:0 ? str2nr(a:1) : 5
+  echo 'Scanning for Bluetooth devices (' . secs . ' s)...'
+  redraw
+  let devs = sort(esp_ble_scan(secs), {a, b -> b.rssi - a.rssi})
+  let lines = ['Bluetooth LE devices: ' . len(devs) . '   (R rescan, q close)',
+        \ s:Row('%-24s %-17s %-6s %6s  %s', 'Name', 'Address', 'Type', 'Signal', '')]
+  for d in devs
+    call add(lines, s:Row('%-24s %-17s %-6s %4d dB  %s', empty(d.name) ? '(no name)' : d.name,
+          \ d.addr, d.addr_type, d.rssi, d.connectable ? 'connectable' : ''))
+  endfor
+  call s:Show('BleScan', lines, 2, function('esp#BleScan', [secs]))
+endfunction
+
 " :EspWifiConnect {ssid} [{password}]: without a password, asks for one
 " (leave it empty for an open network). The network is remembered in NVS.
 function! esp#WifiConnect(ssid, ...) abort

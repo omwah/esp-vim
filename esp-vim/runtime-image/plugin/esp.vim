@@ -41,3 +41,4 @@ command! -bar EspWifiScan call esp#WifiScan()
 command! -nargs=+ EspWifiConnect call esp#WifiConnect(<f-args>)
 command! -bar EspWifiDisconnect call esp_wifi_disconnect() | echo 'WiFi disconnected and forgotten'
 command! -bar EspWifiStatus call esp#Net()
+command! -bar -nargs=? EspBleScan call esp#BleScan(<f-args>)

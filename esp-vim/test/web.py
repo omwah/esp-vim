@@ -98,6 +98,7 @@ def main():
                 print("  SKIP  web interface: this build has no network interface yet")
                 log.unlink()
                 return
+            s.join_wifi()
             for _ in range(30):
                 if probe("NU", "(esp_net_status().up ? 1 : 0)") == "1":
                     break

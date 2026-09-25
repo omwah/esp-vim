@@ -40,6 +40,8 @@ PSRAM = {"esp32p4": "32M", "esp32s3": "8M"}
 
 # Options that belong to the radio: on a co-processor build they go to the C6.
 RADIO_OPTS = {"--wifi-ssid", "--wifi-password"}
+# esp-emu's soft access point when not given --wifi-ssid / --wifi-password.
+EMU_AP = ("myssid", "mypassword")
 
 
 class Session:
@@ -192,6 +194,24 @@ class Session:
         for ch in text.encode() if isinstance(text, str) else text:
             self.send(bytes([ch]))
             time.sleep(delay)
+
+    def join_wifi(self, timeout=90):
+        """On a WiFi build, join esp-emu's default soft AP, as :EspWifiConnect
+        would, and wait for an address, so network checks run over WiFi. Does
+        nothing on builds whose network isn't WiFi."""
+        def probe(tag, expr):
+            self.type(f":echo '{tag}' . '=' . {expr} . '|'\r")
+            return self.expect(rf"{tag}=([^|]*)\|".encode(), 60).group(1).decode()
+
+        if probe("WI", "esp_net_status().iface") != "wifi":
+            return
+        self.type(f":call esp_wifi_connect('{EMU_AP[0]}', '{EMU_AP[1]}')\r")
+        end = time.time() + timeout
+        while time.time() < end:
+            if probe("WU", "(esp_net_status().up ? 1 : 0)") == "1":
+                return
+            time.sleep(1)
+        raise TimeoutError("WiFi did not come up on esp-emu's soft AP")
 
     def close(self):
         try:

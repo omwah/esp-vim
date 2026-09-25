@@ -542,3 +542,18 @@ unit of building is a *variant*: a chip plus an optional `sdkconfig.defaults.<va
 with its own build directory and component lock. The alternative, one P4 build with the
 network picked in menuconfig, would make the emulator build and the shipped build
 silently the same directory, one sdkconfig edit apart.
+
+## 2026-09-25 — Bluetooth is tested against Bumble, and starts on first use
+
+esp-emu forwards the firmware's HCI traffic to a TCP server (`--ble-hci`). Bumble, a
+Python Bluetooth stack with a virtual controller and a virtual radio link, makes both
+ends of a scan scriptable in one process, with no radio hardware or BlueZ on the build
+host. The alternative, the host's own adapter through `hci0`, needs an HCI user channel,
+which takes elevated privileges (CAP_NET_ADMIN), and depends on what is on the air
+nearby. Bumble is PyPI-only and
+comes in through pixi's `pypi-dependencies`. It also has HID support, which is how Phase
+11's keyboard pairing can be tested on the S3.
+
+NimBLE starts on the first `:EspBleScan`, not at boot. On the S3, internal RAM is already
+the limit with WiFi up, and an editor session that never scans shouldn't pay for
+Bluetooth. Only the observer role is built; Phase 11 adds what keyboards need.

@@ -348,8 +348,10 @@ def main():
             s.type(":diffoff! | only | enew!\r")
             s.quiet(1.0)
 
-            # 2j. Network (Phase 6c): the P4's Ethernet under --net user, the
-            #     HTTP client, netrw's http:// reads, spell download.
+            # 2j. Network (Phase 6c): the P4's Ethernet under --net user (the
+            #     S3's WiFi on esp-emu's soft AP), the HTTP client, netrw's
+            #     http:// reads, spell download.
+            s.join_wifi()
             got = ""
             for _ in range(20):                      # DHCP may still be running
                 got = probe("NS", "(esp_net_status().up ? 1 : 0) . ':' . esp_net_status().ip")

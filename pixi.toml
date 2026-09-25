@@ -79,9 +79,9 @@ c6-build = { cmd = 'bash -c ". scripts/env.sh >/dev/null && scripts/c6-build.sh"
 vim-size = { cmd = 'bash -c ". scripts/env.sh >/dev/null && cd esp-vim && riscv32-esp-elf-size -t $(find build-esp32p4 -path \"*__idf_vim.dir*\" -name \"*.c.obj\") | tail -1"', description = "Report the Vim component's text/data/bss" }
 screenshots = { cmd = 'bash -c ". scripts/env.sh >/dev/null && \"$CONDA_PREFIX/bin/python\" scripts/screenshots.py"', description = "Regenerate docs/images/*.svg from the firmware running in the emulator (build first)" }
 
-vim-test = { cmd = 'bash -c ". scripts/env.sh >/dev/null && esp-vim/test/roundtrip.sh && python esp-vim/test/interactive.py && python esp-vim/test/web.py && python esp-vim/test/hw.py && python esp-vim/test/wifi.py"', depends-on = ["vim-build"], description = "Emulator gate on ESP32-P4: round trips across reboots, interactive console checks, web interface, peripherals, WiFi (where the build has it)" }
+vim-test = { cmd = 'bash -c ". scripts/env.sh >/dev/null && esp-vim/test/roundtrip.sh && python esp-vim/test/interactive.py && python esp-vim/test/web.py && python esp-vim/test/hw.py&& python esp-vim/test/wifi.py && python esp-vim/test/ble.py"', depends-on = ["vim-build"], description = "Emulator gate on ESP32-P4: round trips across reboots, interactive console checks, web interface, peripherals, WiFi and Bluetooth (where the build has them)" }
 
-vim-test-s3 = { cmd = 'bash -c ". scripts/env.sh >/dev/null && export ESPVIM_TARGET=esp32s3 && esp-vim/test/roundtrip.sh && python esp-vim/test/interactive.py && python esp-vim/test/web.py && python esp-vim/test/hw.py && python esp-vim/test/wifi.py"', depends-on = ["vim-build-s3"], description = "The same emulator gate on the ESP32-S3 variant" }
+vim-test-s3 = { cmd = 'bash -c ". scripts/env.sh >/dev/null && export ESPVIM_TARGET=esp32s3 && esp-vim/test/roundtrip.sh && python esp-vim/test/interactive.py && python esp-vim/test/web.py && python esp-vim/test/hw.py&& python esp-vim/test/wifi.py && python esp-vim/test/ble.py"', depends-on = ["vim-build-s3"], description = "The same emulator gate on the ESP32-S3 variant" }
 
 # Phase 2: generate a baseline config.h on the HOST, to be curated by hand.
 # Needs pixi's ncurses: Vim's configure refuses to finish without a terminal
@@ -95,3 +95,9 @@ emu = { cmd = 'bash -c ". scripts/env.sh >/dev/null && scripts/run-emu.sh \"$@\"
 # Interactive session over the emulator UART. socat, not nc: nc cannot do raw
 # mode, so arrows arrive as literal escapes. Detach with Ctrl-] .
 emu-tty = { cmd = 'socat -,raw,echo=0,escape=0x1d TCP:127.0.0.1:5555', description = "Attach a raw terminal to an emulator started with --uart-tcp 127.0.0.1:5555" }
+
+[pypi-dependencies]
+# Phase 6f: Google's Bumble (Apache-2.0) plays the Bluetooth radio for the
+# emulator's --ble-hci -- a virtual controller for the device, and a virtual
+# peripheral for it to find (esp-vim/test/ble.py). PyPI only.
+bumble = "==0.0.235"

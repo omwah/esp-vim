@@ -27,3 +27,20 @@ CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=4
 CONFIG_ESP_WIFI_RX_BA_WIN=6
 # ... and Vim's .bss goes to PSRAM (ESP_VIM_BSS_IN_PSRAM, components/vim/linker.lf).
 CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
+
+# Bluetooth LE (esp_ble, :EspBleScan): NimBLE, started on first use. Only the
+# observer role for now -- scanning -- with the host's memory in PSRAM; Phase 11
+# (keyboards) adds the central role, GATT client and security.
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y
+CONFIG_BT_NIMBLE_ROLE_OBSERVER=y
+# CONFIG_BT_NIMBLE_ROLE_CENTRAL is not set
+# CONFIG_BT_NIMBLE_ROLE_PERIPHERAL is not set
+# CONFIG_BT_NIMBLE_ROLE_BROADCASTER is not set
+# CONFIG_BT_NIMBLE_SECURITY_ENABLE is not set
+# The controller's code in flash, not internal RAM: about 20 KB of IRAM that the
+# web server's task otherwise can't find (ESP_ERR_HTTPD_TASK). The cost is that
+# Bluetooth may falter while flash is being erased -- and nothing writes flash
+# during a scan, which blocks the editor.
+CONFIG_BT_CTRL_RUN_IN_FLASH_ONLY=y

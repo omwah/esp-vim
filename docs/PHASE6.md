@@ -496,3 +496,66 @@ What the builds settle:
   (CLK 18, CMD 19, D0–D3 14–17, reset 54: Espressif's P4 function EV board). The Tab5's
   wiring is checked in Phase 9, along with whether the C6's factory firmware speaks this
   esp-hosted version.
+
+## 6f, part 4 — Bluetooth LE scan (2026-09-25)
+
+**Result:** `:EspBleScan [{seconds}]` and `esp_ble_scan([{seconds}])`: devices in range,
+with name, address, address type, signal and whether they accept connections.
+`components/esp_ble` runs NimBLE, observer role only, with its memory in PSRAM. It starts
+on the first scan, not at boot, so a session that never scans pays nothing. On the S3 it
+uses the chip's own controller. Builds without Bluetooth report that they have none:
+the P4 builds, where the Tab5's Bluetooth lives on the C6 (see the Phase 11 notes in
+PLAN.md).
+
+`esp-vim/test/ble.py` passes on the S3:
+- `esp_ble_scan()` finds a peripheral, with its name, address and address type;
+- `:EspBleScan` lists it;
+- a scan time out of range is refused.
+
+**How it's tested.** `esp-emu --ble-hci tcp:…` intercepts the firmware's controller at
+its VHCI interface and forwards the HCI traffic to a TCP server. `ble_peer.py` is that
+server, built on Google's Bumble (a pixi PyPI dependency). It gives the device a virtual
+controller, plus a second controller on the same virtual radio link running a peripheral
+that advertises `esp-vim-beacon` from `F0:F1:F2:F3:F4:F5`.
+
+Three things this setup turned up:
+
+- **Address.** Bumble's controller has no public address, and NimBLE then had no
+  identity address (error 21, `BLE_HS_ENOADDR`). `esp_ble` now calls
+  `ble_hs_util_ensure_addr`, which makes a random static address when the controller
+  has no public one. On a real S3 the public address is used.
+- **Report format.** Bumble reports advertisements in the extended format whenever its
+  controller supports extended advertising, even to a host that scanned with the legacy
+  commands. NimBLE, built without extended advertising, ignores those. A real controller
+  answers in the format the host asked for, so `ble_peer.py` clears that feature bit on
+  the device's controller.
+- **Scan duration.** NimBLE's own duration timer never ended a scan in the emulator:
+  reports arrived, but "discovery complete" never did. `esp_ble` now scans without a
+  limit, waits for the requested time itself, and cancels. It doesn't depend on that
+  event, which is simpler anyway. Results go into a table guarded by a mutex, since
+  NimBLE fills it from its own task, and are handed to Vim only after the cancel.
+
+### What Bluetooth costs the S3
+
+Building Bluetooth in at all, even though it starts only on first use, took about 20 KB
+of the S3's internal RAM: the controller library's code lives in IRAM. That was enough
+to stop the web server from creating its task (`ESP_ERR_HTTPD_TASK`).
+`BT_CTRL_RUN_IN_FLASH_ONLY` moves the controller's code to flash and gives the RAM back.
+Its documented cost, Bluetooth faltering while flash is erased, doesn't apply here: a
+scan blocks the editor, so nothing writes files during one.
+
+### The S3 gate's network checks now run over WiFi
+
+Since the S3 got WiFi (part 2), its interactive and web sessions had a network interface
+but never joined a network, so their network checks failed. `Session.join_wifi()` joins
+esp-emu's default soft AP first on WiFi builds (it does nothing on others). The web gate
+now passes on the S3 over WiFi. The interactive gate's HTTP, HTTPS, spell and SSH checks
+run over WiFi too, when the session survives `:help` long enough to reach them (below).
+
+Two S3 failures remain; both predate this work and happen with Bluetooth left out too:
+- `esp_adc_read()` trips the interrupt watchdog. ESP-IDF's one-shot read busy-waits, with
+  interrupts off, for a conversion-done flag the emulator's S3 never sets.
+- `:help` sometimes panics with `LoadStoreError`. This is the S3-in-the-emulator crash
+  noted in earlier phases.
+
+The S3 gate stays informational until it runs on silicon (DECISIONS.md, 2026-09-24).

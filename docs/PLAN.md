@@ -15,7 +15,7 @@
 | 3 — OS shim layer | **done** (2026-09-23), see [PHASE3.md](PHASE3.md) — Vim runs, edits, saves; `pixi run vim-test` |
 | 4 — Storage + curated runtime | **done** (2026-09-24), see [PHASE4.md](PHASE4.md) — runtime 74% of `vimrt`, 30 filetypes, 0.47 MB PSRAM to open a file |
 | 5 — Emulator bring-up over UART | **done** (2026-09-24), see [PHASE5.md](PHASE5.md) — interactive over UART; `:q` restarts in place; chip-named splash, device help, busy indicator. P4 gate green. **S3: open intermittent heap corruption under the emulator**, gate informational until tested on silicon |
-| 6 — `:Esp*` commands, file manager, transports, web | **in progress**, see [PHASE6.md](PHASE6.md). 6a–6e done 2026-09-24; 6f in progress (serial, I2C, ADC, sensors, S3 WiFi done; Tab5 WiFi via the C6 built, run-time check moved to Phase 9 because esp-emu cannot run esp-hosted; BLE next) |
+| 6 — `:Esp*` commands, file manager, transports, web | **in progress**, see [PHASE6.md](PHASE6.md). 6a–6e done 2026-09-24; 6f done 2026-09-25 (serial, I2C, ADC, sensors, S3 WiFi and BLE scan tested; Tab5 WiFi via the C6 built, with its run-time check moved to Phase 9 because esp-emu cannot run esp-hosted) |
 | 7 — MicroPython | not started |
 | 8 — Git | not started. **Being reconsidered:** libgit2 instead of pure Python; test build scheduled after Phase 6 (see Phase 8) |
 | 9 — Tab5 hardware over UART | not started |
@@ -651,7 +651,7 @@ for one:
 | 6c | networking in the emulator (EMAC + `--net user`), `esp_http_get`, spell download | **done** |
 | 6d | libssh2: SCP/SFTP builtins, netrw transports, remote panes | **done** |
 | 6e | web file manager, settings, live status | **done** |
-| 6f (in progress: serial/I2C/ADC/sensors, S3 WiFi, Tab5 WiFi build done) | radio via esp-hosted/C6 (`:EspWifi*`, `:EspBle*`), `:EspSerial`, `:EspI2cScan`, `:EspAdc`, `:EspSensors`. Also establish, for Phase 11: can esp-hosted carry a BLE **HID host** (NimBLE on the P4, controller on the C6), and what does `esp-emu --ble-hci` bridge to? | |
+| 6f | radio via esp-hosted/C6 (`:EspWifi*`, `:EspBle*`), `:EspSerial`, `:EspI2cScan`, `:EspAdc`, `:EspSensors`. Also establish, for Phase 11: can esp-hosted carry a BLE **HID host** (NimBLE on the P4, controller on the C6), and what does `esp-emu --ble-hci` bridge to? | **done** (answers in Phase 11); the Tab5's C6 link is checked on hardware, Phase 9 |
 | — | `:EspUsbMsc` | hardware only, Phase 9 |
 | 6z | **libgit2 feasibility build** (see Phase 8): decides how Phase 8 is built | after 6f, before Phase 7 |
 
@@ -1097,9 +1097,13 @@ on UART-console builds, e.g. an S3 dev board with a BLE keyboard.
 ### Stack
 
 - **Host stack NimBLE on the P4, controller on the C6**, with HCI carried over the
-  esp-hosted link. Whether esp-hosted-mcu supports that split for a HID host (not just
-  scanning) is **the first thing to verify**, and belongs in Phase 6f's BLE bring-up. On
-  the S3, NimBLE and the controller are both native.
+  esp-hosted link. **Found in 6f:** esp-hosted supports that split at the HCI level. The
+  2.12.13 C6 firmware the Tab5 build uses announces "HCI over SDIO, BLE only", and
+  esp-hosted ships NimBLE host-only examples for the host side. A HID host is GATT over
+  that same HCI, so it needs nothing extra from esp-hosted. It hasn't been *run*: the
+  emulator can't carry esp-hosted traffic (PHASE6.md, 6f part 3), so the first Tab5 BLE
+  keyboard test is on hardware. On the S3, NimBLE and the controller are both native,
+  and `components/esp_ble` already runs NimBLE there (observer role).
 - **ESP-IDF's `esp_hidh`** (HID host) does GATT discovery and report-map parsing, with
   boot-protocol keyboards as the fallback.
 - Flash cost of NimBLE plus `esp_hidh`: **to be measured** against the app partition,
@@ -1196,10 +1200,15 @@ while a keyboard is present, and closes itself as soon as one connects.
 
 ### Testing
 
-`esp-emu` has a `--ble-hci` option. **Find out in Phase 6f what it bridges.** If it can
-reach the host's BlueZ adapter, a real keyboard (or a software HOGP peripheral on the
-host) can drive the emulated device, and pairing, typing, reconnection and forgetting
-become part of the gate. If not, this phase is tested on hardware only.
+**Found in 6f:** `esp-emu --ble-hci` intercepts the firmware's Bluetooth controller at
+its VHCI interface. On the S3 that's `esp_vhci_host_*`, the path NimBLE uses. It
+forwards the HCI traffic either to a TCP server (`tcp:host:port`) or to a Linux adapter
+through an HCI user channel (`hci0`). `esp-vim/test/ble.py` uses the first: Bumble plays
+the controller, and a Bumble peripheral on the same virtual link advertises for the
+device to find. So on the **S3**, a Bumble HOGP keyboard on that link can drive the
+emulated device, and pairing, typing, reconnection and forgetting can all be part of the
+gate. (Bumble has HID device support.) The Tab5 path, through esp-hosted, is
+hardware-only until the emulator's SDIO bridge carries esp-hosted traffic.
 
 ### Phase 10b — Display console on ESP32-S3 CYD boards
 

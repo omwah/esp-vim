@@ -12,7 +12,7 @@
  #if defined(FEAT_EVAL)
  
  #ifdef VMS
-@@ -2279,6 +2284,105 @@
+@@ -2279,6 +2284,107 @@
  			ret_void,	    f_err_teapot},
      {"escape",		2, 2, FEARG_1,	    arg2_string,
  			ret_string,	    f_escape},
@@ -22,6 +22,8 @@
 +    // between "escape" and "eval".
 +    {"esp_adc_read",	1, 1, FEARG_1,	    arg1_number,
 +			ret_dict_any,	    f_esp_adc_read},
++    {"esp_ble_scan",	0, 1, FEARG_1,	    arg1_number,
++			ret_list_dict_any,  f_esp_ble_scan},
 +    {"esp_fs_copy",	2, 3, FEARG_1,	    arg3_string_string_bool,
 +			ret_bool,	    f_esp_fs_copy},
 +    {"esp_fs_delete",	1, 1, FEARG_1,	    arg1_string,
