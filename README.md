@@ -94,6 +94,26 @@ compatible with git on your computer, and pushes and fetches over HTTPS or SSH.
 `:Esp` commands, keys, storage and settings. `:q` doesn't leave you at a dead device:
 Vim restarts in place.
 
+## What it needs
+
+| | Needed | On the Tab5 |
+|---|---|---|
+| Chip | ESP32-P4 or ESP32-S3 | ESP32-P4 |
+| Flash | **16 MB** | 16 MB |
+| PSRAM | **8 MB minimum**; more leaves room for MicroPython and bigger files | 32 MB |
+
+**Flash** is laid out for 16 MB: 7 MB for the firmware (2.2 MB today, with room for the
+networking, MicroPython and git parts), 3 MB for Vim's runtime files (2.2 MB used: syntax,
+help, plugins), about 5.5 MB for your files at `/fat`, and 64 KB for settings. An SD
+card adds storage at `/sd`.
+
+**PSRAM is required.** Vim's memory lives there, because the chip's internal RAM (a
+few hundred KB at most) isn't enough. Vim uses about 0.5 MB editing a typical file and peaked near
+2.7 MB in the test suite with help and syntax highlighting loaded. It's allowed up to
+half of the free PSRAM (at most 16 MB), leaving the rest for everything else. For the
+ESP32-S3 that means a board like the N16R8 (16 MB flash, 8 MB octal PSRAM). Boards with
+quad PSRAM need `CONFIG_SPIRAM_MODE_QUAD` in `esp-vim/sdkconfig.defaults.esp32s3`.
+
 ## Try it in the emulator
 
 You need Linux x86-64, [pixi](https://pixi.sh) and [Git LFS](https://git-lfs.com).
