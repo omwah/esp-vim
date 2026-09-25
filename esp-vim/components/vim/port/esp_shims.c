@@ -37,6 +37,7 @@
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
 #include "esp_vim_port.h"
+#include "nvs.h"
 #include <sys/select.h>
 #include <termios.h>
 #include <ctype.h>
@@ -273,11 +274,24 @@ static bool extra_pending(int fd)
 
 extern ssize_t __real_read(int fd, void *buf, size_t len);
 
+/* The serial console's output switch, defined with write() below. */
+static bool s_console_off;
+static void console_output_save(bool on);
+
 ssize_t __wrap_read(int fd, void *buf, size_t len)
 {
     if (extra_pending(fd))
         return s_extra_read(buf, len);
-    return __real_read(fd, buf, len);
+    ssize_t n = __real_read(fd, buf, len);
+    if (fd == STDIN_FILENO && n > 0 && s_console_off) {
+        /* Someone is typing on the serial console: it's in use again. Show
+         * them the whole screen, not just what changes from now on. */
+        s_console_off = false;
+        console_output_save(true);
+        if (on_vim_task())
+            esp_vim__redraw_all();
+    }
+    return n;
 }
 
 /*
@@ -428,10 +442,56 @@ void esp_vim_set_output_mirror(void (*mirror)(const void *buf, size_t len))
 
 extern ssize_t __real_write(int fd, const void *buf, size_t len);
 
+/*
+ * The serial console's output can be switched off where a display shows the
+ * console (:EspConsole off): the screen still gets everything, the serial port
+ * nothing. Kept in NVS; the port's .bss is reset at each session start, so
+ * esp_vim_console_output_load() reads it back then. A key typed on the serial
+ * console turns it on again (see __wrap_read).
+ */
+static bool s_console_off;
+
+static void console_output_save(bool on)
+{
+    nvs_handle_t h;
+    if (nvs_open("esp_vim", NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_u8(h, "con_out", on);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+}
+
+bool esp_vim_console_output(void)
+{
+    return !s_console_off;
+}
+
+int esp_vim_set_console_output(bool on)
+{
+    if (!on && s_output_mirror == NULL)
+        return -1;                      /* the serial port is the only screen */
+    s_console_off = !on;
+    console_output_save(on);
+    return 0;
+}
+
+void esp_vim_console_output_load(void)
+{
+    nvs_handle_t h;
+    uint8_t on = 1;
+    if (nvs_open("esp_vim", NVS_READONLY, &h) == ESP_OK) {
+        nvs_get_u8(h, "con_out", &on);
+        nvs_close(h);
+    }
+    s_console_off = !on && s_output_mirror != NULL;
+}
+
 ssize_t __wrap_write(int fd, const void *buf, size_t len)
 {
     if (fd == STDOUT_FILENO && s_output_mirror != NULL)
         s_output_mirror(buf, len);
+    if (fd == STDOUT_FILENO && s_console_off)
+        return (ssize_t)len;            /* shown on the display only */
     return __real_write(fd, buf, len);
 }
 

@@ -300,6 +300,18 @@ def main():
             s.type(":echo 'T' . '=' . b:esp_view . (search('^vim ', 'nw') > 0) . '|'\r")
             got = s.expect(rb"T=([^|]*)\|", 30).group(1).decode()
             check(got == "Tasks1", ":EspTasks lists the vim task", f"got {got!r}")
+            # :EspConsole off needs a display to show the console; without one
+            # (the emulator builds) it's refused and the serial output stays on.
+            s.type(":let v:errmsg = '' | silent! call esp_console_output(0)\r")
+            s.quiet(1.0)
+            got = probe("CO", "(v:errmsg =~# 'only screen') . (esp_console_output() ? 1 : 0)")
+            want = "01" if VARIANT == "es3c28p" else "11"
+            check(got == want, "serial console output can't be switched off without a display"
+                  if want == "11" else "serial console output switches off with a display",
+                  f"refused:still-on {got!r}")
+            if VARIANT == "es3c28p":
+                s.type(":call esp_console_output(1)\r")    # (the next key would anyway)
+                s.quiet(1.0)
             s.type(":close\r")
             # NVS: a number and a string round trip, then erase.
             s.type(":EspNvs test answer 42\r:EspNvs test greet hello world\r")

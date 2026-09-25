@@ -307,6 +307,26 @@ function! esp#BleScan(...) abort
   call s:Show('BleScan', lines, 2, function('esp#BleScan', [secs]))
 endfunction
 
+" ----------------------------------------------------------------- :EspConsole --
+
+" :EspConsole [on|off]: whether Vim's output also goes to the serial console,
+" on boards where a display shows it.
+function! esp#ConsoleComplete(lead, line, pos) abort
+  return filter(['on', 'off'], 'v:val =~# "^" . a:lead')
+endfunction
+
+function! esp#Console(...) abort
+  if a:0
+    if a:1 !=# 'on' && a:1 !=# 'off'
+      echoerr 'Usage: :EspConsole [on|off]'
+      return
+    endif
+    call esp_console_output(a:1 ==# 'on')
+  endif
+  echo 'Serial console output: ' . (esp_console_output() ? 'on'
+        \ : 'off (the screen only; type a key on the serial console to turn it back on)')
+endfunction
+
 " ------------------------------------------------------------ :EspBtKeyboard --
 
 " :EspBtKeyboard                  status of the Bluetooth keyboard

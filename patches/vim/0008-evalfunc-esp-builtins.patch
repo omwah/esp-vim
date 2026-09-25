@@ -12,7 +12,7 @@
  #if defined(FEAT_EVAL)
  
  #ifdef VMS
-@@ -2279,6 +2284,113 @@
+@@ -2279,6 +2284,115 @@
  			ret_void,	    f_err_teapot},
      {"escape",		2, 2, FEARG_1,	    arg2_string,
  			ret_string,	    f_escape},
@@ -30,6 +30,8 @@
 +			ret_bool,	    f_esp_bt_keyboard_forget},
 +    {"esp_bt_keyboard_pair", 1, 2, FEARG_1,  arg2_string,
 +			ret_bool,	    f_esp_bt_keyboard_pair},
++    {"esp_console_output", 0, 1, FEARG_1,  arg1_bool,
++			ret_bool,	    f_esp_console_output},
 +    {"esp_fs_copy",	2, 3, FEARG_1,	    arg3_string_string_bool,
 +			ret_bool,	    f_esp_fs_copy},
 +    {"esp_fs_delete",	1, 1, FEARG_1,	    arg1_string,

@@ -42,6 +42,19 @@ void esp_vim_set_output_mirror(void (*mirror)(const void *buf, size_t len));
 void esp_vim_set_extra_input(bool (*pending)(void), int (*read)(void *buf, size_t len));
 
 /*
+ * Whether console output also goes to the serial console, where a display
+ * shows it too (:EspConsole). Off is refused without a display (-1). Kept in
+ * NVS: call esp_vim_console_output_load() at each session start, after
+ * esp_vim_set_output_mirror(). A key read from the serial console turns it on.
+ */
+bool esp_vim_console_output(void);
+int esp_vim_set_console_output(bool on);
+void esp_vim_console_output_load(void);
+
+/* Redraw the whole screen at the next update (api/esp_api_sys.c). Vim task only. */
+void esp_vim__redraw_all(void);
+
+/*
  * Vim sessions: restarting Vim in place after :q, without rebooting.
  *
  *   esp_vim_session_t s;

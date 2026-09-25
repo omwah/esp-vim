@@ -172,6 +172,16 @@ window at the bottom: "R" refreshes it, "q" closes it.
 		system keep their own entries here; change those only if you
 		know what they are for.
 
+:EspConsole [on|off]					*:EspConsole*
+		On boards with a screen, whether Vim's output also goes to
+		the serial console.  "off" keeps it to the screen, which
+		saves sending to a serial port that nothing is reading; it
+		is kept across restarts.  Keys typed on the serial console
+		always work, and the first one turns the output back on and
+		redraws the whole screen there: open a terminal and press
+		CTRL-L.  Without an argument, shows the setting.  Boards
+		without a screen can't turn it off.
+
 :EspReboot[!]						*:EspReboot*
 		Restart the chip.  Refuses while any buffer has unsaved
 		changes, unless you add !.  Unlike |esp-quit| this is a real

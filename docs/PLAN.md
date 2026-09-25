@@ -1333,6 +1333,9 @@ What it changes in the plan:
     start. Otherwise the 2 px the 318 px grid doesn't cover kept an earlier firmware's
     pixels, which looked like column 0 wrapping to the right edge. The grid is centred,
     with a 1 px margin each side.
+  - `:EspConsole off` keeps Vim's output on the screen and stops sending it to the
+    serial console, saved across restarts. Serial input always works: the first key
+    typed there turns the output back on and redraws the whole screen for it.
   - The device help is reflowed to the screen's 53 columns (scripts/helpfmt.py, from
     the same source as the 78-column help the other builds keep).
   - Still to do: the web server's RAM headroom on this board (it needs WiFi to test),

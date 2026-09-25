@@ -350,6 +350,7 @@ static void vim_task(void *arg)
     esp_vim_set_extra_input(esp_kbd_pending, esp_kbd_read);   /* keyboards */
     if (esp_display_active())
         esp_vim_set_output_mirror(esp_display_write);
+    esp_vim_console_output_load();          /* :EspConsole on/off, after the mirror */
 
     probe_terminal_size();                         /* the window may have changed */
     if (session == 1)

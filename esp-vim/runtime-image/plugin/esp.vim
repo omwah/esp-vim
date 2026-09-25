@@ -42,4 +42,5 @@ command! -nargs=+ EspWifiConnect call esp#WifiConnect(<f-args>)
 command! -bar EspWifiDisconnect call esp_wifi_disconnect() | echo 'WiFi disconnected and forgotten'
 command! -bar EspWifiStatus call esp#Net()
 command! -bar -nargs=? EspBleScan call esp#BleScan(<f-args>)
+command! -bar -nargs=? -complete=customlist,esp#ConsoleComplete EspConsole call esp#Console(<f-args>)
 command! -nargs=* -complete=customlist,esp#BtKeyboardComplete EspBtKeyboard call esp#BtKeyboard(<f-args>)

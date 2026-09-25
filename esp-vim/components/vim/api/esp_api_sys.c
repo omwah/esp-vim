@@ -174,3 +174,31 @@ void f_esp_reboot(typval_T *argvars UNUSED, typval_T *rettv UNUSED)
     out_flush();
     esp_restart();
 }
+
+/* For the port (esp_shims.c), which doesn't include vim.h. */
+void esp_vim__redraw_all(void)
+{
+    redraw_later(UPD_CLEAR);
+}
+
+/*
+ * esp_console_output([{on}]) -> Bool: whether Vim's output also goes to the
+ * serial console. With {on}: switch it (off only where a display shows the
+ * console). Kept across restarts; a key typed on the serial console turns it
+ * back on.
+ */
+void f_esp_console_output(typval_T *argvars, typval_T *rettv)
+{
+    if (argvars[0].v_type != VAR_UNKNOWN) {
+        int error = FALSE;
+        varnumber_T on = tv_get_bool_chk(&argvars[0], &error);
+        if (error)
+            return;
+        if (esp_vim_set_console_output(on != 0) != 0) {
+            emsg("esp_console_output(): no display -- the serial console is the only screen");
+            return;
+        }
+    }
+    rettv->v_type = VAR_BOOL;
+    rettv->vval.v_number = esp_vim_console_output() ? VVAL_TRUE : VVAL_FALSE;
+}
