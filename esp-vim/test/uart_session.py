@@ -38,6 +38,46 @@ TARGET = {"tab5": "esp32p4", "es3c28p": "esp32s3"}.get(VARIANT, VARIANT)
 COPROCESSOR = VARIANT == "tab5"
 PSRAM = {"esp32p4": "32M", "esp32s3": "8M"}
 
+# A real board instead of the emulator: ESPVIM_DEVICE=<serial port>, with the
+# matching build flashed. Each session erases the board's storage and NVS and
+# resets it, so it starts as fresh as an emulator run. Tests that need the
+# emulator's extras (--inject, --uart1-tcp, the soft AP, Bumble) skip.
+# ESPVIM_WIFI=ssid:password lets network checks join a real network.
+DEVICE = os.environ.get("ESPVIM_DEVICE")
+
+
+class _SerialSock:
+    """Just enough of a socket over a serial port for Session."""
+
+    def __init__(self, port):
+        import serial                       # pyserial: ESP-IDF's environment has it
+        self.port = serial.Serial(port, 115200, timeout=0.2)
+
+    def recv(self, n):
+        data = self.port.read(n)
+        if not data:
+            raise socket.timeout()
+        return data
+
+    def sendall(self, data):
+        self.port.write(data)
+
+    def close(self):
+        self.port.close()
+
+
+def _device_fresh_start(port):
+    """Erase storage and NVS (the emulator starts from a pristine image too).
+    parttool ends with esptool's reset into the app: a hand-made DTR/RTS pulse
+    on the USB Serial/JTAG port leaves the chip in download mode instead."""
+    parttool = os.path.join(os.environ.get("IDF_PATH", ""),
+                            "components", "partition_table", "parttool.py")
+    for part in ("storage", "nvs"):
+        subprocess.run([sys.executable, parttool, "--port", port,
+                        "erase_partition", "--partition-name", part],
+                       check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
 # Options that belong to the radio: on a co-processor build they go to the C6.
 RADIO_OPTS = {"--wifi-ssid", "--wifi-password"}
 # esp-emu's soft access point when not given --wifi-ssid / --wifi-password.
@@ -60,6 +100,11 @@ class Session:
         self.buf = b""
         self._scan = b""        # rolling tail: a query can straddle two recv()s
         self.log = open(log, "wb") if log else None
+        self.c6 = self._tmp = self.proc = None
+        if DEVICE:
+            _device_fresh_start(DEVICE)     # ends with a reset into the app
+            self.sock = _SerialSock(DEVICE)
+            return
         args = [str(RUN_EMU), str(PROJECT), "--chip", chip, "--variant", VARIANT,
                 "--psram", psram, "--timeout", "1500s"]
         if reuse:
@@ -72,7 +117,6 @@ class Session:
         # hostfwd: (host_port, device_port) pairs, so the host can reach a
         # server on the device (QEMU syntax; esp-emu supports it undocumented).
         net = "user" + "".join(f",hostfwd=tcp:127.0.0.1:{h}-:{g}" for h, g in hostfwd)
-        self.c6 = self._tmp = None
         if COPROCESSOR:
             # The network is the C6's: slirp and the soft AP attach to it, and
             # the P4 reaches both through esp-hosted. Slave first, then host.
@@ -196,22 +240,32 @@ class Session:
             time.sleep(delay)
 
     def join_wifi(self, timeout=90):
-        """On a WiFi build, join esp-emu's default soft AP, as :EspWifiConnect
-        would, and wait for an address, so network checks run over WiFi. Does
-        nothing on builds whose network isn't WiFi."""
+        """Make sure the device has a network; returns whether it does. On a
+        WiFi build, join esp-emu's default soft AP (or on a real board, the
+        network in ESPVIM_WIFI), as :EspWifiConnect would, and wait for an
+        address. Other builds are taken as networked (Ethernet under --net)."""
         def probe(tag, expr):
             self.type(f":echo '{tag}' . '=' . {expr} . '|'\r")
             return self.expect(rf"{tag}=([^|]*)\|".encode(), 60).group(1).decode()
 
-        if probe("WI", "esp_net_status().iface") != "wifi":
-            return
-        self.type(f":call esp_wifi_connect('{EMU_AP[0]}', '{EMU_AP[1]}')\r")
+        iface = probe("WI", "esp_net_status().iface")
+        if iface == "none":
+            return False
+        if iface != "wifi":
+            return not DEVICE
+        if DEVICE:
+            if ":" not in os.environ.get("ESPVIM_WIFI", ""):
+                return False
+            ssid, password = os.environ["ESPVIM_WIFI"].split(":", 1)
+        else:
+            ssid, password = EMU_AP
+        self.type(f":call esp_wifi_connect('{ssid}', '{password}')\r")
         end = time.time() + timeout
         while time.time() < end:
             if probe("WU", "(esp_net_status().up ? 1 : 0)") == "1":
-                return
+                return True
             time.sleep(1)
-        raise TimeoutError("WiFi did not come up on esp-emu's soft AP")
+        raise TimeoutError(f"WiFi did not come up on '{ssid}'")
 
     def close(self):
         try:
@@ -219,7 +273,8 @@ class Session:
                 self.sock.close()
         except OSError:
             pass
-        self._kill(self.proc)
+        if self.proc:
+            self._kill(self.proc)
         if self.c6:
             self._kill(self.c6)
         if self._tmp:

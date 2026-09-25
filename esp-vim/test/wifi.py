@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from uart_session import Session, VARIANT  # noqa: E402
+from uart_session import Session, VARIANT, DEVICE  # noqa: E402
 from interactive import start_http_server  # noqa: E402
 
 failures = 0
@@ -28,6 +28,9 @@ def check(ok, label, detail=""):
 
 
 def main():
+    if DEVICE:
+        print("  SKIP  wifi: needs the emulator (run on a board: ESPVIM_DEVICE is set)")
+        return
     log = Path(tempfile.mkstemp(prefix="vim-wifi-", suffix=".log")[1])
     www = Path(tempfile.mkdtemp(prefix="vim-www-"))
     (www / "hello.txt").write_text("over wifi\n")

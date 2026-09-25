@@ -27,13 +27,15 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from uart_session import Session, TARGET, PSRAM  # noqa: E402
+from uart_session import Session, TARGET, VARIANT, PSRAM  # noqa: E402
 
 failures = 0
 # The chip's display name, as the firmware derives it: esp32p4 -> ESP32-P4.
 CHIP = "ESP32-" + TARGET[len("esp32"):].upper()
 # The console UART's TX pin: :EspGpio must refuse to touch it.
-CONSOLE_TX = {"esp32p4": 37, "esp32s3": 43}[TARGET]
+# The console's TX pin, which :EspGpio must refuse: UART0's, or on the ES3C28P
+# (console on the S3's USB Serial/JTAG) the USB D- pin.
+CONSOLE_TX = 19 if VARIANT == "es3c28p" else {"esp32p4": 37, "esp32s3": 43}[TARGET]
 
 
 # Every value read back from the screen ends in an explicit terminator ('|').
@@ -351,138 +353,141 @@ def main():
             # 2j. Network (Phase 6c): the P4's Ethernet under --net user (the
             #     S3's WiFi on esp-emu's soft AP), the HTTP client, netrw's
             #     http:// reads, spell download.
-            s.join_wifi()
-            got = ""
-            for _ in range(20):                      # DHCP may still be running
-                got = probe("NS", "(esp_net_status().up ? 1 : 0) . ':' . esp_net_status().ip")
-                if got.startswith("1"):
-                    break
-                time.sleep(1)
-            check(got.startswith("1:"), "network is up with an address", f"up:ip {got!r}")
-            s.type(f":call mkdir('/fat/net', 'p') | EspGet {base}/hello.txt /fat/net/hello.txt\r")
-            s.quiet(1.5, timeout=60)
-            got = probe("HG", "join(readfile('/fat/net/hello.txt'))")
-            check(got == "hello from the host", ":EspGet downloads a file", f"got {got!r}")
-            s.type(f":let v:errmsg = '' | silent! call esp_http_get('{base}/missing.txt', '/fat/net/missing.txt')\r")
-            s.quiet(1.0)
-            got = probe("HM", "(v:errmsg =~# 'HTTP 404') . filereadable('/fat/net/missing.txt') . filereadable('/fat/net/missing.txt.part')")
-            check(got == "100", "a 404 is an error and leaves no file behind", f"404:file:part {got!r}")
-            s.type(f":e {base}/page.txt\r")
-            s.quiet(2.0, timeout=60)
-            got = probe("HE", "getline(1) . ':' . getline(2)")
-            check(got == "line one:line two", ":e http://... opens the page through netrw", f"got {got!r}")
-            s.type(":bwipe!\r")
-            # HTTPS against a real site: TLS plus certificate checking against
-            # ESP-IDF's CA bundle. Needs the internet, so skipped when the host
-            # itself cannot reach the site.
-            try:
-                import urllib.request
-                urllib.request.urlopen("https://example.com/", timeout=5).read(1)
-                online = True
-            except Exception:
-                online = False
-            if online:
-                s.type(":let g:r = esp_http_get('https://example.com/')\r")
-                s.quiet(2.0, timeout=90)
-                got = probe("HS", "get(g:r, 'status', 0) . ':' . (get(g:r, 'body', '') =~? 'example domain')")
-                check(got == "200:1", "https:// works, with certificate checking", f"status:body {got!r}")
-            else:
-                print("  SKIP  https (the host has no internet access)")
-            if have_spell:
-                s.type(f":let g:spellfile_URL = '{base}' | set spell spelllang=en\r")
-                # spellfile.vim asks a few questions, in an order that depends on
-                # what exists: create the spell directory, download, which
-                # directory, and a missing .sug file ends in "Press ENTER".
-                answers = [(b"Shall I create", "y"), (b"downloading it", "y"),
-                           (b"In which directory", "1"), (b"getting the .sug", "n"),
-                           (b"Press ENTER", "\r")]
-                end = time.time() + 180
-                while time.time() < end:
-                    s.quiet(2.0, timeout=120)
-                    tail = s.buf[-500:]
-                    for pat, key in answers:
-                        if pat in tail:
-                            s.buf = b""
-                            s.type(key)
-                            break
-                    else:
+            if s.join_wifi():
+                got = ""
+                for _ in range(20):                      # DHCP may still be running
+                    got = probe("NS", "(esp_net_status().up ? 1 : 0) . ':' . esp_net_status().ip")
+                    if got.startswith("1"):
                         break
-                got = probe("SP", "filereadable(expand('~/.vim/spell/en.utf-8.spl')) . ':' . spellbadword('helo world')[0]")
-                check(got == "1:helo", "spell checking downloads its dictionary", f"file:bad-word {got!r}")
-                s.type(":set nospell\r")
-            else:
-                print("  SKIP  spell download (no host vim to build a test spell file)")
-            s.type(":call esp_fs_delete('/fat/net') | enew!\r")
-            s.quiet(1.0)
+                    time.sleep(1)
+                check(got.startswith("1:"), "network is up with an address", f"up:ip {got!r}")
+                s.type(f":call mkdir('/fat/net', 'p') | EspGet {base}/hello.txt /fat/net/hello.txt\r")
+                s.quiet(1.5, timeout=60)
+                got = probe("HG", "join(readfile('/fat/net/hello.txt'))")
+                check(got == "hello from the host", ":EspGet downloads a file", f"got {got!r}")
+                s.type(f":let v:errmsg = '' | silent! call esp_http_get('{base}/missing.txt', '/fat/net/missing.txt')\r")
+                s.quiet(1.0)
+                got = probe("HM", "(v:errmsg =~# 'HTTP 404') . filereadable('/fat/net/missing.txt') . filereadable('/fat/net/missing.txt.part')")
+                check(got == "100", "a 404 is an error and leaves no file behind", f"404:file:part {got!r}")
+                s.type(f":e {base}/page.txt\r")
+                s.quiet(2.0, timeout=60)
+                got = probe("HE", "getline(1) . ':' . getline(2)")
+                check(got == "line one:line two", ":e http://... opens the page through netrw", f"got {got!r}")
+                s.type(":bwipe!\r")
+                # HTTPS against a real site: TLS plus certificate checking against
+                # ESP-IDF's CA bundle. Needs the internet, so skipped when the host
+                # itself cannot reach the site.
+                try:
+                    import urllib.request
+                    urllib.request.urlopen("https://example.com/", timeout=5).read(1)
+                    online = True
+                except Exception:
+                    online = False
+                if online:
+                    s.type(":let g:r = esp_http_get('https://example.com/')\r")
+                    s.quiet(2.0, timeout=90)
+                    got = probe("HS", "get(g:r, 'status', 0) . ':' . (get(g:r, 'body', '') =~? 'example domain')")
+                    check(got == "200:1", "https:// works, with certificate checking", f"status:body {got!r}")
+                else:
+                    print("  SKIP  https (the host has no internet access)")
+                if have_spell:
+                    s.type(f":let g:spellfile_URL = '{base}' | set spell spelllang=en\r")
+                    # spellfile.vim asks a few questions, in an order that depends on
+                    # what exists: create the spell directory, download, which
+                    # directory, and a missing .sug file ends in "Press ENTER".
+                    answers = [(b"Shall I create", "y"), (b"downloading it", "y"),
+                               (b"In which directory", "1"), (b"getting the .sug", "n"),
+                               (b"Press ENTER", "\r")]
+                    end = time.time() + 180
+                    while time.time() < end:
+                        s.quiet(2.0, timeout=120)
+                        tail = s.buf[-500:]
+                        for pat, key in answers:
+                            if pat in tail:
+                                s.buf = b""
+                                s.type(key)
+                                break
+                        else:
+                            break
+                    got = probe("SP", "filereadable(expand('~/.vim/spell/en.utf-8.spl')) . ':' . spellbadword('helo world')[0]")
+                    check(got == "1:helo", "spell checking downloads its dictionary", f"file:bad-word {got!r}")
+                    s.type(":set nospell\r")
+                else:
+                    print("  SKIP  spell download (no host vim to build a test spell file)")
+                s.type(":call esp_fs_delete('/fat/net') | enew!\r")
+                s.quiet(1.0)
 
-            # 2k. SSH (Phase 6d): a real sshd on the host. The device makes its
-            #     own key, the host installs it; trust on first use; SFTP and SCP
-            #     transfers; netrw scp:// read and write; :EspFiles remote pane.
-            if sshd is not None:
-                remote = sshroot / "files"
-                remote.mkdir()
-                (remote / "remote.txt").write_text("remote hello\n")
-                user = getpass.getuser()
-                host = f"{user}@{HOST_FROM_DEVICE}:{sshport}"
-                rdir = f"sftp://{host}/{remote}"          # //abs: absolute path
-                s.type(":call mkdir('/fat/ssh', 'p') | let g:pub = esp_ssh_keygen()\r")
-                s.quiet(2.0, timeout=120)
-                pub = probe_long("PK", "g:pub")
-                check(pub.startswith("ecdsa-sha2-nistp256 AAAA"), ":EspSshKeygen makes an ECDSA key",
-                      pub[:40])
-                (sshroot / "authorized_keys").write_text(pub + "\n")
-                s.type(f":let g:hk = esp_ssh_hostkey('{rdir}')\r")
-                s.quiet(2.0, timeout=120)
-                got = probe("HK", "g:hk.status . ' ' . g:hk.fingerprint")
-                fp = subprocess.run([shutil.which("ssh-keygen") or "ssh-keygen", "-lf", str(sshroot / "hostkey.pub")],
-                                    capture_output=True, text=True).stdout.split()[1]
-                check(got == f"unknown {fp}", "a new host is unknown, with the host's real fingerprint",
-                      f"device says {got!r}, host says {fp!r}")
-                s.type(f":call esp_ssh_trust('{rdir}') | let g:hk = esp_ssh_hostkey('{rdir}')\r")
-                s.quiet(2.0, timeout=120)
-                check(probe("HT", "g:hk.status") == "known", "esp_ssh_trust() remembers the host")
-                s.type(f":call esp_ssh_get('{rdir}/remote.txt', '/fat/ssh/r1.txt')"
-                       f" | call esp_ssh_get('scp://{host}/{remote}/remote.txt', '/fat/ssh/r2.txt')\r")
-                s.quiet(2.0, timeout=180)
-                got = probe("SG", "join(readfile('/fat/ssh/r1.txt')) . ':' . join(readfile('/fat/ssh/r2.txt'))")
-                check(got == "remote hello:remote hello", "SFTP and SCP downloads", f"got {got!r}")
-                s.type(f":e scp://{host}/{remote}/remote.txt\r")
-                s.quiet(2.0, timeout=180)
-                got = probe("SE", "getline(1)")
-                check(got == "remote hello", ":e scp://... reads through netrw", f"got {got!r}")
-                s.type(":call setline(1, 'edited on the device') | w\r")
-                s.quiet(2.0, timeout=180)
-                got = (remote / "remote.txt").read_text().strip()
-                check(got == "edited on the device", ":w scp://... writes it back", f"host has {got!r}")
-                s.type(":bwipe! | call writefile(['going up'], '/fat/ssh/up.txt')"
-                       f" | EspFiles /fat/ssh {rdir}\r")
-                s.quiet(3.0, timeout=180)
-                got = probe("RP", "getbufvar(winbufnr(2), 'espfiles').dir . ':' . "
-                            "len(filter(copy(getbufvar(winbufnr(2), 'espfiles').entries), 'v:val.name ==# \"remote.txt\"'))")
-                check(got == f"{rdir}:1", ":EspFiles lists a remote pane", f"got {got!r}")
-                s.type("gg/up\\.txt\rc")                        # copy up.txt to the remote pane
-                s.quiet(1.0)
-                s.type("\r")
-                s.quiet(3.0, timeout=180)
-                check((remote / "up.txt").is_file(), "copying into a remote pane uploads the file")
-                s.type("\t")                                      # the remote pane
-                s.quiet(0.5)
-                s.send(F7 := "\x1b[18~")
-                s.quiet(1.0)
-                s.type("rdir\r")
-                s.quiet(3.0, timeout=180)
-                check((remote / "rdir").is_dir(), "F7 makes a remote directory")
-                s.type("gg/up\\.txt\rd")
-                s.quiet(1.0)
-                s.type("y")
-                s.quiet(3.0, timeout=180)
-                check(not (remote / "up.txt").exists(), "d deletes a remote file")
-                s.type("q")
-                s.quiet(1.0)
-                s.type(":call esp_fs_delete('/fat/ssh') | call esp_fs_delete('/fat/.ssh') | enew!\r")
-                s.quiet(1.0)
+                # 2k. SSH (Phase 6d): a real sshd on the host. The device makes its
+                #     own key, the host installs it; trust on first use; SFTP and SCP
+                #     transfers; netrw scp:// read and write; :EspFiles remote pane.
+                if sshd is not None:
+                    remote = sshroot / "files"
+                    remote.mkdir()
+                    (remote / "remote.txt").write_text("remote hello\n")
+                    user = getpass.getuser()
+                    host = f"{user}@{HOST_FROM_DEVICE}:{sshport}"
+                    rdir = f"sftp://{host}/{remote}"          # //abs: absolute path
+                    s.type(":call mkdir('/fat/ssh', 'p') | let g:pub = esp_ssh_keygen()\r")
+                    s.quiet(2.0, timeout=120)
+                    pub = probe_long("PK", "g:pub")
+                    check(pub.startswith("ecdsa-sha2-nistp256 AAAA"), ":EspSshKeygen makes an ECDSA key",
+                          pub[:40])
+                    (sshroot / "authorized_keys").write_text(pub + "\n")
+                    s.type(f":let g:hk = esp_ssh_hostkey('{rdir}')\r")
+                    s.quiet(2.0, timeout=120)
+                    got = probe("HK", "g:hk.status . ' ' . g:hk.fingerprint")
+                    fp = subprocess.run([shutil.which("ssh-keygen") or "ssh-keygen", "-lf", str(sshroot / "hostkey.pub")],
+                                        capture_output=True, text=True).stdout.split()[1]
+                    check(got == f"unknown {fp}", "a new host is unknown, with the host's real fingerprint",
+                          f"device says {got!r}, host says {fp!r}")
+                    s.type(f":call esp_ssh_trust('{rdir}') | let g:hk = esp_ssh_hostkey('{rdir}')\r")
+                    s.quiet(2.0, timeout=120)
+                    check(probe("HT", "g:hk.status") == "known", "esp_ssh_trust() remembers the host")
+                    s.type(f":call esp_ssh_get('{rdir}/remote.txt', '/fat/ssh/r1.txt')"
+                           f" | call esp_ssh_get('scp://{host}/{remote}/remote.txt', '/fat/ssh/r2.txt')\r")
+                    s.quiet(2.0, timeout=180)
+                    got = probe("SG", "join(readfile('/fat/ssh/r1.txt')) . ':' . join(readfile('/fat/ssh/r2.txt'))")
+                    check(got == "remote hello:remote hello", "SFTP and SCP downloads", f"got {got!r}")
+                    s.type(f":e scp://{host}/{remote}/remote.txt\r")
+                    s.quiet(2.0, timeout=180)
+                    got = probe("SE", "getline(1)")
+                    check(got == "remote hello", ":e scp://... reads through netrw", f"got {got!r}")
+                    s.type(":call setline(1, 'edited on the device') | w\r")
+                    s.quiet(2.0, timeout=180)
+                    got = (remote / "remote.txt").read_text().strip()
+                    check(got == "edited on the device", ":w scp://... writes it back", f"host has {got!r}")
+                    s.type(":bwipe! | call writefile(['going up'], '/fat/ssh/up.txt')"
+                           f" | EspFiles /fat/ssh {rdir}\r")
+                    s.quiet(3.0, timeout=180)
+                    got = probe("RP", "getbufvar(winbufnr(2), 'espfiles').dir . ':' . "
+                                "len(filter(copy(getbufvar(winbufnr(2), 'espfiles').entries), 'v:val.name ==# \"remote.txt\"'))")
+                    check(got == f"{rdir}:1", ":EspFiles lists a remote pane", f"got {got!r}")
+                    s.type("gg/up\\.txt\rc")                        # copy up.txt to the remote pane
+                    s.quiet(1.0)
+                    s.type("\r")
+                    s.quiet(3.0, timeout=180)
+                    check((remote / "up.txt").is_file(), "copying into a remote pane uploads the file")
+                    s.type("\t")                                      # the remote pane
+                    s.quiet(0.5)
+                    s.send(F7 := "\x1b[18~")
+                    s.quiet(1.0)
+                    s.type("rdir\r")
+                    s.quiet(3.0, timeout=180)
+                    check((remote / "rdir").is_dir(), "F7 makes a remote directory")
+                    s.type("gg/up\\.txt\rd")
+                    s.quiet(1.0)
+                    s.type("y")
+                    s.quiet(3.0, timeout=180)
+                    check(not (remote / "up.txt").exists(), "d deletes a remote file")
+                    s.type("q")
+                    s.quiet(1.0)
+                    s.type(":call esp_fs_delete('/fat/ssh') | call esp_fs_delete('/fat/.ssh') | enew!\r")
+                    s.quiet(1.0)
+                else:
+                    print("  SKIP  ssh (no sshd on the host)")
             else:
-                print("  SKIP  ssh (no sshd on the host)")
+                print("  SKIP  network and ssh (the device has no network: on a board,"
+                      " set ESPVIM_WIFI=ssid:password)")
 
             # 2h. esp_fs path validation (Phase 6b). Every one of these must be
             #     refused: into read-only /vimrt, ".." out of /fat, a storage

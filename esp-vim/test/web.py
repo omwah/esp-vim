@@ -98,7 +98,10 @@ def main():
                 print("  SKIP  web interface: this build has no network interface yet")
                 log.unlink()
                 return
-            s.join_wifi()
+            if not s.join_wifi():
+                print("  SKIP  web interface: the device has no network (on a board, set"
+                      " ESPVIM_WIFI=ssid:password)")
+                return
             for _ in range(30):
                 if probe("NU", "(esp_net_status().up ? 1 : 0)") == "1":
                     break

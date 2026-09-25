@@ -18,7 +18,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from uart_session import Session, VARIANT, PROJECT  # noqa: E402
+from uart_session import Session, VARIANT, PROJECT, DEVICE  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 PIXI_PYTHON = PROJECT.parent / ".pixi" / "envs" / "default" / "bin" / "python"
@@ -54,6 +54,9 @@ def start_peer(log):
 
 
 def main():
+    if DEVICE:
+        print("  SKIP  ble: needs the emulator (run on a board: ESPVIM_DEVICE is set)")
+        return
     config = (BUILD / "sdkconfig").read_text() if (BUILD / "sdkconfig").exists() else ""
     if "CONFIG_BT_NIMBLE_ENABLED=y" not in config:
         print(f"ble (variant: {VARIANT})")

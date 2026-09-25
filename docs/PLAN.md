@@ -1261,8 +1261,16 @@ What it changes in the plan:
   (`ESP_CONSOLE_USB_SERIAL_JTAG`) selects the transport. Boot messages and Vim share the
   port, the size probe works, and Vim answers typed commands. The port has no termios, so
   `tcgetattr`/`tcsetattr` on it report a plain tty instead of failing. `:EspSerial`
-  defaults to the freed UART0 pins (43/44), and I2C to the touch bus (16/15). Still to
-  check on the board: CTRL-C, panic output, and the S3 gate (next item).
+  defaults to the freed UART0 pins (43/44), and I2C to the touch bus (16/15). CTRL-C
+  works (the gate interrupts a loop over USB); panic output is still to check.
+- **The S3 gate on silicon: passed, 2026-09-25.** The harness drives a board with
+  `ESPVIM_DEVICE=<port>`. It erases storage and NVS and resets the board before each
+  session, so each run starts as fresh as an emulator run. `interactive.py` passed
+  three times in a row on the ES3C28P: all checks, one boot, no panic, `:help`
+  included. In the emulator the same test crashes in `:help` (the TLSF
+  `block_locate_free` assert, or a `LoadStoreError`). So the S3 heap corruption is
+  the emulator's, not ours. Tests that need emulator features (roundtrip, hw, wifi,
+  ble) skip on a board, and web skips without `ESPVIM_WIFI=ssid:password`.
 - **Do this before 10b, as the first real-hardware run.** Vim over USB-Serial/JTAG on this
   board needs no display work, and it **settles the open S3 heap corruption**
   (PHASE5.md, known issue): run the S3 gate on real silicon. If it passes there

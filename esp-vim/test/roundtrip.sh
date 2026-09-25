@@ -30,6 +30,12 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT="$(cd "$HERE/.." && pwd)"
 RUN_EMU="$PROJECT/../scripts/run-emu.sh"
 
+# Built on the emulator's --inject and --save-state: nothing to run on a board.
+if [ -n "${ESPVIM_DEVICE:-}" ]; then
+    echo "  SKIP  roundtrip: needs the emulator (run on a board: ESPVIM_DEVICE is set)"
+    exit 0
+fi
+
 # Target chip, and the PSRAM the emulated board is given: the Tab5's 32 MB for
 # the P4, a typical N16R8 module's 8 MB for the S3.
 CHIP="${ESPVIM_TARGET:-esp32p4}"

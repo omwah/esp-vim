@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from uart_session import Session, TARGET  # noqa: E402
+from uart_session import Session, TARGET, DEVICE  # noqa: E402
 
 failures = 0
 # An ADC-capable pin, and one that is not, per chip.
@@ -40,6 +40,9 @@ def free_port():
 
 
 def main():
+    if DEVICE:
+        print("  SKIP  hw: needs the emulator (run on a board: ESPVIM_DEVICE is set)")
+        return
     log = Path(tempfile.mkstemp(prefix="vim-hw-", suffix=".log")[1])
     uport = free_port()
     print(f"hardware session (target: {TARGET}, UART1 on 127.0.0.1:{uport})")
