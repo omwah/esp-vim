@@ -43,7 +43,7 @@ class Session:
         self._scan = b""        # rolling tail: a query can straddle two recv()s
         self.log = open(log, "wb") if log else None
         args = [str(RUN_EMU), str(PROJECT), "--chip", chip, "--psram", psram,
-                "--timeout", "600s"]
+                "--timeout", "1500s"]
         if reuse:
             args.append("--reuse")
         if save_state:

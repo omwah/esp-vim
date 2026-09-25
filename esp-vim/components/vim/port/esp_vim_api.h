@@ -25,6 +25,17 @@ void f_esp_fs_roots(typval_T *argvars, typval_T *rettv);
 void f_esp_http_get(typval_T *argvars, typval_T *rettv);
 void f_esp_net_status(typval_T *argvars, typval_T *rettv);
 
+/* api/esp_api_ssh.c (over components/esp_ssh) */
+void f_esp_ssh_get(typval_T *argvars, typval_T *rettv);
+void f_esp_ssh_hostkey(typval_T *argvars, typval_T *rettv);
+void f_esp_ssh_keygen(typval_T *argvars, typval_T *rettv);
+void f_esp_ssh_list(typval_T *argvars, typval_T *rettv);
+void f_esp_ssh_mkdir(typval_T *argvars, typval_T *rettv);
+void f_esp_ssh_put(typval_T *argvars, typval_T *rettv);
+void f_esp_ssh_remove(typval_T *argvars, typval_T *rettv);
+void f_esp_ssh_rename(typval_T *argvars, typval_T *rettv);
+void f_esp_ssh_trust(typval_T *argvars, typval_T *rettv);
+
 /* api/esp_api_sys.c */
 void f_esp_heap(typval_T *argvars, typval_T *rettv);
 void f_esp_info(typval_T *argvars, typval_T *rettv);

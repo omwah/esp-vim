@@ -44,3 +44,8 @@ CONFIG_FREERTOS_USE_TRACE_FACILITY=y
 # connection. On the ESP32-S3 internal RAM is ~100 KB free, so mbedTLS takes
 # its memory from PSRAM.
 CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
+
+# :EspSshKeygen writes the private key as PEM (mbedTLS PK + PEM writers).
+CONFIG_MBEDTLS_PEM_WRITE_C=y
+# libssh2's own debug logging costs flash and is never switched on at runtime.
+# CONFIG_LIBSSH2_DEBUG_ENABLE is not set

@@ -1,0 +1,18 @@
+--- a/src/main.c	2026-09-21 13:40:41.000000000 -0700
++++ b/src/main.c	2026-09-24 22:18:28.681098345 -0700
+@@ -1842,9 +1842,15 @@
+ #endif
+ 	    )
+     {
++#ifdef ESP_PLATFORM
++	// esp-vim: Vim is the whole device and restarts at once.  A prompt
++	// here is never visible (the terminal has already been restored), so
++	// the device just looked frozen.  The message is lost instead.
++#else
+ 	// give the user a chance to read the (error) message
+ 	no_wait_return = FALSE;
+ 	wait_return(FALSE);
++#endif
+     }
+ 
+     // Position the cursor again, the autocommands may have moved it

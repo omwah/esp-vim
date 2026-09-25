@@ -158,11 +158,38 @@ Spell checking downloads its dictionary the first time you use it: >
 <asks whether to fetch the English dictionary and saves it in
 /fat/.vim/spell/.  It needs the network, and space: English is about 1 MB.
 
+REMOTE FILES: SCP AND SFTP				*esp-ssh*
+
+Files on other machines are reached over SSH, with Vim's usual URLs: >
+	:e scp://me@server/notes.txt		relative to your home there
+	:e scp://me@server//etc/hosts		an absolute path
+	:w sftp://me@server:2222/copy.txt	another port
+	:EspFiles /fat sftp://me@server/	a remote pane in the file manager
+<In the file manager a remote pane can be browsed and changed like a local
+one: copy and move between it and a local pane (directories included),
+make directories, delete, rename.  Copying between two remote hosts is not
+supported.
+
+:EspSshKeygen[!]					*:EspSshKeygen*
+		Make the device's SSH key, /fat/.ssh/id_ecdsa (ECDSA P-256),
+		and show the public half: add that line to ~/.ssh/authorized_keys
+		on each server.  With an existing key, shows it; ! replaces it.
+		Without a key, the device can still log in with a password,
+		which it asks for and remembers until Vim restarts.
+
+The first time you connect to a server you are shown its key fingerprint
+and asked whether to trust it; the answer is kept in /fat/.ssh/known_hosts.
+If a server's key later changes the connection is refused -- that is what
+a man-in-the-middle looks like.  If you know why it changed, delete that
+server's line from /fat/.ssh/known_hosts.
+
 The same information is available to scripts, as Dicts and Lists:
 esp_info(), esp_heap(), esp_tasks(), esp_gpio_pins(), esp_gpio_read(),
 esp_gpio_write(), esp_gpio_mode(), esp_nvs_list(), esp_nvs_get(),
 esp_nvs_set(), esp_nvs_erase(), esp_reboot(), esp_net_status(),
-esp_http_get().  Try ":echo esp_heap()".
+esp_http_get(), and for SSH esp_ssh_get(), esp_ssh_put(), esp_ssh_list(),
+esp_ssh_mkdir(), esp_ssh_remove(), esp_ssh_rename(), esp_ssh_hostkey(),
+esp_ssh_trust(), esp_ssh_keygen().  Try ":echo esp_heap()".
 esp_gpio_read() returns -1, with an error, for a pin it may not use.
 
 ==============================================================================
@@ -315,9 +342,11 @@ Also not available:
 	CTRL-X CTRL-O		Omni-completion engines are not installed.
 				CTRL-N, CTRL-P and CTRL-X CTRL-F work.
 	{a,b} and `cmd`		Brace and backtick expansion in file names.
-	Network access		netrw's ftp://, scp:// and other methods that
-				run programs.  http:// and https:// reads work
-				(|esp-network|).
+	Network access		netrw's ftp://, rsync:// and other methods that
+				run programs.  http://, https://, scp:// and
+				sftp:// work (|esp-network|, |esp-ssh|).
+	Remote directories	":e scp://host/dir/" cannot list a directory;
+				use |:EspFiles| for remote browsing.
 
 ==============================================================================
 HELP FILES ON THIS DEVICE				*esp-docs*

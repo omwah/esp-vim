@@ -1,0 +1,31 @@
+diff -ruN '--exclude=.git' '--exclude=*.o' '--exclude=*.rej' '--exclude=*.orig' a/runtime/pack/dist/opt/netrw/autoload/netrw.vim b/runtime/pack/dist/opt/netrw/autoload/netrw.vim
+--- a/runtime/pack/dist/opt/netrw/autoload/netrw.vim	2026-09-24 19:17:58.903368321 -0700
++++ b/runtime/pack/dist/opt/netrw/autoload/netrw.vim	2026-09-24 19:17:58.515943256 -0700
+@@ -1687,6 +1687,15 @@
+ 
+             ".........................................
+         " NetRead: (scp) NetRead Method #4 {{{3
++        elseif     (b:netrw_method == 4 || b:netrw_method == 9) && exists('*esp_ssh_get')
++            " ESP32 (esp-vim): scp and sftp natively -- there are no programs to
++            " run.  esp#ssh#Get() asks about unknown host keys and passwords.
++            if empty(esp#ssh#Get(choice, tmpfile))
++                return
++            endif
++            let result           = s:NetrwGetFile(readcmd, tmpfile, b:netrw_method)
++            let b:netrw_lastfile = choice
++
+         elseif     b:netrw_method  == 4      " read with scp
+             if exists("g:netrw_port") && g:netrw_port != ""
+                 let useport= " ".g:netrw_scpport." ".g:netrw_port
+@@ -2062,6 +2071,11 @@
+ 
+             ".........................................
+         " NetWrite: (scp) NetWrite Method #4 {{{3
++        elseif     (b:netrw_method == 4 || b:netrw_method == 9) && exists('*esp_ssh_put')
++            " ESP32 (esp-vim): as for reads, natively.
++            call esp#ssh#Put(tmpfile, choice)
++            let b:netrw_lastfile = choice
++
+         elseif     b:netrw_method == 4
+             if exists("g:netrw_port") && g:netrw_port != ""
+                 let useport= " ".g:netrw_scpport." ".fnameescape(g:netrw_port)

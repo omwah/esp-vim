@@ -28,6 +28,24 @@ let s:keys = [
 " ---------------------------------------------------------------- open --
 
 function! espfiles#Open(...) abort
+  " One file manager: if it is already open, go to it (pointing its panes at
+  " any directories given) instead of starting a second.
+  for t in range(1, tabpagenr('$'))
+    if gettabvar(t, 'espfiles', 0)
+      execute 'tabnext ' . t
+      for [side, dir] in [['left', a:0 >= 1 ? a:1 : ''], ['right', a:0 >= 2 ? a:2 : '']]
+        if !empty(dir)
+          for w in range(1, winnr('$'))
+            if get(getbufvar(winbufnr(w), 'espfiles', {}), 'side', '') ==# side
+              execute w . 'wincmd w'
+              call s:Go(s:StartDir(dir), '')
+            endif
+          endfor
+        endif
+      endfor
+      return
+    endif
+  endfor
   let left = s:StartDir(a:0 >= 1 ? a:1 : getcwd())
   let right = s:StartDir(a:0 >= 2 ? a:2 : left)
   tabnew
@@ -40,6 +58,9 @@ function! espfiles#Open(...) abort
 endfunction
 
 function! s:StartDir(dir) abort
+  if s:IsRemote(a:dir)
+    return s:RemoteNorm(a:dir)
+  endif
   let d = fnamemodify(expand(a:dir), ':p')
   let d = len(d) > 1 ? substitute(d, '/\+$', '', '') : d
   return isdirectory(d) || d ==# '/' ? d : '/fat'
@@ -50,7 +71,11 @@ function! s:Setup(side, dir) abort
   setlocal buftype=nofile bufhidden=wipe noswapfile nobuflisted nowrap
   setlocal nonumber norelativenumber nolist nospell foldcolumn=0 cursorline
   let &l:fillchars = 'eob: '
-  silent execute 'file EspFiles-' . a:side
+  let name = 'EspFiles-' . a:side
+  while bufexists(name)                 " a pane left over from somewhere
+    let name = 'EspFiles-' . a:side . '-' . localtime() . '-' . bufnr('$')
+  endwhile
+  silent execute 'file ' . fnameescape(name)
   setlocal filetype=espfiles
   let b:espfiles = {'side': a:side, 'dir': a:dir, 'tags': {}, 'entries': [], 'space': ''}
   let &l:statusline = ' %{espfiles#Status()}%=%{espfiles#Space()} '
@@ -70,6 +95,9 @@ function! espfiles#Space() abort
 endfunction
 
 function! s:SpaceOf(dir) abort
+  if s:IsRemote(a:dir)
+    return matchstr(a:dir, '^\a\+://\zs[^/]*')
+  endif
   if a:dir ==# '/'
     return ''
   endif
@@ -126,19 +154,103 @@ function! s:Size(n) abort
   return printf('%.1fM', a:n / 1048576.0)
 endfunction
 
+" ------------------------------------------------------------- remote --
+"
+" A pane can show a remote directory: scp:// or sftp:// URLs, in netrw's
+" form -- "sftp://user@host/" is the login directory, "sftp://user@host//abs"
+" an absolute path. Listing and changes go through autoload/esp/ssh.vim.
+
+function! s:IsRemote(dir) abort
+  return a:dir =~# '^s\%(cp\|ftp\)://'
+endfunction
+
+" The URL up to and including the "/" after the host.
+function! s:RemoteRoot(url) abort
+  return matchstr(a:url, '^\a\+://[^/]*/')
+endfunction
+
+" Canonical form: no trailing "/" except the login dir ("…host/") and the
+" absolute root ("…host//").
+function! s:RemoteNorm(url) abort
+  let root = s:RemoteRoot(a:url)
+  if empty(root)
+    return a:url . '/'
+  endif
+  let path = substitute(esp#ssh#Path(a:url), '/\+$', '', '')
+  return root . (path ==# '' && esp#ssh#Path(a:url) =~# '^/' ? '/' : path)
+endfunction
+
 function! s:Join(dir, name) abort
+  if s:IsRemote(a:dir)
+    return a:dir =~# '/$' ? a:dir . a:name : a:dir . '/' . a:name
+  endif
   return (a:dir ==# '/' ? '' : a:dir) . '/' . a:name
 endfunction
 
 function! s:ParentOf(dir) abort
+  if s:IsRemote(a:dir)
+    let path = esp#ssh#Path(a:dir)
+    if path ==# '' || path ==# '/'
+      return a:dir                      " the login dir, or /
+    endif
+    let up = fnamemodify(path, ':h')
+    return s:RemoteRoot(a:dir) . (up ==# '.' ? '' : up)
+  endif
   return a:dir ==# '/' ? '/' : fnamemodify(a:dir, ':h')
+endfunction
+
+function! s:List(dir) abort
+  return s:IsRemote(a:dir) ? esp#ssh#List(a:dir) : esp_fs_list(a:dir)
+endfunction
+
+" Does {path} exist, local or remote? (Remote: by listing its directory.)
+function! s:Exists(path) abort
+  if !s:IsRemote(a:path)
+    return filereadable(a:path) || isdirectory(a:path)
+  endif
+  let name = fnamemodify(substitute(esp#ssh#Path(a:path), '/\+$', '', ''), ':t')
+  let parent = s:ParentOf(a:path)
+  return index(map(esp#ssh#List(parent), 'v:val.name'), name) >= 0
+endfunction
+
+" Copy {src} (an entry dict {e} in {srcdir}) to {dst}, local or remote,
+" recursing into directories. {overwrite} replaces files.
+function! s:Transfer(srcdir, e, dst, overwrite) abort
+  let src = s:Join(a:srcdir, a:e.name)
+  let rs = s:IsRemote(src)
+  let rd = s:IsRemote(a:dst)
+  if !rs && !rd
+    return esp_fs_copy(src, a:dst, a:overwrite)
+  elseif rs && rd
+    throw 'EspFiles: copying from one remote host to another is not supported'
+  endif
+  if a:e.type ==# 'dir'
+    if rd
+      if !s:Exists(a:dst)
+        call esp#ssh#Mkdir(a:dst)
+      endif
+    elseif !isdirectory(a:dst)
+      call esp_fs_mkdir(a:dst)
+    endif
+    for c in s:List(src)
+      if !s:Transfer(src, c, s:Join(a:dst, c.name), a:overwrite)
+        return 0
+      endif
+    endfor
+    return 1
+  endif
+  return !empty(rd ? esp#ssh#Put(src, a:dst) : esp#ssh#Get(src, a:dst))
+endfunction
+
+function! s:Remove(path) abort
+  return s:IsRemote(a:path) ? esp#ssh#Remove(a:path) : esp_fs_delete(a:path)
 endfunction
 
 " Draw the pane; put the cursor on {select} if given, else keep its entry.
 function! s:Render(select) abort
   let st = b:espfiles
   let keep = empty(a:select) ? get(s:Current(), 'name', '') : a:select
-  let entries = esp_fs_list(st.dir)
+  let entries = s:List(st.dir)
   call sort(entries, {a, b -> a.type !=# b.type ? (a.type ==# 'dir' ? -1 : 1)
         \ : tolower(a.name) ==# tolower(b.name) ? 0 : tolower(a.name) < tolower(b.name) ? -1 : 1})
   let st.entries = entries
@@ -186,7 +298,8 @@ endfunction
 
 " Lines before the first entry: the "../" line, except at "/".
 function! s:Offset() abort
-  return b:espfiles.dir ==# '/' ? 0 : 1
+  return b:espfiles.dir ==# '/' || (s:IsRemote(b:espfiles.dir)
+        \ && s:ParentOf(b:espfiles.dir) ==# b:espfiles.dir) ? 0 : 1
 endfunction
 
 " The entry under the cursor, or {} on "../" or an empty pane.
@@ -266,8 +379,9 @@ endfunction
 
 function! s:Parent() abort
   let dir = b:espfiles.dir
-  if dir !=# '/'
-    call s:Go(s:ParentOf(dir), fnamemodify(dir, ':t'))
+  let up = s:ParentOf(dir)
+  if up !=# dir
+    call s:Go(up, fnamemodify(substitute(dir, '/\+$', '', ''), ':t'))
   endif
 endfunction
 
@@ -328,17 +442,19 @@ function! s:Edit() abort
   call s:Open(0)
 endfunction
 
-" Copy ({move} = 0) or move/rename ({move} = 1) the targets.
+" Copy ({move} = 0) or move/rename ({move} = 1) the targets. Either pane may
+" be remote; a move within one remote host is a rename there.
 function! s:Copy(move) abort
   let items = s:Targets()
   if empty(items)
     return
   endif
   let what = a:move ? 'Move' : 'Copy'
+  let here = b:espfiles.dir
   let other = s:OtherDir()
   " One item into the pane's own directory is a rename: offer its name.
-  let default = len(items) == 1 && other ==# b:espfiles.dir
-        \ ? s:Join(other, items[0].name) : (other ==# '/' ? '/' : other . '/')
+  let default = len(items) == 1 && other ==# here
+        \ ? s:Join(other, items[0].name) : (other =~# '/$' ? other : other . '/')
   let label = len(items) == 1 ? items[0].name : len(items) . ' items'
   call inputsave()
   let dest = input(what . ' ' . label . ' to: ', default, 'dir')
@@ -347,35 +463,49 @@ function! s:Copy(move) abort
   if empty(dest)
     return
   endif
-  let dest = fnamemodify(dest, ':p')
-  let into = isdirectory(dest) || dest =~# '/$'
+  let remote = s:IsRemote(dest)
+  if !remote
+    let dest = fnamemodify(dest, ':p')
+  endif
+  let into = dest =~# '/$' || (remote ? s:RemoteNorm(dest) ==# other : isdirectory(dest))
   if !into && len(items) > 1
     echohl ErrorMsg | echomsg what . ': ' . dest . ' is not a directory' | echohl None
     return
   endif
-  let dest = substitute(dest, '/\+$', '', '')
+  let dest = remote ? s:RemoteNorm(dest) : substitute(dest, '/\+$', '', '')
   let all = 0
   let done = 0
-  for e in items
-    let src = s:Join(b:espfiles.dir, e.name)
-    let dst = into ? s:Join(empty(dest) ? '/' : dest, e.name) : dest
-    let overwrite = all
-    if !all && (filereadable(dst) || isdirectory(dst))
-      let c = confirm(dst . ' exists. Overwrite?', "&Yes\n&No\n&All\n&Cancel", 2)
-      if c == 4 || c == 0
-        break
-      elseif c == 2
-        continue
+  try
+    for e in items
+      let src = s:Join(here, e.name)
+      let dst = into ? s:Join(empty(dest) ? '/' : dest, e.name) : dest
+      let overwrite = all
+      if !all && s:Exists(dst)
+        let c = confirm(dst . ' exists. Overwrite?', "&Yes\n&No\n&All\n&Cancel", 2)
+      redraw                            " else the next message needs "Press ENTER"
+        if c == 4 || c == 0
+          break
+        elseif c == 2
+          continue
+        endif
+        let overwrite = 1
+        let all = c == 3
       endif
-      let overwrite = 1
-      let all = c == 3
-    endif
-    let ok = a:move ? esp_fs_move(src, dst, overwrite) : esp_fs_copy(src, dst, overwrite)
-    if !ok
-      break
-    endif
-    let done += 1
-  endfor
+      if a:move && s:IsRemote(src) && remote && s:RemoteRoot(src) ==# s:RemoteRoot(dst)
+        let ok = esp#ssh#Rename(src, esp#ssh#Path(dst))
+      elseif a:move && !s:IsRemote(src) && !remote
+        let ok = esp_fs_move(src, dst, overwrite)
+      else
+        let ok = s:Transfer(here, e, dst, overwrite) && (!a:move || s:Remove(src))
+      endif
+      if !ok
+        break
+      endif
+      let done += 1
+    endfor
+  catch /^EspSsh:\|^EspFiles:/
+    echohl ErrorMsg | echomsg v:exception | echohl None
+  endtry
   let b:espfiles.tags = {}
   call s:RefreshAll()
   echo (a:move ? 'Moved ' : 'Copied ') . done . ' of ' . len(items)
@@ -387,8 +517,8 @@ function! s:Mkdir() abort
   call inputrestore()
   redraw
   if !empty(name)
-    let path = name =~# '^/' ? name : s:Join(b:espfiles.dir, name)
-    if esp_fs_mkdir(path)
+    let path = name =~# '^/' || s:IsRemote(name) ? name : s:Join(b:espfiles.dir, name)
+    if s:IsRemote(path) ? esp#ssh#Mkdir(path) : esp_fs_mkdir(path)
       call s:RefreshAll()
       call s:Render(fnamemodify(substitute(path, '/\+$', '', ''), ':t'))
     endif
@@ -402,12 +532,14 @@ function! s:Delete() abort
   endif
   let label = len(items) == 1 ? items[0].name . (items[0].type ==# 'dir' ? '/ and everything in it' : '')
         \ : len(items) . ' items'
-  if confirm('Delete ' . label . '?', "&Yes\n&No", 2) != 1
+  let c = confirm('Delete ' . label . '?', "&Yes\n&No", 2)
+  redraw                                " else "Deleted ..." needs "Press ENTER"
+  if c != 1
     return
   endif
   let done = 0
   for e in items
-    if !esp_fs_delete(s:Join(b:espfiles.dir, e.name))
+    if !s:Remove(s:Join(b:espfiles.dir, e.name))
       break
     endif
     let done += 1

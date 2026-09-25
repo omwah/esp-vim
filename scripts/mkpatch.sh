@@ -3,6 +3,12 @@
 # Generate a new patch from edits made in build-deps/<dep>.
 #
 #   scripts/mkpatch.sh vim 0004-xdiff-config-include-path
+#   scripts/mkpatch.sh vim 0010-netrw-native-scp-sftp runtime/pack/dist/opt/netrw
+#
+# Optional paths (relative to the dependency's root) limit the new patch to
+# those files or directories. Needed when the tree also holds edits that belong
+# to an EXISTING patch not yet regenerated -- e.g. new rows for 0008's builtin
+# table made alongside a new netrw change.
 #
 # Why this exists instead of "git init in the tree": scripts/prepare-deps.sh
 # re-extracts build-deps/<dep> from the archive every run, which deletes any
@@ -28,6 +34,8 @@ NAME="${2:-}"
 [ -n "$DEP" ]  || die "usage: mkpatch.sh <dep> <patch-name>"
 [ -n "$NAME" ] || die "usage: mkpatch.sh <dep> <patch-name>"
 NAME="${NAME%.patch}"
+shift 2
+ONLY=("$@")
 
 TREE="$REPO_ROOT/build-deps/$DEP"
 [ -d "$TREE" ] || die "no $TREE -- run: pixi run deps"
@@ -67,9 +75,16 @@ fi
 # diff -N so new files appear; -p1 strips the a/ and b/ components.
 # Named a/ and b/ so the output reads like a git patch and -p1 works.
 ln -s "$TREE" "$REF/b"
-( cd "$REF" && diff -ruN \
-    --exclude=.git --exclude='*.o' --exclude='*.rej' --exclude='*.orig' \
-    a b ) > "$OUT" || true
+DIFF=(diff -ruN --exclude=.git --exclude='*.o' --exclude='*.rej' --exclude='*.orig')
+if [ ${#ONLY[@]} -eq 0 ]; then
+    ( cd "$REF" && "${DIFF[@]}" a b ) > "$OUT" || true
+else
+    : > "$OUT"
+    for p in "${ONLY[@]}"; do
+        p="${p#/}"
+        ( cd "$REF" && "${DIFF[@]}" "a/$p" "b/$p" ) >> "$OUT" || true
+    done
+fi
 
 if [ ! -s "$OUT" ]; then
     rm -f "$OUT"

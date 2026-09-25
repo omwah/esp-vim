@@ -490,3 +490,15 @@ http method builds a wget/curl command line. Rather than re-implementing `:Nread
 replacing `spellfile.vim`, patch 0009 adds a branch in front: if `esp_http_get()` exists,
 use it. One hunk, inert everywhere else, and every netrw feature built on http reads
 (`:e`, `:Nread`, spell download) works unchanged.
+
+## 2026-09-24 — SSH through the registry's libssh2, unvendored; device keys are ECDSA
+
+`skuodi/libssh2_esp` (libssh2 1.11, mbedTLS) works unmodified, so it's a pinned managed
+component rather than an LFS archive with patches: that is Phase 0's rule for
+dependencies we don't patch. Its mbedTLS backend has no Ed25519, so keys the device makes
+are ECDSA P-256. That's also what the web server's certificate will use (6e), and it's
+far cheaper than RSA on these chips.
+
+Host keys are trust-on-first-use with a fingerprint the user can check. A changed key is
+never accepted by the software; the user must delete the old line. SSH exists here to
+move files and, later, to push git. Silently accepting a changed key would defeat it.

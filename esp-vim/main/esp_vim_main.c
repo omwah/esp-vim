@@ -21,6 +21,7 @@
 #include "nvs_flash.h"
 #include "esp_fs.h"
 #include "esp_net.h"
+#include "esp_ssh.h"
 #include "esp_heap_caps.h"
 #include "driver/uart.h"
 #include "driver/uart_vfs.h"
@@ -299,6 +300,7 @@ void app_main(void)
     storage_init();
     environment_init();
     esp_net_init();             /* returns at once; DHCP carries on in the background */
+    esp_ssh_init();
 
     /*
      * app_main's task becomes the session supervisor: start a Vim session,

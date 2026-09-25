@@ -62,6 +62,7 @@ void esp_vim_heap_stats(size_t *used, size_t *peak, size_t *total);
  * is idle. Not for use elsewhere.
  */
 void esp_vim_busy_poll(void);
+
 void esp_vim_busy_idle(void);
 void esp_vim_busy_wait_done(void);
 

@@ -1,0 +1,4 @@
+# libssh2 1.11 ported to ESP-IDF, mbedTLS backend (BSD-3-Clause). Pinned: the
+# component manager fetches exactly this version, recorded in dependencies.lock.
+dependencies:
+  skuodi/libssh2_esp: "1.1.0"

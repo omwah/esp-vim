@@ -18,3 +18,4 @@ command! -bar -bang -nargs=* -complete=customlist,esp#NvsComplete EspNvs call es
 command! -bar -nargs=* -complete=dir EspFiles call espfiles#Open(<f-args>)
 command! -bar EspNet call esp#Net()
 command! -bar -bang -nargs=+ EspGet call esp#Get(<bang>0, <f-args>)
+command! -bar -bang EspSshKeygen call esp#ssh#Keygen(<bang>0)

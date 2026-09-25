@@ -216,3 +216,97 @@ HTTP on a free port. New checks:
 - an **https** request to a real site, skipped when the host has no internet.
 
 The spell check is skipped if the host has no `vim`.
+
+## 6d — SCP and SFTP (2026-09-24)
+
+**Result:** files on other machines work like local ones:
+- `:e scp://me@host/file` and `:w` read and write them through netrw;
+- `:EspFiles` panes can be remote (`sftp://me@host/…`), with copy and move between local
+  and remote panes (directories included), mkdir, delete and rename;
+- the device makes its own key with `:EspSshKeygen`.
+
+P4 gate: all checks pass, against a **real OpenSSH server** the harness starts on the host.
+
+### `components/esp_ssh`
+
+libssh2 1.11 through the registry component **`skuodi/libssh2_esp` 1.1.0** (BSD-3-Clause,
+mbedTLS backend), pinned in `components/esp_ssh/idf_component.yml`, with
+`dependencies.lock` committed. It's unpatched, so per Phase 0's rule it isn't vendored.
+
+- **URLs follow netrw's convention**: `scp://[user@]host[:port]/rel` is relative to
+  the login directory, `//abs` is absolute. The same text works in `:e`, `:EspFiles` and
+  the builtins. The scheme picks the protocol for get/put; list, mkdir, remove and
+  rename always use SFTP, which SCP can't do.
+- **One cached session** per user@host:port, reused across calls. Without it, every
+  file-manager refresh would pay a full handshake.
+- **Host keys:** trust on first use, recorded in `/fat/.ssh/known_hosts` (OpenSSH format).
+  An unknown host is an error carrying the key type and SHA256 fingerprint, formatted as
+  `ssh-keygen -l` prints it, until `esp_ssh_trust()`. A **changed** key is refused
+  outright and never accepted automatically.
+- **Auth:** `/fat/.ssh/id_ecdsa`, then `id_rsa`, then a password if one is given. The
+  public half is passed explicitly: libssh2's mbedTLS backend can't derive it from an EC
+  private key.
+- **No Ed25519** in libssh2's mbedTLS backend, so **`esp_ssh_keygen()` makes ECDSA
+  P-256**: mbedTLS generates the key and writes it as PEM (`CONFIG_MBEDTLS_PEM_WRITE_C`),
+  and we build the OpenSSH public-key line (`ecdsa-sha2-nistp256`) ourselves.
+- Downloads write `.part` and rename; transfers take the progress callback (CTRL-C,
+  spinner); a failed SCP transfer drops the session rather than reusing a broken channel.
+
+### Vim side
+
+- Nine `esp_ssh_*()` builtins (patch 0008, now 30 rows). Their errors say what happened,
+  so **`autoload/esp/ssh.vim`** can hold the conversation: trust an unknown host (showing
+  its fingerprint), or ask for a password and retry. A typed password is kept only in a
+  script variable for the rest of that Vim session.
+- **Patch `0010-netrw-native-scp-sftp`**: in front of netrw's scp and sftp read and write
+  methods, which run `scp`/`sftp` commands, a branch that calls `esp#ssh#Get`/`Put`.
+  netrw can't list remote *directories* this way (it runs `ssh … ls`); `:EspFiles` is the
+  remote browser, as the help says.
+- **`:EspFiles` remote panes.** Local↔remote copy and move recurse into directories; a
+  move within one host is a rename there. Remote-to-remote copies are refused.
+- **`scripts/mkpatch.sh` takes paths** to limit a new patch to them. Needed because each
+  stage adds rows to 0008 *and* a new netrw patch at once.
+
+### Bugs the tests found
+
+- **`:EspFiles` could not open a second time** while a manager tab still existed (E95,
+  duplicate buffer name). It now goes to the existing manager, repointing its panes if
+  directories are given. Pane names are also made unique.
+- **A needless "Press ENTER" after every confirmation** (delete, overwrite): the
+  follow-up message didn't fit under the dialog. Now redrawn first. Found because the
+  prompt swallowed the test's next key.
+- **An error during exit froze the device.** When an exit autocommand raised an error,
+  Vim's `getout()` waited for Enter "to give the user a chance to read the message". It
+  did so after restoring the terminal, so no prompt was ever drawn and the device looked
+  hung until a key was pressed. **Patch `0011-main-no-exit-prompt`** skips that wait on
+  ESP. Vim is restarting anyway, so the message is lost. Tested with a `VimLeavePre`
+  autocommand that fails.
+- **Open: a timed `search()` occasionally overran its timeout** after a long first
+  session, until input arrived. GDB caught Vim in the backtracking engine
+  (`regmatch`), searching a buffer with the pathological test pattern. It isn't the
+  emulator failing to deliver timer interrupts: a standalone app shows a 50 ms
+  `esp_timer` interrupting a pure-CPU loop on time, every time. 150 timed searches in a
+  row, before and after network use and across a session restart, also each took
+  exactly 50 ms. It only appeared in the full suite, and only when the test typed its
+  next command while the search was still running. The test now waits for the command to
+  finish, which is what it meant to do anyway. The underlying cause isn't identified;
+  suspects are a leaked nesting level in Vim's `init_regexp_timeout()`, or the terminal
+  briefly leaving raw mode so no break checks run. Tracked here until explained.
+- In the harness: a value wider than the terminal comes back through the UART with
+  cursor-movement escapes in it (Vim wraps it). The SSH public key was, so
+  `authorized_keys` got garbage. Long values are now read in pieces (`probe_long`).
+
+### Tests
+
+The harness starts an unprivileged `sshd` from pixi's OpenSSH on a free port, with an
+ECDSA host key, key-only auth, and internal SFTP. The client-side tools get `-F
+/dev/null`, since pixi's `ssh` rejects a user's `~/.ssh/config` with unusual permissions.
+New checks:
+- `:EspSshKeygen` makes a key, and the host installs it;
+- an unknown host reports the **same fingerprint `ssh-keygen -l` gives on the host**;
+- trust is remembered;
+- SFTP and SCP downloads work;
+- `:e scp://…` reads and `:w` writes back;
+- an `:EspFiles` remote pane lists, uploads, makes a directory and deletes.
+
+The emulator time cap is now 1500 s; the full interactive gate takes about 7 minutes.

@@ -13,7 +13,10 @@ failure (path printed) since that is what you need to see why.
 """
 
 import functools
+import getpass
 import http.server
+import os
+import socket
 import re
 import shutil
 import subprocess
@@ -58,6 +61,37 @@ def start_http_server(root):
     return srv, f"http://{HOST_FROM_DEVICE}:{srv.server_address[1]}"
 
 
+def start_sshd(root):
+    """An unprivileged OpenSSH server on a free 127.0.0.1 port (pixi's openssh),
+    authenticating only the current user by key. Returns (proc, port), or
+    (None, 0) when sshd is unavailable."""
+    pixi_bin = Path(__file__).resolve().parents[2] / ".pixi" / "envs" / "default" / "bin"
+    sshd = str(pixi_bin / "sshd") if (pixi_bin / "sshd").is_file() else (shutil.which("sshd") or "")
+    keygen = str(pixi_bin / "ssh-keygen") if (pixi_bin / "ssh-keygen").is_file() else shutil.which("ssh-keygen")
+    if not (keygen and sshd and Path(sshd).is_file()):
+        return None, 0
+    subprocess.run([keygen, "-q", "-t", "ecdsa", "-b", "256", "-N", "", "-f",
+                    str(root / "hostkey")], check=True)
+    (root / "authorized_keys").write_text("")
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    (root / "sshd_config").write_text(
+        f"Port {port}\nListenAddress 127.0.0.1\nHostKey {root / 'hostkey'}\n"
+        f"AuthorizedKeysFile {root / 'authorized_keys'}\nPasswordAuthentication no\n"
+        f"KbdInteractiveAuthentication no\nStrictModes no\nPidFile {root / 'sshd.pid'}\n"
+        "Subsystem sftp internal-sftp\nLogLevel ERROR\n")
+    proc = subprocess.Popen([str(Path(sshd).resolve()), "-D", "-e", "-f", str(root / "sshd_config")],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    for _ in range(50):
+        with socket.socket() as sock:
+            if sock.connect_ex(("127.0.0.1", port)) == 0:
+                return proc, port
+        time.sleep(0.1)
+    proc.kill()
+    return None, 0
+
+
 def make_spell_file(root):
     """A tiny English spell file built by a host Vim, so the spell-download
     check needs no internet. Returns False (check skipped) with no host Vim."""
@@ -80,6 +114,8 @@ def main():
     (www / "page.txt").write_text("line one\nline two\n")
     have_spell = make_spell_file(www)
     srv, base = start_http_server(www)
+    sshroot = Path(tempfile.mkdtemp(prefix="vim-sshd-"))
+    sshd, sshport = start_sshd(sshroot)
     print(f"interactive session (target: {TARGET}, PSRAM {PSRAM[TARGET]})")
     try:
         with Session(term_size=(40, 120), log=str(log)) as s:
@@ -88,6 +124,14 @@ def main():
             def probe(tag, expr):
                 s.type(f":echo '{tag}' . '=' . {expr} . '|'\r")
                 return s.expect(rf"{tag}=([^|]*)\|".encode(), 30).group(1).decode()
+
+            def probe_long(tag, expr, width=60):
+                # A value wider than the screen wraps, and Vim then moves the
+                # cursor with escape sequences in the middle of it: read it back
+                # in pieces narrower than a line.
+                n = int(probe(tag + "N", f"strchars({expr})"))
+                return "".join(probe(tag, f"strcharpart({expr}, {i}, {width})")
+                               for i in range(0, n, width))
             term = s.expect(rb"ESPVIM-TERM ([^\r\n]*\))", 60).group(1).decode()
             s.expect("ESPVIM-READY", 60)
             s.expect(f"Vim running on {CHIP}", 60)
@@ -369,6 +413,75 @@ def main():
             s.type(":call esp_fs_delete('/fat/net') | enew!\r")
             s.quiet(1.0)
 
+            # 2k. SSH (Phase 6d): a real sshd on the host. The device makes its
+            #     own key, the host installs it; trust on first use; SFTP and SCP
+            #     transfers; netrw scp:// read and write; :EspFiles remote pane.
+            if sshd is not None:
+                remote = sshroot / "files"
+                remote.mkdir()
+                (remote / "remote.txt").write_text("remote hello\n")
+                user = getpass.getuser()
+                host = f"{user}@{HOST_FROM_DEVICE}:{sshport}"
+                rdir = f"sftp://{host}/{remote}"          # //abs: absolute path
+                s.type(":call mkdir('/fat/ssh', 'p') | let g:pub = esp_ssh_keygen()\r")
+                s.quiet(2.0, timeout=120)
+                pub = probe_long("PK", "g:pub")
+                check(pub.startswith("ecdsa-sha2-nistp256 AAAA"), ":EspSshKeygen makes an ECDSA key",
+                      pub[:40])
+                (sshroot / "authorized_keys").write_text(pub + "\n")
+                s.type(f":let g:hk = esp_ssh_hostkey('{rdir}')\r")
+                s.quiet(2.0, timeout=120)
+                got = probe("HK", "g:hk.status . ' ' . g:hk.fingerprint")
+                fp = subprocess.run([shutil.which("ssh-keygen") or "ssh-keygen", "-lf", str(sshroot / "hostkey.pub")],
+                                    capture_output=True, text=True).stdout.split()[1]
+                check(got == f"unknown {fp}", "a new host is unknown, with the host's real fingerprint",
+                      f"device says {got!r}, host says {fp!r}")
+                s.type(f":call esp_ssh_trust('{rdir}') | let g:hk = esp_ssh_hostkey('{rdir}')\r")
+                s.quiet(2.0, timeout=120)
+                check(probe("HT", "g:hk.status") == "known", "esp_ssh_trust() remembers the host")
+                s.type(f":call esp_ssh_get('{rdir}/remote.txt', '/fat/ssh/r1.txt')"
+                       f" | call esp_ssh_get('scp://{host}/{remote}/remote.txt', '/fat/ssh/r2.txt')\r")
+                s.quiet(2.0, timeout=180)
+                got = probe("SG", "join(readfile('/fat/ssh/r1.txt')) . ':' . join(readfile('/fat/ssh/r2.txt'))")
+                check(got == "remote hello:remote hello", "SFTP and SCP downloads", f"got {got!r}")
+                s.type(f":e scp://{host}/{remote}/remote.txt\r")
+                s.quiet(2.0, timeout=180)
+                got = probe("SE", "getline(1)")
+                check(got == "remote hello", ":e scp://... reads through netrw", f"got {got!r}")
+                s.type(":call setline(1, 'edited on the device') | w\r")
+                s.quiet(2.0, timeout=180)
+                got = (remote / "remote.txt").read_text().strip()
+                check(got == "edited on the device", ":w scp://... writes it back", f"host has {got!r}")
+                s.type(":bwipe! | call writefile(['going up'], '/fat/ssh/up.txt')"
+                       f" | EspFiles /fat/ssh {rdir}\r")
+                s.quiet(3.0, timeout=180)
+                got = probe("RP", "getbufvar(winbufnr(2), 'espfiles').dir . ':' . "
+                            "len(filter(copy(getbufvar(winbufnr(2), 'espfiles').entries), 'v:val.name ==# \"remote.txt\"'))")
+                check(got == f"{rdir}:1", ":EspFiles lists a remote pane", f"got {got!r}")
+                s.type("gg/up\\.txt\rc")                        # copy up.txt to the remote pane
+                s.quiet(1.0)
+                s.type("\r")
+                s.quiet(3.0, timeout=180)
+                check((remote / "up.txt").is_file(), "copying into a remote pane uploads the file")
+                s.type("\t")                                      # the remote pane
+                s.quiet(0.5)
+                s.send(F7 := "\x1b[18~")
+                s.quiet(1.0)
+                s.type("rdir\r")
+                s.quiet(3.0, timeout=180)
+                check((remote / "rdir").is_dir(), "F7 makes a remote directory")
+                s.type("gg/up\\.txt\rd")
+                s.quiet(1.0)
+                s.type("y")
+                s.quiet(3.0, timeout=180)
+                check(not (remote / "up.txt").exists(), "d deletes a remote file")
+                s.type("q")
+                s.quiet(1.0)
+                s.type(":call esp_fs_delete('/fat/ssh') | call esp_fs_delete('/fat/.ssh') | enew!\r")
+                s.quiet(1.0)
+            else:
+                print("  SKIP  ssh (no sshd on the host)")
+
             # 2h. esp_fs path validation (Phase 6b). Every one of these must be
             #     refused: into read-only /vimrt, ".." out of /fat, a storage
             #     root itself, outside all roots, a directory into itself.
@@ -507,10 +620,50 @@ def main():
                       f"globals:cwd:tabstop:buffers = {got!r} (want '0:/fat:8:1')")
                 s.type(":let g:dirty = 1 | set tabstop=3 | cd /vimrt | e /vimrt/vimrc"
                        " | e /vimrt/defaults.vim | help | only | e /fat"
-                       " | call search('\\v(a|aa)+b', 'n', 0, 50)\r")
+                       " | call search('\\v(a|aa)+b', 'n', 0, 50) | echo 'DD' . '=done|'\r")
+                # Wait for the whole line to finish rather than for a quiet spell:
+                # a long silent step would otherwise have ":qa!" typed into it.
+                s.expect(rb"DD=done\|", 90)
                 s.quiet(1.5)
                 s.type(":qa!\r")
+                try:
+                    s.expect(rb"ESPVIM-EXIT rc=0 ", 30)
+                except TimeoutError:
+                    # Diagnose before failing: is Vim waiting for a key it never
+                    # asked for, or really stuck?
+                    s.send(b"\r")
+                    try:
+                        s.expect(rb"ESPVIM-EXIT rc=0 ", 15)
+                        raise TimeoutError(f"session {cycle + 1}: :qa! waited for a key before exiting")
+                    except TimeoutError as again:
+                        if "waited for a key" in str(again):
+                            raise
+                    s.type(":echo 'Z' . '=alive|'\r")
+                    try:
+                        s.expect(rb"Z=alive\|", 15)
+                        raise TimeoutError(f"session {cycle + 1}: :qa! did not exit; Vim still responds")
+                    except TimeoutError as last:
+                        if "still responds" in str(last):
+                            raise
+                        raise TimeoutError(f"session {cycle + 1}: :qa! hung; Vim does not respond")
+
+            # An error raised while Vim exits (here by a VimLeavePre autocommand)
+            # made it wait for Enter at a prompt the terminal never showed: the
+            # device looked frozen. Patch 0011: it now exits at once.
+            s.expect(rb"Vim is forever\.", 30)
+            s.quiet(0.5)
+            s.send(b"x")
+            s.expect("ESPVIM-READY", 60)
+            s.quiet(1.5)
+            s.type(":autocmd VimLeavePre * echoerr 'esp-test-error'\r")
+            s.quiet(1.0)
+            s.type(":qa!\r")
+            try:
                 s.expect(rb"ESPVIM-EXIT rc=0 ", 30)
+                exited = True
+            except TimeoutError:
+                exited = False
+            check(exited, "an error during exit does not leave Vim waiting at an invisible prompt")
 
             sessions = [n for n, _ in starts]
             check(sessions == [2, 3, 4], "each :q starts a new session in place (no reboot)",
@@ -546,6 +699,9 @@ def main():
         check(not errs, "no Vim error messages", "; ".join(errs))
     except Exception as e:           # a hang or crash is a failure, not a traceback
         check(False, "session completed", f"{type(e).__name__}: {e}")
+    finally:
+        if sshd is not None:
+            sshd.kill()
 
     if failures:
         print(f"interactive: {failures} check(s) FAILED -- UART log kept at {log}")
