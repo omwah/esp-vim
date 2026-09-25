@@ -26,10 +26,20 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 PROJECT = HERE.parent
 RUN_EMU = PROJECT.parent / "scripts" / "run-emu.sh"
+EMU = PROJECT.parent / "build-deps" / "esp-emu" / "esp-emu"
+C6_IMAGE = PROJECT.parent / "build-deps" / "c6-coprocessor" / "build" / "merged.bin"
 
-# The chip under test, and the PSRAM its emulated board gets.
-TARGET = os.environ.get("ESPVIM_TARGET", "esp32p4")
+# The build variant under test (scripts/vim-build.sh), the chip it runs on, and
+# the PSRAM its emulated board gets. "tab5" is the P4 with its WiFi through an
+# ESP32-C6 co-processor, emulated as a second esp-emu linked by esp-hosted's
+# SDIO bridge (scripts/c6-build.sh makes the C6 firmware).
+VARIANT = os.environ.get("ESPVIM_TARGET", "esp32p4")
+TARGET = {"tab5": "esp32p4"}.get(VARIANT, VARIANT)
+COPROCESSOR = VARIANT == "tab5"
 PSRAM = {"esp32p4": "32M", "esp32s3": "8M"}
+
+# Options that belong to the radio: on a co-processor build they go to the C6.
+RADIO_OPTS = {"--wifi-ssid", "--wifi-password"}
 
 
 class Session:
@@ -48,8 +58,8 @@ class Session:
         self.buf = b""
         self._scan = b""        # rolling tail: a query can straddle two recv()s
         self.log = open(log, "wb") if log else None
-        args = [str(RUN_EMU), str(PROJECT), "--chip", chip, "--psram", psram,
-                "--timeout", "1500s"]
+        args = [str(RUN_EMU), str(PROJECT), "--chip", chip, "--variant", VARIANT,
+                "--psram", psram, "--timeout", "1500s"]
         if reuse:
             args.append("--reuse")
         if save_state:
@@ -60,14 +70,53 @@ class Session:
         # hostfwd: (host_port, device_port) pairs, so the host can reach a
         # server on the device (QEMU syntax; esp-emu supports it undocumented).
         net = "user" + "".join(f",hostfwd=tcp:127.0.0.1:{h}-:{g}" for h, g in hostfwd)
-        args += ["--", "--uart-tcp", f"127.0.0.1:{port}", "--net", net, *extra]
+        self.c6 = self._tmp = None
+        if COPROCESSOR:
+            # The network is the C6's: slirp and the soft AP attach to it, and
+            # the P4 reaches both through esp-hosted. Slave first, then host.
+            radio, rest, it = [], [], iter(extra)
+            for a in it:
+                if a in RADIO_OPTS:
+                    radio += [a, next(it)]
+                else:
+                    rest.append(a)
+            self._tmp = tempfile.mkdtemp(prefix="espvim-hosted-")
+            sock_path = os.path.join(self._tmp, "hosted.sock")
+            if not C6_IMAGE.exists():
+                raise RuntimeError(f"no C6 firmware at {C6_IMAGE} -- run scripts/c6-build.sh")
+            self.c6 = subprocess.Popen(
+                [str(EMU), "--chip", "esp32c6", "--firmware", str(C6_IMAGE),
+                 "--hosted", f"bridge:slave:{sock_path}", "--net", net, *radio],
+                stdin=subprocess.PIPE, stdout=self._c6_log(log), stderr=subprocess.STDOUT,
+                start_new_session=True)
+            for _ in range(100):
+                if os.path.exists(sock_path) or self.c6.poll() is not None:
+                    break
+                time.sleep(0.1)
+            if not os.path.exists(sock_path):
+                self._kill(self.c6)
+                raise RuntimeError("the C6 emulator did not open its esp-hosted socket")
+            args += ["--", "--uart-tcp", f"127.0.0.1:{port}",
+                     "--hosted", f"bridge:host:{sock_path}", *rest]
+        else:
+            args += ["--", "--uart-tcp", f"127.0.0.1:{port}", "--net", net, *extra]
         # stdin held open: an immediate EOF would reach the emulator's console.
         self.proc = subprocess.Popen(args, stdin=subprocess.PIPE,
                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                      start_new_session=True)
-        self.sock = self._connect()
+        try:
+            self.sock = self._connect()
+        except Exception:
+            self.sock = None
+            self.close()
+            raise
 
-    def _connect(self, deadline=60):
+    @staticmethod
+    def _c6_log(log):
+        """The C6's console, next to the UART log when there is one."""
+        return open(f"{log}.c6", "wb") if log else subprocess.DEVNULL
+
+    def _connect(self, deadline=180):
         end = time.time() + deadline
         while time.time() < end:
             try:
@@ -146,16 +195,25 @@ class Session:
 
     def close(self):
         try:
-            self.sock.close()
+            if self.sock:
+                self.sock.close()
         except OSError:
             pass
-        try:
-            os.killpg(self.proc.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-        self.proc.wait(timeout=20)
+        self._kill(self.proc)
+        if self.c6:
+            self._kill(self.c6)
+        if self._tmp:
+            shutil.rmtree(self._tmp, ignore_errors=True)
         if self.log:
             self.log.close()
+
+    @staticmethod
+    def _kill(proc):
+        try:
+            os.killpg(proc.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        proc.wait(timeout=20)
 
     def __enter__(self):
         return self

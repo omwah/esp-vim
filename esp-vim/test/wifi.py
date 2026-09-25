@@ -2,8 +2,9 @@
 """
 WiFi gate (Phase 6f): scan, connect, use and forget a network, against the
 soft access point esp-emu provides (--wifi-ssid / --wifi-password, defaults
-myssid / mypassword). Skipped on builds without WiFi (the P4 emulator build uses
-Ethernet; the Tab5's WiFi goes through its ESP32-C6).
+myssid / mypassword). Native on the ESP32-S3; on the tab5 variant through an
+emulated ESP32-C6 co-processor (esp-hosted over SDIO). Skipped on builds without
+WiFi (the plain P4 build uses Ethernet).
 """
 
 import sys
@@ -12,7 +13,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from uart_session import Session, TARGET  # noqa: E402
+from uart_session import Session, VARIANT  # noqa: E402
 from interactive import start_http_server  # noqa: E402
 
 failures = 0
@@ -31,7 +32,7 @@ def main():
     www = Path(tempfile.mkdtemp(prefix="vim-www-"))
     (www / "hello.txt").write_text("over wifi\n")
     srv, base = start_http_server(www)
-    print(f"wifi session (target: {TARGET}, soft AP '{SSID}')")
+    print(f"wifi session (variant: {VARIANT}, soft AP '{SSID}')")
     try:
         with Session(term_size=(40, 120), log=str(log),
                      extra=("--wifi-ssid", SSID, "--wifi-password", PASSWORD)) as s:
@@ -43,7 +44,6 @@ def main():
             s.quiet(2.0)
             if probe("IF", "esp_net_status().iface") != "wifi":
                 print("  SKIP  wifi: this build's network is not WiFi")
-                log.unlink()
                 return
 
             s.type(":let g:aps = esp_wifi_scan()\r")
@@ -69,11 +69,16 @@ def main():
             check(got == "0:", ":EspWifiDisconnect leaves and forgets the network", f"up:ssid {got!r}")
     except Exception as e:
         check(False, "session completed", f"{type(e).__name__}: {e}")
+    finally:
+        srv.shutdown()
+
+    if not failures:
+        for f in (log, Path(f"{log}.c6")):
+            f.unlink(missing_ok=True)
 
     if failures:
         print(f"wifi: {failures} check(s) FAILED -- UART log kept at {log}")
         sys.exit(1)
-    log.unlink()
     print("wifi: all checks passed")
 
 

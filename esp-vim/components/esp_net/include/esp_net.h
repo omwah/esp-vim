@@ -9,8 +9,10 @@
  *   - Ethernet: the chip's internal EMAC with a generic IEEE 802.3 PHY. On the
  *     ESP32-P4 this is also what esp-emu models, so networking is testable in
  *     the emulator with --net user (the host is reachable at the gateway).
+ *   - WiFi station: the chip's own radio (ESP32-S3), or on the ESP32-P4 an
+ *     ESP32-C6 co-processor reached through esp_wifi_remote + esp-hosted, which
+ *     re-export the same esp_wifi_* API -- so both use one code path here.
  *   - none.
- * WiFi (native on the S3, through the C6 on the Tab5) is Phase 6f.
  *
  * Downloads write files only through esp_fs's path validation.
  */

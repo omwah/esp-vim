@@ -72,6 +72,10 @@ vim-build = { cmd = 'bash -c ". scripts/env.sh >/dev/null && scripts/vim-build.s
 
 vim-build-s3 = { cmd = 'bash -c ". scripts/env.sh >/dev/null && scripts/vim-build.sh esp32s3"', depends-on = ["runtime"], description = "Build the Vim firmware for the ESP32-S3 variant" }
 
+vim-build-tab5 = { cmd = 'bash -c ". scripts/env.sh >/dev/null && scripts/vim-build.sh tab5"', depends-on = ["runtime"], description = "Build the Vim firmware for the M5Stack Tab5: ESP32-P4, WiFi through its ESP32-C6" }
+
+c6-build = { cmd = 'bash -c ". scripts/env.sh >/dev/null && scripts/c6-build.sh"', description = "Build the ESP32-C6 co-processor firmware (esp-hosted) the Tab5 build talks to" }
+
 vim-size = { cmd = 'bash -c ". scripts/env.sh >/dev/null && cd esp-vim && riscv32-esp-elf-size -t $(find build-esp32p4 -path \"*__idf_vim.dir*\" -name \"*.c.obj\") | tail -1"', description = "Report the Vim component's text/data/bss" }
 screenshots = { cmd = 'bash -c ". scripts/env.sh >/dev/null && \"$CONDA_PREFIX/bin/python\" scripts/screenshots.py"', description = "Regenerate docs/images/*.svg from the firmware running in the emulator (build first)" }
 

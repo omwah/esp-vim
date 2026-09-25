@@ -1,9 +1,13 @@
 cmake_minimum_required(VERSION 3.16)
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
-# One component-manager lock file per target (ESP-IDF's documented way): the
-# lock records the target, so a shared one is rewritten by every build for the
-# other chip.
-idf_build_set_property(DEPENDENCIES_LOCK dependencies.lock.${IDF_TARGET})
+# One component-manager lock file per build variant (ESP-IDF's documented way):
+# the lock records the target and the Kconfig-dependent components, so a shared
+# one is rewritten by every build of another variant. scripts/vim-build.sh sets
+# ESPVIM_VARIANT (esp32p4, tab5, esp32s3).
+if(NOT ESPVIM_VARIANT)
+    set(ESPVIM_VARIANT ${IDF_TARGET})
+endif()
+idf_build_set_property(DEPENDENCIES_LOCK dependencies.lock.${ESPVIM_VARIANT})
 project(esp-vim)
 
 # Read-only $VIMRUNTIME image, flashed to the "vimrt" partition.

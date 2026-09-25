@@ -176,11 +176,14 @@ Build as above, connect the board over USB, and flash it with ESP-IDF (the port 
 differ):
 
 ```sh
-pixi run vim-build            # ESP32-P4;  pixi run vim-build-s3 for ESP32-S3
-pixi run -- bash -c '. scripts/env.sh && idf.py -C esp-vim -B esp-vim/build-esp32p4 -p /dev/ttyACM0 flash'
+pixi run vim-build-tab5       # M5Stack Tab5;  pixi run vim-build-s3 for ESP32-S3
+pixi run -- bash -c '. scripts/env.sh && idf.py -C esp-vim -B esp-vim/build-tab5 -p /dev/ttyACM0 flash'
 ```
 
-For an ESP32-S3 board, use `build-esp32s3`.
+For an ESP32-S3 board, use `build-esp32s3`. The Tab5's WiFi comes from its ESP32-C6
+running Espressif's esp-hosted firmware; `pixi run c6-build` builds that firmware at the
+version this build speaks, for when the C6 needs updating. (Plain `vim-build` is the P4
+with Ethernet, which is what the emulator models.)
 
 ## For developers
 
@@ -201,6 +204,8 @@ someone's shell history. `pixi task list` shows them all.
 | `pixi run runtime` | Curate `$VIMRUNTIME` into `build-deps/vimrt-<target>/` (one per chip) and generate `filetype.vim` (checks it fits the partition) |
 | `pixi run vim-build` | Build the Vim firmware for ESP32-P4 (`esp-vim/build-esp32p4/`); runs `runtime` first |
 | `pixi run vim-build-s3` | Build the ESP32-S3 variant (`esp-vim/build-esp32s3/`) |
+| `pixi run vim-build-tab5` | Build the M5Stack Tab5 variant: P4, WiFi through the C6 (`esp-vim/build-tab5/`) |
+| `pixi run c6-build` | Build the Tab5's ESP32-C6 co-processor firmware (esp-hosted) |
 | `pixi run vim-test` | **The regression gate** on ESP32-P4: builds, then round trips across reboots, interactive console checks, and the web interface |
 | `pixi run vim-test-s3` | The same gate on the ESP32-S3 variant |
 | `pixi run vim-size` | Report the Vim component's text/data/bss |

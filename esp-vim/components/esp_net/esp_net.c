@@ -24,7 +24,7 @@
 #if CONFIG_ESP_VIM_NET_ETH
 #include "esp_eth.h"
 #endif
-#if CONFIG_ESP_VIM_NET_WIFI
+#if CONFIG_ESP_VIM_WIFI
 #include "esp_wifi.h"
 #endif
 
@@ -64,7 +64,7 @@ static esp_err_t start_ethernet(void)
 }
 #endif
 
-#if CONFIG_ESP_VIM_NET_WIFI
+#if CONFIG_ESP_VIM_WIFI
 /* Keep reconnecting unless the user disconnected on purpose. */
 static volatile bool s_wifi_want;
 
@@ -197,7 +197,7 @@ esp_err_t esp_net_init(void)
     err = start_ethernet();
     if (err != ESP_OK)
         ESP_LOGW(TAG, "ethernet: %s -- no network", esp_err_to_name(err));
-#elif CONFIG_ESP_VIM_NET_WIFI
+#elif CONFIG_ESP_VIM_WIFI
     err = start_wifi();
     if (err != ESP_OK)
         ESP_LOGW(TAG, "wifi: %s -- no network", esp_err_to_name(err));
@@ -227,7 +227,7 @@ void esp_net_get_status(esp_net_status_t *st)
         ip4(st->netmask, sizeof st->netmask, &ip.netmask);
         ip4(st->gw, sizeof st->gw, &ip.gw);
     }
-#if CONFIG_ESP_VIM_NET_WIFI
+#if CONFIG_ESP_VIM_WIFI
     wifi_config_t c;
     if (esp_wifi_get_config(WIFI_IF_STA, &c) == ESP_OK)
         snprintf(st->ssid, sizeof st->ssid, "%s", (const char *)c.sta.ssid);

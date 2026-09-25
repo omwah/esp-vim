@@ -12,6 +12,6 @@ dependencies:
     version: 1.1.0
 direct_dependencies:
 - skuodi/libssh2_esp
-manifest_hash: 17a444cbf722ba8e57d813496716ec05fc15e87de083905a1bcede4c98cf3413
+manifest_hash: cf8bdc83e25e8518b567c8d9c727b6e2237340b32543e549166515af18ddf62a
 target: esp32s3
 version: 2.0.0

@@ -8,7 +8,7 @@
 #     and leave the pristine merged image alone.
 #
 # Usage:
-#   scripts/run-emu.sh <project-dir> [--chip esp32p4] [--psram 32M]
+#   scripts/run-emu.sh <project-dir> [--chip esp32p4] [--variant tab5] [--psram 32M]
 #                      [--save-state] [--reuse] [--exit-on STR] [--timeout 30s]
 #                      [-- <extra esp-emu args>]
 
@@ -19,12 +19,13 @@ EMU="$REPO_ROOT/build-deps/esp-emu/esp-emu"
 
 die() { printf 'run-emu: %s\n' "$*" >&2; exit 1; }
 
-PROJECT=""; CHIP="esp32p4"; PSRAM="32M"; SAVE=0; REUSE=0
+PROJECT=""; CHIP="esp32p4"; VARIANT=""; PSRAM="32M"; SAVE=0; REUSE=0
 EXIT_ON=""; TIMEOUT=""; EXTRA=()
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --chip)       CHIP="$2";    shift 2 ;;
+        --variant)    VARIANT="$2"; shift 2 ;;
         --psram)      PSRAM="$2";   shift 2 ;;
         --save-state) SAVE=1;       shift ;;
         --reuse)      REUSE=1;      shift ;;
@@ -41,14 +42,16 @@ done
 [ -x "$EMU" ] || die "esp-emu not found at $EMU -- run scripts/prepare-deps.sh"
 
 PROJECT="$(cd "$PROJECT" && pwd)"
-# Per-target build directories (build-esp32p4, build-esp32s3: see
+# Per-variant build directories (build-esp32p4, build-tab5, build-esp32s3: see
 # scripts/vim-build.sh); a plain build/ for single-target projects like the spike.
-if [ -d "$PROJECT/build-$CHIP" ]; then
+if [ -n "$VARIANT" ]; then
+    BUILD="$PROJECT/build-$VARIANT"
+elif [ -d "$PROJECT/build-$CHIP" ]; then
     BUILD="$PROJECT/build-$CHIP"
 else
     BUILD="$PROJECT/build"
 fi
-[ -d "$BUILD" ] || die "no build-$CHIP/ or build/ in $PROJECT -- build it first"
+[ -d "$BUILD" ] || die "no ${BUILD#"$PROJECT"/}/ in $PROJECT -- build it first"
 
 # idf.py can produce the merged image for us, and it knows every partition's
 # offset -- including the generated FAT images. Far safer than hand-listing

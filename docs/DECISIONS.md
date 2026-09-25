@@ -520,3 +520,25 @@ alternative and was rejected: a task whose stack is in PSRAM can't do flash oper
 and Vim writes files. `.bss` in PSRAM is safe because only task-level code touches it,
 never interrupts or cache-off paths. It costs some speed on the S3's hottest globals,
 which hasn't been measured on hardware yet.
+
+## 2026-09-25 — The Tab5 talks to its C6 with esp-hosted 2.12.13
+
+esp-hosted 3.0 (July 2026) restructured the project: new Kconfig names, a new
+co-processor example (`wifi/sta/cp`), and software-aggregated SDIO by default. 2.12.x
+is the long-running line that `esp_wifi_remote` was written against (it asks for
+`>=2.11`). Its co-processor example also offers BLE over HCI, which Phase 6f's BLE work
+and Phase 11's keyboards need. Neither line could be tested end to end, because
+esp-emu's SDIO bridge stalls on host-to-co-processor traffic for both (see PHASE6.md,
+6f part 3). So the older, more widely deployed line is the lower-risk choice for first
+contact with real hardware. Whichever version is chosen, both ends must match, so
+`scripts/c6-build.sh` builds the C6 firmware from the version esp_net pins. Revisit
+3.x once the Tab5 works.
+
+## 2026-09-25 — Build variants, not just targets
+
+The Tab5 and the emulator's P4 are the same chip with different networks (WiFi through
+the C6, or Ethernet), and the Ethernet MAC claims the Tab5's internal I2C pins. So the
+unit of building is a *variant*: a chip plus an optional `sdkconfig.defaults.<variant>`,
+with its own build directory and component lock. The alternative, one P4 build with the
+network picked in menuconfig, would make the emulator build and the shipped build
+silently the same directory, one sdkconfig edit apart.

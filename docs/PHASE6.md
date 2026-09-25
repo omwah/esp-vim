@@ -459,3 +459,40 @@ Plus WiFi's internal-RAM appetite is reduced on the S3:
 - buffers from PSRAM (`SPIRAM_TRY_ALLOCATE_WIFI_LWIP`).
 
 None of this matters at an editor's traffic levels.
+
+## 6f, part 3 — WiFi on the Tab5, through the ESP32-C6 (2026-09-25)
+
+**Result:** a `tab5` build variant (`pixi run vim-build-tab5`, `esp-vim/build-tab5/`):
+the ESP32-P4 with `ESP_VIM_NET_WIFI_REMOTE`. `esp_wifi_remote` supplies the ordinary
+`esp_wifi_*` API and esp-hosted carries it over SDIO to the C6, so `esp_net`'s WiFi code
+is the S3's, unchanged; the `:EspWifi*` commands behave the same. The C6's firmware is
+esp-hosted's own co-processor example, built by `scripts/c6-build.sh` (`pixi run c6-build`)
+from the component registry at the version the P4 side pins. Nothing from it is committed.
+
+**Not yet verified at run time.** The two-emulator fixture is in place
+(`ESPVIM_TARGET=tab5 python esp-vim/test/wifi.py`): `uart_session.py` starts a C6
+emulator with the network and soft AP, then the P4 linked to it by
+`--hosted bridge:host:…`. But esp-emu (0.43.0, and 0.44.0 of 2026-09-25) never completes an
+esp-hosted session. The link comes up and the P4 reads the C6's boot event. Then the
+P4's first request never arrives, or arrives minutes late. Espressif's own examples fail
+the same way (IDF's `wifi/getting_started/station` over esp-hosted 2.12.13, and
+esp-hosted 3.0.7 and 3.0.8's `mcu_host` + `cp`), so the fault is in the emulator's bridge,
+not in this build. The C6-to-P4 direction works. So WiFi through the C6 is checked on
+the Tab5 itself, in Phase 9, and the fixture waits for an emulator that can run it.
+
+What the builds settle:
+
+- **Build variants.** `scripts/vim-build.sh` takes a variant, not just a chip: `tab5` is
+  `esp32p4` plus `sdkconfig.defaults.tab5`, in its own build directory with its own
+  component lock (`dependencies.lock.tab5`). `run-emu.sh --variant` and
+  `ESPVIM_TARGET=tab5` select it for the emulator.
+- **Only the Tab5 build carries esp-hosted.** esp_net's `idf_component.yml` adds
+  `esp_hosted` and `esp_wifi_remote` behind a Kconfig rule, so the Ethernet P4 and S3
+  builds don't include them. The rule leads with a target test, because on a chip with
+  its own radio the Kconfig symbol doesn't exist and the component manager fails on a
+  missing symbol instead of treating it as false.
+- **esp-hosted 2.12.13, not 3.x.** See DECISIONS.md.
+- **Pins.** The SDIO pins and the C6 reset GPIO are esp-hosted's P4 defaults
+  (CLK 18, CMD 19, D0–D3 14–17, reset 54: Espressif's P4 function EV board). The Tab5's
+  wiring is checked in Phase 9, along with whether the C6's factory firmware speaks this
+  esp-hosted version.

@@ -1,0 +1,6 @@
+# M5Stack Tab5 (ESP32-P4 + ESP32-C6): layered on sdkconfig.defaults and
+# sdkconfig.defaults.esp32p4 by scripts/vim-build.sh tab5.
+
+# WiFi through the C6 over SDIO. The P4's Ethernet is unused on this board, and
+# leaving it out frees the EMAC pins (GPIO31/32 are the Tab5's internal I2C).
+CONFIG_ESP_VIM_NET_WIFI_REMOTE=y

@@ -6,8 +6,8 @@ menu "esp-vim network"
         default ESP_VIM_NET_ETH if SOC_EMAC_SUPPORTED
         default ESP_VIM_NET_NONE
         help
-            How the device reaches the network. WiFi (native on the ESP32-S3,
-            through the ESP32-C6 on the Tab5) is added in Phase 6f.
+            How the device reaches the network: WiFi (native on the ESP32-S3,
+            through a radio co-processor on the ESP32-P4), Ethernet, or none.
 
         config ESP_VIM_NET_NONE
             bool "None"
@@ -20,6 +20,16 @@ menu "esp-vim network"
                 device reconnects at every boot. esp-emu provides a soft AP
                 (myssid / mypassword) for testing.
 
+        config ESP_VIM_NET_WIFI_REMOTE
+            bool "WiFi through an ESP32-C6 co-processor (esp-hosted, SDIO)"
+            depends on !SOC_WIFI_SUPPORTED
+            help
+                The M5Stack Tab5's arrangement: the P4 has no radio, and
+                esp_wifi_remote carries the ordinary esp_wifi_* API over SDIO
+                to an ESP32-C6 running esp-hosted's co-processor firmware
+                (scripts/c6-build.sh). Same behaviour as native WiFi. Brings in
+                the esp_hosted and esp_wifi_remote components.
+
         config ESP_VIM_NET_ETH
             bool "Ethernet (internal EMAC, generic IEEE 802.3 PHY)"
             depends on SOC_EMAC_SUPPORTED
@@ -28,5 +38,9 @@ menu "esp-vim network"
                 P4 build has networking in the emulator (--net user). A board
                 with no Ethernet PHY simply never gets a link.
     endchoice
+
+    config ESP_VIM_WIFI
+        bool
+        default y if ESP_VIM_NET_WIFI || ESP_VIM_NET_WIFI_REMOTE
 
 endmenu
