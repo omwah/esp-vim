@@ -34,6 +34,14 @@ void esp_vim_register_input_poll(int fd, bool (*input_pending)(void));
 void esp_vim_set_output_mirror(void (*mirror)(const void *buf, size_t len));
 
 /*
+ * A second source of console input -- keyboards (components/esp_kbd) -- read
+ * alongside the console on fd 0: read() takes its bytes first, and select()
+ * wakes for either. {pending} must not block; {read} returns what it has.
+ * Like the others, re-registered at each session start. NULL turns it off.
+ */
+void esp_vim_set_extra_input(bool (*pending)(void), int (*read)(void *buf, size_t len));
+
+/*
  * Vim sessions: restarting Vim in place after :q, without rebooting.
  *
  *   esp_vim_session_t s;

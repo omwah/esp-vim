@@ -24,6 +24,8 @@
 #include "esp_ssh.h"
 #include "esp_web.h"
 #include "esp_display.h"
+#include "esp_ble.h"
+#include "esp_kbd.h"
 #include "esp_heap_caps.h"
 #include "driver/uart.h"
 #include "driver/uart_vfs.h"
@@ -332,6 +334,7 @@ static void vim_task(void *arg)
     /* The poll registry and the output mirror live in the port's .bss, just
      * reset. */
     esp_vim_register_input_poll(0, console_pending);
+    esp_vim_set_extra_input(esp_kbd_pending, esp_kbd_read);   /* keyboards */
     if (esp_display_active())
         esp_vim_set_output_mirror(esp_display_write);
 
@@ -382,6 +385,7 @@ void app_main(void)
     environment_init();
     esp_ssh_init();
     esp_web_init();
+    esp_ble_kbd_boot();     /* a bonded Bluetooth keyboard reconnects by itself */
 
     /*
      * app_main's task becomes the session supervisor: start a Vim session,

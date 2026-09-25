@@ -258,8 +258,8 @@ set(VIM_WRAPPED
     fstat close fclose
     # process model, console, tty
     system exit _exit select tcgetattr tcsetattr
-    # console output, mirrored to the display (Phase 10b)
-    write
+    # console output, mirrored to the display (Phase 10b); keyboard input (Phase 11)
+    write read
 )
 foreach(sym IN LISTS VIM_WRAPPED)
     target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=${sym}")

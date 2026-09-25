@@ -1,0 +1,115 @@
+ESP-IDF v5.5.5, components/esp_hid: the NimBLE HID host never handles a BLE
+keyboard's HID service. Two misplaced braces in the characteristic loop:
+
+ - the report-map and report code sat inside the Device Information branch,
+   after two 'continue's, so it could never run;
+ - within it, the report characteristics were the 'else' of "is the report map
+   readable?", so they fell to 'continue' too (and an unreadable report map
+   would have written through an unset 'report' pointer).
+
+The keyboard connects and bonds, but its report map is never read and its input
+reports are never subscribed, so it sends nothing. Applied to a copy of the
+component by esp-vim/CMakeLists.txt.
+
+--- a/src/nimble_hidh.c
++++ b/src/nimble_hidh.c
+@@ -514,15 +514,18 @@
+                                 }
+                             }
+                         }
+-                        continue;
+-                    } else {
+-                        if (cuuid == BLE_SVC_HID_CHR_UUID16_PROTOCOL_MODE) {
+-                            if (char_result[c].properties & BLE_GATT_CHR_PROP_READ) {
+-                                if (read_char(dev->ble.conn_id, chandle, &rdata, &rlen) == 0 && rlen) {
+-                                    dev->protocol_mode[hidindex] = *((uint8_t *)rdata);
+-                                    free(rdata);
+-                                    rdata = NULL;
+-                                }
++                    }
++                    continue;
++                } else {
++                    /* The HID service. (A misplaced brace made this part of the DIS
++                     * branch above, where it could never run: no report map, and no
++                     * input reports subscribed.) */
++                    if (cuuid == BLE_SVC_HID_CHR_UUID16_PROTOCOL_MODE) {
++                        if (char_result[c].properties & BLE_GATT_CHR_PROP_READ) {
++                            if (read_char(dev->ble.conn_id, chandle, &rdata, &rlen) == 0 && rlen) {
++                                dev->protocol_mode[hidindex] = *((uint8_t *)rdata);
++                                free(rdata);
++                                rdata = NULL;
+                             }
+                         }
+                         continue;
+@@ -537,41 +540,36 @@
+                                     dev->config.report_maps[hidindex].len = rlen;
+                                 }
+                             }
+-                            continue;
+-                        } else if (cuuid == BLE_SVC_HID_CHR_UUID16_BOOT_KBD_INP || cuuid == BLE_SVC_HID_CHR_UUID16_BOOT_KBD_OUT
+-                                   || cuuid == BLE_SVC_HID_CHR_UUID16_BOOT_MOUSE_INP || cuuid == BLE_SVC_HID_CHR_UUID16_RPT) {
+-                            report = (esp_hidh_dev_report_t *)malloc(sizeof(esp_hidh_dev_report_t));
+-                            if (report == NULL) {
+-                                ESP_LOGE(TAG, "malloc esp_hidh_dev_report_t failed");
+-                                goto done;
+-                            }
+-                            report->next = NULL;
+-                            report->permissions = char_result[c].properties;
+-                            report->handle = chandle;
+-                            report->ccc_handle = 0;
+-                            report->report_id = 0;
+-                            report->map_index = hidindex;
+-                            if (cuuid == BLE_SVC_HID_CHR_UUID16_BOOT_KBD_INP) {
+-                                report->protocol_mode = ESP_HID_PROTOCOL_MODE_BOOT;
+-                                report->report_type = ESP_HID_REPORT_TYPE_INPUT;
+-                                report->usage = ESP_HID_USAGE_KEYBOARD;
+-                                report->value_len = 8;
+-                            } else if (cuuid == BLE_SVC_HID_CHR_UUID16_BOOT_KBD_OUT) {
+-                                report->protocol_mode = ESP_HID_PROTOCOL_MODE_BOOT;
+-                                report->report_type = ESP_HID_REPORT_TYPE_OUTPUT;
+-                                report->usage = ESP_HID_USAGE_KEYBOARD;
+-                                report->value_len = 8;
+-                            } else if (cuuid == BLE_SVC_HID_CHR_UUID16_BOOT_MOUSE_INP) {
+-                                report->protocol_mode = ESP_HID_PROTOCOL_MODE_BOOT;
+-                                report->report_type = ESP_HID_REPORT_TYPE_INPUT;
+-                                report->usage = ESP_HID_USAGE_MOUSE;
+-                                report->value_len = 8;
+-                            } else {
+-                                report->protocol_mode = ESP_HID_PROTOCOL_MODE_REPORT;
+-                                report->report_type = 0;
+-                                report->usage = ESP_HID_USAGE_GENERIC;
+-                                report->value_len = 0;
+-                            }
++                        }
++                        continue;
++                    } else if (cuuid == BLE_SVC_HID_CHR_UUID16_BOOT_KBD_INP || cuuid == BLE_SVC_HID_CHR_UUID16_BOOT_KBD_OUT
++                               || cuuid == BLE_SVC_HID_CHR_UUID16_BOOT_MOUSE_INP || cuuid == BLE_SVC_HID_CHR_UUID16_RPT) {
++                        report = (esp_hidh_dev_report_t *)malloc(sizeof(esp_hidh_dev_report_t));
++                        if (report == NULL) {
++                            ESP_LOGE(TAG, "malloc esp_hidh_dev_report_t failed");
++                            goto done;
++                        }
++                        report->next = NULL;
++                        report->permissions = char_result[c].properties;
++                        report->handle = chandle;
++                        report->ccc_handle = 0;
++                        report->report_id = 0;
++                        report->map_index = hidindex;
++                        if (cuuid == BLE_SVC_HID_CHR_UUID16_BOOT_KBD_INP) {
++                            report->protocol_mode = ESP_HID_PROTOCOL_MODE_BOOT;
++                            report->report_type = ESP_HID_REPORT_TYPE_INPUT;
++                            report->usage = ESP_HID_USAGE_KEYBOARD;
++                            report->value_len = 8;
++                        } else if (cuuid == BLE_SVC_HID_CHR_UUID16_BOOT_KBD_OUT) {
++                            report->protocol_mode = ESP_HID_PROTOCOL_MODE_BOOT;
++                            report->report_type = ESP_HID_REPORT_TYPE_OUTPUT;
++                            report->usage = ESP_HID_USAGE_KEYBOARD;
++                            report->value_len = 8;
++                        } else if (cuuid == BLE_SVC_HID_CHR_UUID16_BOOT_MOUSE_INP) {
++                            report->protocol_mode = ESP_HID_PROTOCOL_MODE_BOOT;
++                            report->report_type = ESP_HID_REPORT_TYPE_INPUT;
++                            report->usage = ESP_HID_USAGE_MOUSE;
++                            report->value_len = 8;
+                         } else {
+                             report->protocol_mode = ESP_HID_PROTOCOL_MODE_REPORT;
+                             report->report_type = 0;

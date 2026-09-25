@@ -557,3 +557,42 @@ comes in through pixi's `pypi-dependencies`. It also has HID support, which is h
 NimBLE starts on the first `:EspBleScan`, not at boot. On the S3, internal RAM is already
 the limit with WiFi up, and an editor session that never scans shouldn't pay for
 Bluetooth. Only the observer role is built; Phase 11 adds what keyboards need.
+
+## 2026-09-25 — ESP-IDF fixes are patches applied to a copy of the component
+
+ESP-IDF 5.5.5's `esp_hid` has a bug (its NimBLE HID host skips the HID service).
+ESP-IDF is installed separately and isn't ours to edit, and the repo commits no
+third-party source. So the fix is a patch, `patches/esp-idf/0001-...`.
+`esp-vim/CMakeLists.txt` copies `esp_hid` into the build directory at configure
+time, applies the patch, and adds the copy as a project component, which overrides
+ESP-IDF's by name. The copy is redone whenever the patch changes. A different ESP-IDF
+version that the patch doesn't fit stops the build, rather than building unpatched.
+
+## 2026-09-25 — WiFi and Bluetooth start only when wanted
+
+On the ESP32-S3, the WiFi driver, the Bluetooth stack and the display don't all fit
+in internal RAM at once. Nothing radio-related starts at boot unless it has
+something to do:
+- WiFi starts at boot only if a network is stored (a flag in NVS, set by a connect and
+  cleared by a disconnect), otherwise at the first scan or connect.
+- Bluetooth starts at boot only if a keyboard is bonded, otherwise at the first scan
+  or pairing.
+
+A board used as a Bluetooth-keyboard editor never pays for WiFi.
+
+## 2026-09-25 — Bluetooth keyboards pair with "Just Works"
+
+HID keyboards differ: some take a passkey typed on them, many take none and
+reject one. Just Works bonds with every keyboard that accepts it. Asking to pair, by command now and on the touch screen later, is
+the user's confirmation, as the plan's security notes require. Passkey keyboards
+need esp_hidh's passkey request handled, which ESP-IDF's HID host doesn't do; that
+waits for a keyboard that needs it.
+
+## 2026-09-25 — Switching build variants reconfigures
+
+The component manager has one `managed_components/` per project, not per build
+directory. Configuring one variant prunes components that only others use: the
+display driver, esp-hosted. A later incremental build of another variant then
+fails on missing sources. `scripts/vim-build.sh` records which variant configured
+last (`build-deps/managed-components-variant`) and reconfigures when it changes,
+which fetches that variant's components back.

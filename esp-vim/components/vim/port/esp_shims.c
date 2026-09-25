@@ -256,6 +256,67 @@ extern int __real_select(int, fd_set *, fd_set *, fd_set *, struct timeval *);
 static bool on_vim_task(void);
 
 /* Does this select() ask about a console fd (one with a registered poll)? */
+/* A second input source for fd 0 (see esp_vim_set_extra_input). */
+static bool (*s_extra_pending)(void);
+static int (*s_extra_read)(void *buf, size_t len);
+
+void esp_vim_set_extra_input(bool (*pending)(void), int (*read)(void *buf, size_t len))
+{
+    s_extra_pending = pending;
+    s_extra_read = read;
+}
+
+static bool extra_pending(int fd)
+{
+    return fd == STDIN_FILENO && s_extra_pending != NULL && s_extra_pending();
+}
+
+extern ssize_t __real_read(int fd, void *buf, size_t len);
+
+ssize_t __wrap_read(int fd, void *buf, size_t len)
+{
+    if (extra_pending(fd))
+        return s_extra_read(buf, len);
+    return __real_read(fd, buf, len);
+}
+
+/*
+ * A real wait on the console with a second input source: ESP-IDF's select()
+ * can't wake for it, so wait in short slices and look in between. 20 ms is
+ * below what a typist notices.
+ */
+static int select_with_extra(int nfds, fd_set *r, fd_set *w, fd_set *e, struct timeval *tv)
+{
+    int64_t end = tv ? esp_timer_get_time() + tv->tv_sec * 1000000LL + tv->tv_usec : INT64_MAX;
+    fd_set r0, w0, e0;
+    if (r) r0 = *r;
+    if (w) w0 = *w;
+    if (e) e0 = *e;
+    for (;;) {
+        if (extra_pending(STDIN_FILENO)) {
+            if (w) FD_ZERO(w);
+            if (e) FD_ZERO(e);
+            FD_ZERO(r);
+            FD_SET(STDIN_FILENO, r);
+            return 1;
+        }
+        int64_t left = end - esp_timer_get_time();
+        if (left <= 0) {
+            if (r) FD_ZERO(r);
+            if (w) FD_ZERO(w);
+            if (e) FD_ZERO(e);
+            return 0;
+        }
+        struct timeval slice = { .tv_sec = 0, .tv_usec = left < 20000 ? (suseconds_t)left : 20000 };
+        if (r) *r = r0;
+        if (w) *w = w0;
+        if (e) *e = e0;
+        int n = __real_select(nfds, r, w, e, &slice);
+        if (n != 0)
+            return n;
+    }
+}
+
 static bool asks_console(int nfds, fd_set *r)
 {
     for (int fd = 0; r && fd < nfds; fd++)
@@ -272,7 +333,9 @@ int __wrap_select(int nfds, fd_set *r, fd_set *w, fd_set *e, struct timeval *tv)
         if (!on_vim_task() || !asks_console(nfds, r))
             return __real_select(nfds, r, w, e, tv);
         esp_vim_busy_idle();
-        int n = __real_select(nfds, r, w, e, tv);
+        int n = (r && FD_ISSET(STDIN_FILENO, r) && s_extra_pending != NULL)
+                    ? select_with_extra(nfds, r, w, e, tv)
+                    : __real_select(nfds, r, w, e, tv);
         esp_vim_busy_wait_done();
         return n;
     }
@@ -293,7 +356,7 @@ int __wrap_select(int nfds, fd_set *r, fd_set *w, fd_set *e, struct timeval *tv)
     int ready = 0;
     for (int fd = 0; fd < nfds; fd++) {
         if (r && FD_ISSET(fd, r)) {
-            if (poll_for(fd)())
+            if (poll_for(fd)() || extra_pending(fd))
                 ready++;
             else
                 FD_CLR(fd, r);

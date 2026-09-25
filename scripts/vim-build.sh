@@ -46,5 +46,17 @@ for d in sdkconfig.defaults sdkconfig.defaults."$TARGET" sdkconfig.defaults."$VA
     fi
 done
 
+# managed_components/ is shared by every variant -- the component manager has
+# no per-build location -- and configuring one variant prunes the components
+# only others use (the display driver, esp-hosted). Reconfigure whenever the
+# last variant to fill it was a different one, so this one's are fetched back.
+STAMP=../build-deps/managed-components-variant
+RECONF=()
+if [ "$(cat "$STAMP" 2>/dev/null)" != "$VARIANT" ]; then
+    RECONF=(reconfigure)
+fi
+mkdir -p ../build-deps
+echo "$VARIANT" > "$STAMP"
+
 exec idf.py -B "$BUILD" -D "SDKCONFIG=$BUILD/sdkconfig" -D "IDF_TARGET=$TARGET" \
-    -D "SDKCONFIG_DEFAULTS=$DEFAULTS" -D "ESPVIM_VARIANT=$VARIANT" build
+    -D "SDKCONFIG_DEFAULTS=$DEFAULTS" -D "ESPVIM_VARIANT=$VARIANT" "${RECONF[@]}" build

@@ -206,6 +206,32 @@ Spell checking downloads its dictionary the first time you use it: >
 <asks whether to fetch the English dictionary and saves it in
 /fat/.vim/spell/.  It needs the network, and space: English is about 1 MB.
 
+BLUETOOTH KEYBOARDS					*esp-bt-keyboard*
+
+On boards with Bluetooth, a Bluetooth LE keyboard can be the keyboard: its keys
+go to Vim just as the console's do, and both work at once.
+
+:EspBtKeyboard						*:EspBtKeyboard*
+		The keyboard: connected or not, its name and address, battery
+		level, and the last key report received.
+
+:EspBtKeyboard scan [{seconds}]
+		Put the keyboard in pairing mode first (see its manual; often a
+		long press on a Bluetooth key).  Lists the keyboards in range,
+		numbered.  Many keyboards use a new address each time they enter
+		pairing mode, so pair straight after scanning.
+
+:EspBtKeyboard pair {n}
+:EspBtKeyboard pair {address} [random]
+		Connect to keyboard {n} from the list (or at {address}) and
+		pair with it.  No passkey is asked for: running this command is
+		the confirmation.  After that the keyboard comes back by itself,
+		also after a restart: press a key to wake it.
+
+:EspBtKeyboard forget
+		Disconnect the keyboard and forget it.
+
+
 REMOTE FILES: SCP AND SFTP				*esp-ssh*
 
 Files on other machines are reached over SSH, with Vim's usual URLs: >
@@ -333,6 +359,12 @@ Interrupt		CTRL-C stops a long command, a runaway search or a
 			already queued when it was interrupted.
 
 Backspace		Works whether your terminal sends DEL or CTRL-H.
+
+Keyboards		Besides the terminal, a Bluetooth keyboard can type into
+			Vim on boards with Bluetooth; see |esp-bt-keyboard|.
+			It has the keys of a US PC keyboard; F1-F12, the cursor
+			keys, Home, End, Page Up/Down, Insert and Delete send
+			what an xterm sends.
 
 Mouse			Enabled, using SGR mouse reporting.  Click to move
 			the cursor, drag to select, wheel to scroll.

@@ -8,6 +8,7 @@
  */
 
 #include "esp_ble.h"
+#include "esp_ble_priv.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -29,7 +30,8 @@
 
 static const char *TAG = "esp_ble";
 
-static SemaphoreHandle_t s_lock;        /* one scan at a time */
+SemaphoreHandle_t esp_ble__lock;        /* one scan, pairing or reconnect at a time */
+#define s_lock esp_ble__lock
 static SemaphoreHandle_t s_devs_lock;   /* s_devs: filled on NimBLE's task */
 static SemaphoreHandle_t s_synced;      /* host and controller in sync */
 static bool s_inited, s_synced_once;
@@ -58,10 +60,20 @@ static void host_task(void *arg)
     nimble_port_freertos_deinit();
 }
 
+bool esp_ble__init_locks(void)
+{
+    if (s_lock == NULL) {               /* first call, from one task at boot or Vim */
+        s_lock = xSemaphoreCreateMutex();
+        s_devs_lock = xSemaphoreCreateMutex();
+        s_synced = xSemaphoreCreateBinary();
+    }
+    return s_lock && s_devs_lock && s_synced;
+}
+
 /* Start the stack once, on first use. Called with s_lock held. If the
  * controller doesn't answer in time, the next call waits for it again rather
  * than initialising twice. */
-static int start(char *err, size_t errlen)
+int esp_ble__start(char *err, size_t errlen)
 {
     if (s_synced_once)
         return 0;
@@ -74,6 +86,7 @@ static int start(char *err, size_t errlen)
             return snprintf(err, errlen, "Bluetooth start: %s", esp_err_to_name(e)), -1;
         ble_hs_cfg.sync_cb = on_sync;
         ble_hs_cfg.reset_cb = on_reset;
+        esp_ble__config_security();      /* bonding, for keyboards (esp_ble_kbd.c) */
         nimble_port_freertos_init(host_task);
         s_inited = true;
     }
@@ -81,6 +94,11 @@ static int start(char *err, size_t errlen)
         return snprintf(err, errlen, "the Bluetooth controller did not respond"), -1;
     s_synced_once = true;
     return 0;
+}
+
+uint8_t esp_ble__own_addr_type(void)
+{
+    return s_own_addr_type;
 }
 
 static void fmt_addr(char out[18], const ble_addr_t *a)
@@ -111,12 +129,34 @@ static void record(const struct ble_gap_disc_desc *d)
     if (d->event_type == BLE_HCI_ADV_RPT_EVTYPE_ADV_IND
             || d->event_type == BLE_HCI_ADV_RPT_EVTYPE_DIR_IND)
         dev->connectable = true;
-    struct ble_hs_adv_fields f;         /* the name may come in the scan response */
-    if (ble_hs_adv_parse_fields(&f, d->data, d->length_data) == 0
-            && f.name != NULL && f.name_len > 0) {
-        size_t n = f.name_len < sizeof dev->name ? f.name_len : sizeof dev->name - 1;
-        memcpy(dev->name, f.name, n);
-        dev->name[n] = '\0';
+    /* The AD structures, parsed here rather than by ble_hs_adv_parse_fields(),
+     * which rejects a whole packet over one field it doesn't like. The name
+     * may come in the scan response. */
+    const uint8_t *a = d->data;
+    int len = d->length_data;
+    for (int i = 0, h = 0; i < len && h < (int)sizeof dev->adv - 2; i++, h += 2)
+        snprintf(dev->adv + h, 3, "%02x", a[i]);
+    for (int i = 0; i + 1 < len; ) {
+        int n = a[i];                   /* length of type + data */
+        if (n == 0 || i + 1 + n > len)
+            break;
+        uint8_t type = a[i + 1];
+        const uint8_t *v = a + i + 2;
+        int vlen = n - 1;
+        if ((type == 0x08 || type == 0x09) && vlen > 0) {           /* short/complete name */
+            size_t m = vlen < (int)sizeof dev->name ? vlen : sizeof dev->name - 1;
+            memcpy(dev->name, v, m);
+            dev->name[m] = '\0';
+        } else if (type == 0x02 || type == 0x03) {                  /* 16-bit service UUIDs */
+            for (int k = 0; k + 1 < vlen; k += 2)
+                if ((v[k] | v[k + 1] << 8) == 0x1812)               /* HID */
+                    dev->hid = true;
+        } else if (type == 0x19 && vlen >= 2) {                     /* appearance */
+            dev->appearance = v[0] | v[1] << 8;
+            if ((dev->appearance & 0xFFC0) == 0x03C0)               /* keyboard, mouse, ... */
+                dev->hid = true;
+        }
+        i += 1 + n;
     }
 }
 
@@ -140,15 +180,11 @@ int esp_ble_scan(unsigned ms, esp_ble_dev_cb cb, void *ctx, char *err, size_t er
 {
     if (ms < 1 || ms > 30000)
         return snprintf(err, errlen, "scan time must be 1 ms to 30 s"), -1;
-    if (s_lock == NULL) {               /* first call; only the Vim task scans */
-        s_lock = xSemaphoreCreateMutex();
-        s_devs_lock = xSemaphoreCreateMutex();
-        s_synced = xSemaphoreCreateBinary();
-        if (!s_lock || !s_devs_lock || !s_synced)
-            return snprintf(err, errlen, "out of memory"), -1;
-    }
+    if (!esp_ble__init_locks())
+        return snprintf(err, errlen, "out of memory"), -1;
+    esp_ble__cancel_connect();          /* a background reconnect gives way */
     xSemaphoreTake(s_lock, portMAX_DELAY);
-    int rc = start(err, errlen);
+    int rc = esp_ble__start(err, errlen);
     esp_ble_dev_t *devs = NULL;
     int n = 0;
     if (rc == 0) {

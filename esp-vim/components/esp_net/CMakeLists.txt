@@ -4,5 +4,5 @@
 idf_component_register(
     SRCS "esp_net.c"
     INCLUDE_DIRS "include"
-    REQUIRES esp_netif esp_event esp_http_client esp_eth esp_wifi mbedtls esp_fs heap
+    REQUIRES esp_netif esp_event esp_http_client esp_eth esp_wifi mbedtls esp_fs heap nvs_flash
 )

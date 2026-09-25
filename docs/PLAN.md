@@ -20,8 +20,8 @@
 | 8 — Git | not started. **Being reconsidered:** libgit2 instead of pure Python; test build scheduled after Phase 6 (see Phase 8) |
 | 9 — Tab5 hardware over UART | not started |
 | 10 — Tab5 display console | not started |
-| 10b — ESP32-S3 CYD display console | not started; see Phase 10b |
-| 11 — Bluetooth keyboards (late-stage goal) | not started; BLE (HOGP) only, see Phase 11 |
+| 10b — ESP32-S3 CYD display console | **in progress, pulled forward** (2026-09-25): Vim on the Hosyond ES3C28P's panel; see Phase 10b |
+| 11 — Bluetooth keyboards (late-stage goal) | **in progress, pulled forward** (2026-09-25): a BLE keyboard pairs by command and types into Vim on the ES3C28P; see Phase 11 |
 
 Toolchain: ESP-IDF **v5.5.5**, riscv32-esp-elf 14.2.0, emulator esp-emu 0.43.0.
 
@@ -1093,6 +1093,42 @@ hardware.
 **Depends on:** Phase 6f (BLE through esp-hosted on the P4, native on the S3) and Phase
 10's input layer (`components/esp_kbd`). It doesn't depend on the display, so it also works
 on UART-console builds, e.g. an S3 dev board with a BLE keyboard.
+
+### First working keyboard (2026-09-25, pulled forward)
+
+On the ES3C28P (native NimBLE), `:EspBtKeyboard scan` / `pair {n}` / `forget`: a BLE
+keyboard pairs, types into Vim alongside the serial console, and reconnects by itself
+after a restart. The touch pairing overlay is still to come.
+- **Pieces:**
+  - `components/esp_kbd` turns HID boot-format reports into terminal bytes and xterm
+    sequences, with typematic repeat.
+  - The port's `read()`/`select()` wrappers take a second input source
+    (`esp_vim_set_extra_input`).
+  - `components/esp_ble` adds the keyboard host (`esp_ble_kbd.c`) over ESP-IDF's
+    `esp_hidh`, with a background reconnect task and a "bonded" flag in NVS, so boot
+    starts Bluetooth only when a keyboard is bonded.
+- **ESP-IDF 5.5.5's NimBLE HID host never handled the HID service.** Two misplaced
+  braces skipped the report map and every report characteristic, so a keyboard
+  connected and bonded but sent nothing. Fixed by `patches/esp-idf/0001`, applied at
+  configure time to a copy of `esp_hid` that overrides ESP-IDF's.
+- **Pairing is "Just Works".** The test keyboard rejected a passkey with "confirm value failed":
+  it has no passkey step. Running the pair command is the confirmation. Keyboards that
+  require a passkey would need esp_hidh's passkey request handled (it ignores it); not
+  needed yet.
+- **Keyboards may use a new random address each time they enter pairing mode.** A scan
+  must be followed promptly by the pairing.
+- **Internal RAM:** Bluetooth, WiFi and the display together didn't fit
+  (`nimble_port_init` failed with `ESP_ERR_NO_MEM`). WiFi now starts only when a network
+  is stored, or on the first scan or connect. With the keyboard connected, about
+  31 KB of internal RAM is free.
+- **Still to do:**
+  - the test keyboard's second keyboard report (ID 2, 20 bytes: N-key rollover) isn't decoded;
+    only the 8-byte boot-format one is;
+  - modified cursor/function keys (xterm's `CSI 1;5A` forms);
+  - the keyboard between sessions;
+  - the touch pairing overlay;
+  - several bonded keyboards;
+  - Tab5 (esp-hosted HCI).
 
 ### Stack
 

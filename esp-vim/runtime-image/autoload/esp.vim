@@ -307,6 +307,73 @@ function! esp#BleScan(...) abort
   call s:Show('BleScan', lines, 2, function('esp#BleScan', [secs]))
 endfunction
 
+" ------------------------------------------------------------ :EspBtKeyboard --
+
+" :EspBtKeyboard                  status of the Bluetooth keyboard
+" :EspBtKeyboard scan [{seconds}] list keyboards (HID devices) in range
+" :EspBtKeyboard pair {n|addr}    pair with one from the list (or by address)
+" :EspBtKeyboard forget           disconnect and forget it
+let s:kbd_found = []
+
+function! esp#BtKeyboardComplete(lead, line, pos) abort
+  return filter(['scan', 'pair', 'forget'], 'v:val =~# "^" . a:lead')
+endfunction
+
+function! esp#BtKeyboard(...) abort
+  let what = a:0 ? a:1 : ''
+  if what ==# ''
+    let k = esp_bt_keyboard()
+    let lines = ['Bluetooth keyboard   (R refresh, q close)',
+          \ s:Row('%-10s %s', 'State', k.connected ? 'connected' : (k.paired ? 'paired, not connected' : 'none paired'))]
+    if k.connected
+      call add(lines, s:Row('%-10s %s  %s', 'Keyboard', k.name, k.addr))
+      if k.battery >= 0
+        call add(lines, s:Row('%-10s %d%%', 'Battery', k.battery))
+      endif
+    endif
+    if !empty(k.last_report)
+      call add(lines, s:Row('%-10s %s', 'Last key', k.last_report))
+    endif
+    call s:Show('BtKeyboard', lines, 1, function('esp#BtKeyboard'))
+  elseif what ==# 'scan'
+    let secs = a:0 > 1 ? str2nr(a:2) : 8
+    echo 'Put the keyboard in pairing mode. Scanning (' . secs . ' s)...'
+    redraw
+    let s:kbd_found = sort(filter(esp_ble_scan(secs), 'v:val.hid'), {a, b -> b.rssi - a.rssi})
+    let lines = ['Keyboards in range: ' . len(s:kbd_found) . '   (:EspBtKeyboard pair {n}, q close)']
+    let n = 1
+    for d in s:kbd_found
+      call add(lines, s:Row('%2d  %-24s %-17s %4d dB', n, empty(d.name) ? '(no name)' : d.name, d.addr, d.rssi))
+      let n += 1
+    endfor
+    call s:Show('BtKeyboardScan', lines, 1, function('esp#BtKeyboard', ['scan', secs]))
+  elseif what ==# 'pair'
+    if a:0 < 2
+      echoerr 'Usage: :EspBtKeyboard pair {n|addr}'
+      return
+    endif
+    let arg = a:2
+    if arg =~# '^\d\+$' && str2nr(arg) >= 1 && str2nr(arg) <= len(s:kbd_found)
+      let d = s:kbd_found[str2nr(arg) - 1]
+      let [addr, type] = [d.addr, d.addr_type]
+    else
+      let [addr, type] = [arg, a:0 > 2 ? a:3 : 'public']
+    endif
+    echo 'Pairing with ' . addr . ' (up to 30 s)...'
+    redraw
+    if esp_bt_keyboard_pair(addr, type)
+      redraw
+      echo 'Paired. Type on the keyboard; it reconnects by itself from now on.'
+    endif
+  elseif what ==# 'forget'
+    if esp_bt_keyboard_forget()
+      echo 'Bluetooth keyboard forgotten'
+    endif
+  else
+    echoerr 'Usage: :EspBtKeyboard [scan [{seconds}] | pair {n|addr} | forget]'
+  endif
+endfunction
+
 " :EspWifiConnect {ssid} [{password}]: without a password, asks for one
 " (leave it empty for an open network). The network is remembered in NVS.
 function! esp#WifiConnect(ssid, ...) abort

@@ -14,6 +14,9 @@
 
 /* api/esp_api_ble.c (over components/esp_ble) */
 void f_esp_ble_scan(typval_T *argvars, typval_T *rettv);
+void f_esp_bt_keyboard(typval_T *argvars, typval_T *rettv);
+void f_esp_bt_keyboard_forget(typval_T *argvars, typval_T *rettv);
+void f_esp_bt_keyboard_pair(typval_T *argvars, typval_T *rettv);
 
 /* api/esp_api_fs.c (over components/esp_fs) */
 void f_esp_fs_copy(typval_T *argvars, typval_T *rettv);

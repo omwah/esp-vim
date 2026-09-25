@@ -26,6 +26,7 @@
 #endif
 #if CONFIG_ESP_VIM_WIFI
 #include "esp_wifi.h"
+#include "nvs.h"
 #endif
 
 static const char *TAG = "esp_net";
@@ -81,9 +82,41 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
     }
 }
 
+/*
+ * WiFi starts only when it's wanted: at boot if a network is stored (this flag,
+ * set by a connect and cleared by a disconnect), otherwise on the first scan or
+ * connect. A started WiFi driver holds tens of KB of internal RAM, which a
+ * board that isn't using WiFi needs for other things (Bluetooth, the display).
+ */
+static bool wifi_configured(void)
+{
+    nvs_handle_t h;
+    uint8_t v = 0;
+    if (nvs_open("esp_net", NVS_READONLY, &h) == ESP_OK) {
+        nvs_get_u8(h, "wifi", &v);
+        nvs_close(h);
+    }
+    return v != 0;
+}
+
+static void wifi_set_configured(bool on)
+{
+    nvs_handle_t h;
+    if (nvs_open("esp_net", NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_u8(h, "wifi", on);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+}
+
+static bool s_wifi_started;
+
 static esp_err_t start_wifi(void)
 {
-    s_netif = esp_netif_create_default_wifi_sta();
+    if (s_wifi_started)
+        return ESP_OK;
+    if (s_netif == NULL)                /* once, even if a start fails and is retried */
+        s_netif = esp_netif_create_default_wifi_sta();
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     esp_err_t err = esp_wifi_init(&cfg);
     if (err == ESP_OK)
@@ -94,8 +127,7 @@ static esp_err_t start_wifi(void)
         err = esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, wifi_event, NULL);
     if (err == ESP_OK)
         err = esp_wifi_start();
-    if (err == ESP_OK)
-        s_iface = "wifi";
+    s_wifi_started = err == ESP_OK;
     return err;
 }
 
@@ -116,7 +148,10 @@ static const char *auth_name(wifi_auth_mode_t m)
 
 int esp_net_wifi_scan(esp_net_ap_cb cb, void *ctx, char *err, size_t errlen)
 {
-    esp_err_t e = esp_wifi_scan_start(NULL, true);
+    esp_err_t e = start_wifi();
+    if (e != ESP_OK)
+        return snprintf(err, errlen, "WiFi start: %s", esp_err_to_name(e)), -1;
+    e = esp_wifi_scan_start(NULL, true);
     if (e != ESP_OK)
         return snprintf(err, errlen, "scan: %s", esp_err_to_name(e)), -1;
     uint16_t n = 0;
@@ -151,6 +186,10 @@ int esp_net_wifi_connect(const char *ssid, const char *password, char *err, size
     if (password)
         memcpy(c.sta.password, password, strlen(password));
     c.sta.threshold.authmode = password && *password ? WIFI_AUTH_WEP : WIFI_AUTH_OPEN;
+    esp_err_t se = start_wifi();
+    if (se != ESP_OK)
+        return snprintf(err, errlen, "WiFi start: %s", esp_err_to_name(se)), -1;
+    wifi_set_configured(true);
     s_wifi_want = false;
     esp_wifi_disconnect();
     esp_err_t e = esp_wifi_set_config(WIFI_IF_STA, &c);      /* stored: WIFI_STORAGE_FLASH */
@@ -163,6 +202,9 @@ int esp_net_wifi_connect(const char *ssid, const char *password, char *err, size
 
 int esp_net_wifi_disconnect(char *err, size_t errlen)
 {
+    wifi_set_configured(false);
+    if (!s_wifi_started)
+        return 0;
     s_wifi_want = false;
     wifi_config_t c = {0};
     esp_wifi_disconnect();
@@ -198,9 +240,12 @@ esp_err_t esp_net_init(void)
     if (err != ESP_OK)
         ESP_LOGW(TAG, "ethernet: %s -- no network", esp_err_to_name(err));
 #elif CONFIG_ESP_VIM_WIFI
-    err = start_wifi();
-    if (err != ESP_OK)
-        ESP_LOGW(TAG, "wifi: %s -- no network", esp_err_to_name(err));
+    s_iface = "wifi";
+    if (wifi_configured()) {
+        err = start_wifi();
+        if (err != ESP_OK)
+            ESP_LOGW(TAG, "wifi: %s -- no network", esp_err_to_name(err));
+    }
 #endif
     return err;
 }
