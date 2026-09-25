@@ -1277,8 +1277,28 @@ What it changes in the plan:
   repeatedly, the emulator is the suspect; if it fails, the bug is ours and now
   debuggable on hardware.
 - **A tiny grid.** 320×240 is 40×15 cells at 8×16, 53×20 at 6×12, 64×30 at 5×8.
-  Which font, and whether Vim is usable at that size, **is a decision for when 10b starts**.
-  Every `:Esp` view and `:EspFiles` must work at 40–60 columns.
+  **Chosen: 6×12, 53×20** (2026-09-25), in Spleen (BSD-2-Clause, vendored as an LFS
+  archive, converted at build time by `scripts/bdf2c.py`). Every `:Esp` view and
+  `:EspFiles` must work at 40–60 columns.
+- **Display console, first light 2026-09-25** (`components/esp_display`, on in the
+  `es3c28p` build):
+  - Vim's console output is mirrored to the panel through the port's `write()` wrapper
+    (`esp_vim_set_output_mirror`, hooked up again at each session start, since the
+    port's `.bss` is reset then).
+  - A display task on core 1 feeds Vim's bundled libvterm and repaints the damaged cells
+    over SPI in 16-cell chunks. libvterm needed one patch (0012: `<stdint.h>` on ESP-IDF).
+  - Vim takes the panel's size (20×53), not the serial terminal's. Input is still the
+    serial console.
+  - Orientation: swap XY and mirror both axes (the notes' `setRotation(1)` came out
+    upside down). Colours are inverted, as the notes say.
+  - **Internal RAM:** 32 KB free at boot without the display; 24.7 KB with it. Most of
+    the savings came from the task stack in PSRAM, chunked painting, and the SPI ISR out
+    of IRAM (27 KB at first).
+  - Known bug: in this orientation the text sits a few pixels left of the glass, so
+    column 0 partly wraps to the right edge. Being measured; the fix is an X offset.
+  - Still to do: the web server's RAM headroom on this board (it needs WiFi to test),
+    output speed with no serial terminal attached, touch, backlight control, and
+    `:Esp` views at 53 columns.
 - **Input:** no built-in keyboard, and the USB-C port is the debug console, so **BLE
   keyboards paired by touch (Phase 11) are the input**, plus serial for development.
 - **Extras worth taking:** the speaker for Vim's bell; the battery ADC for `:EspInfo` and

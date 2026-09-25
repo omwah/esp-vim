@@ -1,0 +1,7 @@
+# The ILI9341 panel driver (Espressif, Apache-2.0), only for display builds.
+# ESP_VIM_DISPLAY exists on every target, so the rule can test it directly.
+dependencies:
+  espressif/esp_lcd_ili9341:
+    version: "2.1.0"
+    rules:
+      - if: "$CONFIG{ESP_VIM_DISPLAY} == True"

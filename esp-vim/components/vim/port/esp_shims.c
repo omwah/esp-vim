@@ -352,6 +352,26 @@ int __wrap_tcgetattr(int fd, struct termios *t)
     return rc;
 }
 
+/* ======================================================================= */
+/*  write(): mirror console output (see esp_vim_set_output_mirror)          */
+/* ======================================================================= */
+
+static void (*s_output_mirror)(const void *buf, size_t len);
+
+void esp_vim_set_output_mirror(void (*mirror)(const void *buf, size_t len))
+{
+    s_output_mirror = mirror;
+}
+
+extern ssize_t __real_write(int fd, const void *buf, size_t len);
+
+ssize_t __wrap_write(int fd, const void *buf, size_t len)
+{
+    if (fd == STDOUT_FILENO && s_output_mirror != NULL)
+        s_output_mirror(buf, len);
+    return __real_write(fd, buf, len);
+}
+
 /* Setting modes on a console with no termios: nothing to set -- it is already
  * raw (see console_init() in main/) -- so succeed rather than fail. */
 extern int __real_tcsetattr(int fd, int action, const struct termios *t);

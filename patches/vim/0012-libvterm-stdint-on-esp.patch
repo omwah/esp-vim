@@ -1,0 +1,18 @@
+--- a/src/libvterm/include/vterm.h	2026-09-21 13:40:41.000000000 -0700
++++ b/src/libvterm/include/vterm.h	2026-09-25 10:58:36.298895722 -0700
+@@ -16,10 +16,15 @@
+ #define TRUE 1
+ #define FALSE 0
+ 
++#ifdef ESP_PLATFORM
++// ESP-IDF's toolchains define uint32_t as unsigned long, not unsigned int.
++# include <stdint.h>
++#else
+ // VIM: from stdint.h
+ typedef unsigned char		uint8_t;
+ typedef unsigned short		uint16_t;
+ typedef unsigned int		uint32_t;
++#endif
+ 
+ // VIM: define max screen cols and rows
+ #define VTERM_MAX_COLS 1000

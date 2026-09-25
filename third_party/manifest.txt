@@ -37,3 +37,15 @@ patches:  -
 notes:    Host-side emulator, not firmware. x86_64 Linux only; other hosts must
           add their own arch archive. Upstream SHA256SUMS kept alongside as
           esp-emu-0.43.0.SHA256SUMS.
+
+name:     spleen
+version:  2.2.0
+file:     spleen-2.2.0.tar.gz
+sha256:   ec42925c6b56d2138c862b2f97147c872e472f674bf03423417d827a08d69a89
+prefix:   spleen-2.2.0
+url:      https://github.com/fcambus/spleen/releases/download/2.2.0/spleen-2.2.0.tar.gz
+origin:   upstream download via scripts/add-dep.sh
+patches:  -
+notes:    Frederic Cambus's bitmap font, BSD-2-Clause. The display console
+          (components/esp_display) uses spleen-6x12.bdf, converted to a C
+          table at build time by scripts/bdf2c.py.

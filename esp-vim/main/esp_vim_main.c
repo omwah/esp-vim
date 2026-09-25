@@ -23,6 +23,7 @@
 #include "esp_net.h"
 #include "esp_ssh.h"
 #include "esp_web.h"
+#include "esp_display.h"
 #include "esp_heap_caps.h"
 #include "driver/uart.h"
 #include "driver/uart_vfs.h"
@@ -212,6 +213,20 @@ static void report_test_artifact(void)
  */
 static void probe_terminal_size(void)
 {
+    if (esp_display_active()) {
+        /* The screen is the display: Vim takes its size, whatever the
+         * terminal on the serial console (which mirrors it) might be. */
+        int rows, cols;
+        char v[8];
+        esp_display_size(&rows, &cols);
+        snprintf(v, sizeof(v), "%d", rows);
+        setenv("LINES", v, 1);
+        snprintf(v, sizeof(v), "%d", cols);
+        setenv("COLUMNS", v, 1);
+        printf("ESPVIM-TERM %dx%d (display)\n", rows, cols);
+        return;
+    }
+
     static const char query[] = "\0337\033[999;999H\033[6n\0338";
     char buf[32];
     size_t n = 0;
@@ -314,8 +329,11 @@ static void vim_task(void *arg)
     /* Power-on state for Vim, and an empty heap. Must run on THIS task:
      * what a session opens is owned by the task that begins it. */
     esp_vim_session_begin(&s_session);
-    /* The poll registry lives in the port's .bss, just reset. */
+    /* The poll registry and the output mirror live in the port's .bss, just
+     * reset. */
     esp_vim_register_input_poll(0, console_pending);
+    if (esp_display_active())
+        esp_vim_set_output_mirror(esp_display_write);
 
     probe_terminal_size();                         /* the window may have changed */
     if (session == 1)
@@ -356,6 +374,10 @@ void app_main(void)
     nvs_init();
     esp_net_init();
     console_init();
+#if CONFIG_ESP_VIM_DISPLAY
+    if (esp_display_init() != ESP_OK)   /* each session hooks it up (vim_task) */
+        ESP_LOGE(TAG, "display: not available -- the console is serial only");
+#endif
     storage_init();
     environment_init();
     esp_ssh_init();

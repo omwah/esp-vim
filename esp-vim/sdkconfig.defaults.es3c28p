@@ -14,3 +14,11 @@ CONFIG_ESP_VIM_SERIAL_RX=44
 # and the audio codec (0x18). The S3 default, 8/9, is I2S output and battery ADC.
 CONFIG_ESP_VIM_I2C_SDA=16
 CONFIG_ESP_VIM_I2C_SCL=15
+
+# The console on the 2.8" ILI9341V as well (esp_display; the Kconfig defaults
+# are this board's pins): 53x20 cells in Spleen 6x12, landscape 320x240.
+CONFIG_ESP_VIM_DISPLAY=y
+# The SPI driver's interrupt code in flash rather than internal RAM (about 7 KB,
+# with its HAL). The display doesn't need it IRAM-safe: a transfer that ends
+# during a flash write is simply noticed a moment later.
+# CONFIG_SPI_MASTER_ISR_IN_IRAM is not set

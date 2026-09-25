@@ -26,6 +26,14 @@ extern "C" {
 void esp_vim_register_input_poll(int fd, bool (*input_pending)(void));
 
 /*
+ * Show console output somewhere else as well: every write() to stdout -- Vim's
+ * screen, and the supervisor's messages between sessions -- is also passed to
+ * {mirror} (the display console, Phase 10b), before it goes to the console.
+ * NULL turns it off.
+ */
+void esp_vim_set_output_mirror(void (*mirror)(const void *buf, size_t len));
+
+/*
  * Vim sessions: restarting Vim in place after :q, without rebooting.
  *
  *   esp_vim_session_t s;

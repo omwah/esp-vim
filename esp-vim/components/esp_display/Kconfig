@@ -1,0 +1,69 @@
+menu "esp-vim display"
+
+    config ESP_VIM_DISPLAY
+        bool "Show the console on an ILI9341 SPI LCD"
+        default n
+        help
+            Mirror the console to a panel: Vim's output is drawn with a
+            6x12 font (Spleen), and input still comes from the console. The
+            defaults below are the Hosyond ES3C28P's (docs/PLAN.md, 10b).
+
+    if ESP_VIM_DISPLAY
+
+    config ESP_VIM_DISP_WIDTH
+        int "Width in pixels, as mounted"
+        default 320
+
+    config ESP_VIM_DISP_HEIGHT
+        int "Height in pixels, as mounted"
+        default 240
+
+    config ESP_VIM_DISP_SPI_MHZ
+        int "SPI clock, MHz"
+        default 60
+        help
+            The ES3C28P drops bytes at 80 MHz.
+
+    config ESP_VIM_DISP_SCLK
+        int "SCLK GPIO"
+        default 12
+    config ESP_VIM_DISP_MOSI
+        int "MOSI GPIO"
+        default 11
+    config ESP_VIM_DISP_CS
+        int "CS GPIO"
+        default 10
+    config ESP_VIM_DISP_DC
+        int "DC GPIO"
+        default 46
+    config ESP_VIM_DISP_RST
+        int "Reset GPIO (-1: none, software reset)"
+        default -1
+    config ESP_VIM_DISP_BACKLIGHT
+        int "Backlight GPIO (-1: none)"
+        default 45
+    config ESP_VIM_DISP_BACKLIGHT_ON_LEVEL
+        int "Backlight on level"
+        default 1
+
+    config ESP_VIM_DISP_INVERT
+        bool "Invert colours (IPS panels that show complements)"
+        default y
+    config ESP_VIM_DISP_SWAP_XY
+        bool "Swap X and Y (landscape)"
+        default y
+    # The ES3C28P, landscape with the USB port on the right: swapped and
+    # mirrored both ways (without the mirrors it's upside down).
+    config ESP_VIM_DISP_MIRROR_X
+        bool "Mirror X"
+        default y
+    config ESP_VIM_DISP_MIRROR_Y
+        bool "Mirror Y"
+        default y
+    config ESP_VIM_DISP_BGR
+        bool "Panel is BGR"
+        default y
+
+    endif
+
+endmenu
