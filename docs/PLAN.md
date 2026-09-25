@@ -20,6 +20,7 @@
 | 8 — Git | not started. **Being reconsidered:** libgit2 instead of pure Python; test build scheduled after Phase 6 (see Phase 8) |
 | 9 — Tab5 hardware over UART | not started |
 | 10 — Tab5 display console | not started |
+| 10b — ESP32-S3 CYD display console | not started; see Phase 10b |
 | 11 — Bluetooth keyboards (late-stage goal) | not started; BLE (HOGP) only, see Phase 11 |
 
 Toolchain: ESP-IDF **v5.5.5**, riscv32-esp-elf 14.2.0, emulator esp-emu 0.43.0.
@@ -43,6 +44,13 @@ We want a real, self-hosted Vim running on an ESP32-P4 — eventually on the M5S
 panel, USB-A host, microSD, ESP32-C6-MINI-1U radio co-processor). The first milestone is
 Vim running over UART inside an emulator, with no hardware in the loop, so the port can be
 developed and regression-tested on the desktop.
+
+**Hardware targets** (added 2026-09-24): the M5Stack Tab5 (primary); **ESP32-S3
+"Cheap Yellow Display" (CYD) boards**, but only the variants with 16 MB flash and 8 MB
+PSRAM (N16R8 module), since the original CYD (ESP32-2432S028) is a classic ESP32 with 4 MB
+flash and no PSRAM; and bare ESP32-S3 dev boards over serial. The README's Hardware
+section is the user-facing list. Board-specific details belong in a board layer, never
+in the shared code.
 
 Beyond the editor itself, the device should be usable as a hands-on board tool: an `:Esp*`
 command family exposing WiFi, GPIO, sensors, BLE, NVS and serial; a two-pane
@@ -1111,10 +1119,11 @@ F-key handling and the file manager's bindings stay written once. Specific to Bl
 Bonds are stored in NVS by the BT stack. On boot, bonded keyboards reconnect when you
 press a key; nothing scans unless asked, to save power on battery.
 
-### Pairing with no keyboard: the touch overlay (Tab5)
+### Pairing with no keyboard: the touch overlay (boards with a touch screen)
 
-The Tab5 must be able to pair its first Bluetooth keyboard **with nothing else attached**:
-no Tab5 keyboard, no USB keyboard, no serial cable. Pairing only needs taps, because a
+A board with a touch screen (the Tab5, an S3 CYD) must be able to pair its first Bluetooth
+keyboard **with nothing else attached**: no built-in keyboard, no USB keyboard, no serial
+cable. On a CYD, which has no keyboard of its own, this is how every keyboard gets paired. Pairing only needs taps, because a
 BLE passkey is typed on the Bluetooth keyboard itself, so a touch overlay is enough and
 no on-screen keyboard is needed. Decided with the user, 2026-09-24:
 
@@ -1177,6 +1186,28 @@ while a keyboard is present, and closes itself as soon as one connects.
 reach the host's BlueZ adapter, a real keyboard (or a software HOGP peripheral on the
 host) can drive the emulated device, and pairing, typing, reconnection and forgetting
 become part of the gate. If not, this phase is tested on hardware only.
+
+### Phase 10b — Display console on ESP32-S3 CYD boards
+
+The same design as Phase 10 (Vim thinks it's talking to an xterm; libvterm keeps the cell
+grid; a renderer paints damaged cells), on a different panel:
+
+- **Panel:** S3 CYDs use SPI panels (e.g. ILI9341/ST7796-class) or 16-bit parallel RGB
+  panels (e.g. 800×480), driven through `esp_lcd`. The renderer's panel access sits
+  behind a small per-board interface, so Tab5 DSI and CYD SPI/RGB share everything above it.
+- **Geometry:** far smaller screens. At 8×16, 800×480 gives 100×30 cells and 480×320
+  gives 60×20. A smaller font (6×12) is worth offering; `'columns'` below 80 needs
+  checking against the `:Esp` views and `:EspFiles` (which already drops its date column
+  under 50 columns per pane).
+- **RGB panels and PSRAM bandwidth:** a parallel RGB panel streams its framebuffer from
+  PSRAM continuously, and on the S3 that competes with Vim's heap for the same bus. Measure
+  redraw and typing latency, and consider bounce buffers (`esp_lcd` RGB supports them).
+- **Touch:** resistive (XPT2046) on some variants, capacitive (GT911 and similar) on
+  others. Both feed the touch-as-mouse path and the Phase 11 pairing overlay.
+- **Input:** no built-in keyboard, so **BLE keyboards (Phase 11) are the main input**,
+  paired by touch. USB host depends on the board.
+- **Board definitions:** one per supported CYD variant (panel, pins, touch, backlight).
+  Start with one widely available N16R8 variant and add others as they're tested.
 
 ---
 

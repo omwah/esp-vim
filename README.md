@@ -2,18 +2,18 @@
 
 **Real Vim, running as the firmware of an ESP32 microcontroller.** There is no Linux and
 no computer behind it: the chip boots straight into Vim 9.2, and Vim is the whole
-system. On the [M5Stack Tab5](https://docs.m5stack.com/en/core/Tab5), an ESP32-P4
-tablet with a 1280×720 touch screen and a clip-on keyboard, it makes a pocket computer
-for writing, scripting and tinkering with hardware.
+system. On a board with a screen and a keyboard it makes a pocket computer for writing,
+scripting and tinkering with hardware; on a bare board it runs over a serial terminal.
+See [Hardware](#hardware) for the boards it targets.
 
 **Features**
 - **Real Vim 9.2**: windows, buffers, registers, macros, Vim script, `:vimgrep`, diff,
   syntax highlighting and indenting for 30 file types, spell checking
-- **Its own screen and keyboard**: runs on the Tab5's display with its keyboard, USB
-  and Bluetooth (BLE) keyboards, and touch, or on any serial terminal
+- **Its own screen and keyboard**: runs on the board's display with a built-in, USB or
+  Bluetooth (BLE) keyboard and touch, or on any serial terminal
 - **Files everywhere**: flash, SD card, and remote machines over SCP and SFTP, in
   **`:EspFiles`**, a two-pane file manager in the style of Midnight Commander
-- **File transfer**: SCP, SFTP, HTTP(S) downloads, and USB-C mass storage
+- **File transfer**: SCP, SFTP, HTTP(S) downloads, and USB mass storage
 - **Web interface**: a password-protected browser page for files and settings, with a
   live view of what's being edited
 - **MicroPython**: run scripts from the editor and script Vim itself in Python
@@ -31,16 +31,17 @@ for writing, scripting and tinkering with hardware.
 
 ## How you use it
 
-**Seeing it.** On the Tab5, Vim draws directly on the built-in screen, through a
-terminal emulator that runs on the chip. On any board it can also draw on a **serial
-terminal**: the chip's console UART carries Vim's screen, and a terminal program on
+**Seeing it.** On a board with a display, Vim draws directly on it, through a terminal
+emulator that runs on the chip. On any board it can also draw on a **serial terminal**: the chip's console UART carries Vim's screen, and a terminal program on
 your computer displays it, like logging in to a remote machine.
 
-**Typing.** On the Tab5, use its clip-on keyboard, a USB keyboard, a Bluetooth keyboard
-paired with `:EspBtKeyboard` (BLE keyboards only: neither chip has Bluetooth Classic), or
-touch (tap to move the cursor, drag to scroll). The Tab5 keyboard has no F-keys, so its `Sym` layer
-provides F1–F12, and every function-key command also has a letter. Over serial, keys
-typed in your terminal go down the line to Vim, mouse included. Everything works as in
+**Typing.** Use the board's own keyboard if it has one, a USB keyboard, a Bluetooth
+keyboard paired with `:EspBtKeyboard` (BLE keyboards only: neither chip has Bluetooth
+Classic), or touch (tap to move the cursor, drag to scroll). On a touch screen with no
+keyboard attached, a pairing screen appears by itself, so a Bluetooth keyboard can be
+paired with taps alone. Every function-key command also has a letter, for keyboards
+without F-keys. Over serial, keys typed in your terminal go down the line to Vim, mouse
+included. Everything works as in
 desktop Vim, including arrows, Backspace and CTRL-C.
 
 **Files.** Your files live in flash at `/fat` and on the SD card at `/sd`, and survive
@@ -50,7 +51,7 @@ remote, for copying, moving and deleting:
 
 <p align="center"><img src="docs/images/files.svg" alt=":EspFiles, a two-pane file manager, with one file tagged" width="780"></p>
 
-To move files without the editor, plug the Tab5 into a computer over USB-C (it appears
+To move files without the editor, plug the board into a computer over USB (it appears
 as a drive), or start the web interface with `:EspWebStart` and use a browser.
 
 **Programming it.** There are two languages. **Vim script**, with the hardware reachable
@@ -96,11 +97,11 @@ Vim restarts in place.
 
 ## What it needs
 
-| | Needed | On the Tab5 |
-|---|---|---|
-| Chip | ESP32-P4 or ESP32-S3 | ESP32-P4 |
-| Flash | **16 MB** | 16 MB |
-| PSRAM | **8 MB minimum**; more leaves room for MicroPython and bigger files | 32 MB |
+| | Needed |
+|---|---|
+| Chip | ESP32-P4 or ESP32-S3 |
+| Flash | **16 MB** |
+| PSRAM | **8 MB minimum**; more leaves room for MicroPython and bigger files |
 
 **Flash** is laid out for 16 MB: 7 MB for the firmware (2.2 MB today, with room for the
 networking, MicroPython and git parts), 3 MB for Vim's runtime files (2.2 MB used: syntax,
@@ -110,9 +111,28 @@ card adds storage at `/sd`.
 **PSRAM is required.** Vim's memory lives there, because the chip's internal RAM (a
 few hundred KB at most) isn't enough. Vim uses about 0.5 MB editing a typical file and peaked near
 2.7 MB in the test suite with help and syntax highlighting loaded. It's allowed up to
-half of the free PSRAM (at most 16 MB), leaving the rest for everything else. For the
-ESP32-S3 that means a board like the N16R8 (16 MB flash, 8 MB octal PSRAM). Boards with
-quad PSRAM need `CONFIG_SPIRAM_MODE_QUAD` in `esp-vim/sdkconfig.defaults.esp32s3`.
+half of the free PSRAM (at most 16 MB), leaving the rest for everything else.
+
+## Hardware
+
+Targeted boards:
+
+| Board | Chip | Flash / PSRAM | Screen and input |
+|---|---|---|---|
+| [M5Stack Tab5](https://docs.m5stack.com/en/core/Tab5) | ESP32-P4 | 16 MB / 32 MB | 1280×720 touch screen; clip-on keyboard (no F-keys: its `Sym` layer gives F1–F12), USB keyboards, BLE keyboards through its ESP32-C6 radio |
+| ESP32-S3 "Cheap Yellow Display" (CYD) boards | ESP32-S3 | 16 MB / 8 MB required | built-in touch LCD; BLE keyboards, paired by touch |
+| ESP32-S3 development boards | ESP32-S3 | 16 MB / 8 MB required | none: a serial terminal |
+
+- **CYD boards:** only the **ESP32-S3** variants with 16 MB flash and 8 MB PSRAM (the
+  module is marked **N16R8**) can run this. The original CYD, the ESP32-2432S028, uses a
+  classic ESP32 with 4 MB flash and no PSRAM, which isn't enough. S3 CYDs differ in panel
+  (SPI or parallel RGB, various sizes) and touch controller, so each one needs a small
+  board definition.
+- **ESP32-S3 PSRAM:** N16R8 modules have octal PSRAM, which is the default here. For
+  quad PSRAM, set `CONFIG_SPIRAM_MODE_QUAD` in `esp-vim/sdkconfig.defaults.esp32s3`.
+
+**Tested so far:** the ESP32-P4 and ESP32-S3 chips in Espressif's emulator, over a serial
+terminal. No physical board yet. Progress is in the [plan](docs/PLAN.md#status).
 
 ## Try it in the emulator
 
@@ -149,16 +169,17 @@ Detach with `Ctrl-]`. `pixi run vim-test` runs the full regression suite in the
 emulator: edits across reboots, the interactive console, `:help`, the `:Esp` commands
 and the file manager.
 
-## Put it on a Tab5
+## Put it on a board
 
-Build as above, connect the Tab5 over USB-C, and flash it with ESP-IDF:
+Build as above, connect the board over USB, and flash it with ESP-IDF (the port may
+differ):
 
 ```sh
-pixi run vim-build
+pixi run vim-build            # ESP32-P4;  pixi run vim-build-s3 for ESP32-S3
 pixi run -- bash -c '. scripts/env.sh && idf.py -C esp-vim -B esp-vim/build-esp32p4 -p /dev/ttyACM0 flash'
 ```
 
-For an ESP32-S3 board, use `pixi run vim-build-s3` and `build-esp32s3`.
+For an ESP32-S3 board, use `build-esp32s3`.
 
 ## For developers
 
