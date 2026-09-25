@@ -278,6 +278,9 @@ def main():
 
             # 2i. :EspFiles, driven by keys: F-keys for some operations, the
             #     letter aliases for others (the Tab5 keyboard has no F-keys).
+            # Function keys go in ONE write, as a real terminal sends them. Typed a
+            # byte at a time (20 ms apart), host jitter can stretch the sequence
+            # past 'ttimeoutlen' and Vim then sees ESC and stray characters.
             F = {"F3": "\x1bOR", "F5": "\x1b[15~", "F7": "\x1b[18~", "F8": "\x1b[19~", "F10": "\x1b[21~"}
             def probe(tag, expr):
                 s.type(f":echo '{tag}' . '=' . {expr} . '|'\r")
@@ -286,7 +289,7 @@ def main():
             s.quiet(1.5)
             got = probe("P", "tabpagenr('$') . ':' . b:espfiles.dir . ':' . getbufvar(winbufnr(2), 'espfiles').dir")
             check(got == "2:/fat/fm:/fat/fm2", ":EspFiles opens two panes in a tab", f"got {got!r}")
-            s.type("/a\\.txt\r" + F["F5"])                    # F5: copy a.txt -> other pane
+            s.type("/a\\.txt\r"); s.send(F["F5"])                    # F5: copy a.txt -> other pane
             s.quiet(1.0)
             s.type("\r")                                        # accept the offered destination
             s.quiet(1.5)
@@ -312,7 +315,7 @@ def main():
             s.quiet(1.5)
             got = probe("R", "filereadable('/fat/fm/a.txt') . filereadable('/fat/fm/renamed.txt')")
             check(got == "01", "r renames a file", f"a.txt:renamed.txt {got!r}")
-            s.type(F["F7"])                                      # F7: mkdir
+            s.send(F["F7"])                                      # F7: mkdir
             s.quiet(1.0)
             s.type("newdir\r")
             s.quiet(1.5)
@@ -324,7 +327,7 @@ def main():
             s.quiet(1.5)
             got = probe("X", "isdirectory('/fat/fm/sub')")
             check(got == "0", "d deletes a directory after asking", f"still there: {got!r}")
-            s.type("gg/renamed\r" + F["F3"])                    # F3: view
+            s.type("gg/renamed\r"); s.send(F["F3"])                    # F3: view
             s.quiet(1.5)
             got = probe("V", "expand('%:t') . ':' . &readonly . ':' . tabpagenr('$')")
             check(got == "renamed.txt:1:3", "F3 views a file read-only in a new tab", f"got {got!r}")
@@ -337,13 +340,13 @@ def main():
             s.quiet(1.0)
             got = probe("T", "len(b:espfiles.tags)")
             check(got == "2", "Space and t tag entries", f"{got} tagged")
-            s.type(F["F8"])                                      # F8: delete both
+            s.send(F["F8"])                                      # F8: delete both
             s.quiet(1.0)
             s.type("y")
             s.quiet(1.5)
             got = probe("D", "len(esp_fs_list('/fat/fm2'))")
             check(got == "0", "F8 deletes the tagged entries", f"{got} left in /fat/fm2")
-            s.type(F["F10"])                                     # F10: quit
+            s.send(F["F10"])                                     # F10: quit
             s.quiet(1.0)
             got = probe("Q", "tabpagenr('$')")
             check(got == "1", "F10 closes the file manager", f"{got} tab pages")
