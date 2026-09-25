@@ -1125,7 +1125,6 @@ after a restart. The touch pairing overlay is still to come.
   - the test keyboard's second keyboard report (ID 2, 20 bytes: N-key rollover) isn't decoded;
     only the 8-byte boot-format one is;
   - modified cursor/function keys (xterm's `CSI 1;5A` forms);
-  - the keyboard between sessions;
   - the touch pairing overlay;
   - several bonded keyboards;
   - Tab5 (esp-hosted HCI).

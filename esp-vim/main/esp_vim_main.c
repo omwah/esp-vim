@@ -310,15 +310,28 @@ static void between_sessions(void)
     /* Discard keys typed while quitting, so a stray one cannot skip this --
      * BEFORE showing the prompt, or a key pressed in answer to it could be
      * flushed away and the wait would never end. */
+    char c;
     console_flush_input();
+    while (esp_kbd_read(&c, 1) > 0)     /* and the keyboards' queue */
+        ;
     write(STDOUT_FILENO, msg, sizeof(msg) - 1);
 
-    fd_set r;
-    FD_ZERO(&r);
-    FD_SET(STDIN_FILENO, &r);
-    if (select(STDIN_FILENO + 1, &r, NULL, NULL, NULL) > 0) {
-        char c;
-        read(STDIN_FILENO, &c, 1);
+    /* A key from the console or from a keyboard (components/esp_kbd, which
+     * select() can't see): look at both, in short slices. */
+    for (;;) {
+        if (esp_kbd_read(&c, 1) > 0) {
+            while (esp_kbd_read(&c, 1) > 0)
+                ;                       /* the rest of an arrow's or F-key's sequence */
+            return;
+        }
+        fd_set r;
+        FD_ZERO(&r);
+        FD_SET(STDIN_FILENO, &r);
+        struct timeval tv = { .tv_sec = 0, .tv_usec = 50 * 1000 };
+        if (select(STDIN_FILENO + 1, &r, NULL, NULL, &tv) > 0) {
+            read(STDIN_FILENO, &c, 1);
+            return;
+        }
     }
 }
 
