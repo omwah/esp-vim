@@ -26,6 +26,11 @@
 #include "esp_heap_caps.h"
 #include "driver/uart.h"
 #include "driver/uart_vfs.h"
+#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+#include "driver/usb_serial_jtag.h"
+#include "driver/usb_serial_jtag_select.h"
+#include "driver/usb_serial_jtag_vfs.h"
+#endif
 #include "esp_vim_port.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -52,11 +57,49 @@ TaskHandle_t g_vim_task;
  * is installed and the VFS is routed through it. isatty(0) is true either way,
  * but Vim calls termios during startup, so the driver must come first.
  */
-/* Non-blocking "has a key arrived?" for the UART console (see esp_vim_port.h). */
-static bool uart_console_pending(void)
+/*
+ * The console: UART0, or on boards whose only USB port is the chip's own
+ * (the Hosyond ES3C28P), the built-in USB Serial/JTAG port. Chosen by ESP-IDF's
+ * console setting, so boot messages and Vim share it.
+ */
+#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
+
+/* Non-blocking "has a key arrived?" (see esp_vim_port.h). */
+static bool console_pending(void)
+{
+    return usb_serial_jtag_get_read_bytes_available() > 0;
+}
+
+static void console_flush_input(void)
+{
+    char buf[64];
+    while (usb_serial_jtag_read_bytes(buf, sizeof buf, 0) > 0)
+        ;
+}
+
+/* With nobody reading on the host, the driver drops output after a short
+ * timeout rather than blocking, so the device boots with no terminal open. */
+static void console_init(void)
+{
+    usb_serial_jtag_driver_config_t cfg = { .tx_buffer_size = 4096, .rx_buffer_size = 4096 };
+    ESP_ERROR_CHECK(usb_serial_jtag_driver_install(&cfg));
+    usb_serial_jtag_vfs_use_driver();
+    usb_serial_jtag_vfs_set_rx_line_endings(ESP_LINE_ENDINGS_LF);
+    usb_serial_jtag_vfs_set_tx_line_endings(ESP_LINE_ENDINGS_LF);
+}
+
+#else
+
+/* Non-blocking "has a key arrived?" (see esp_vim_port.h). */
+static bool console_pending(void)
 {
     size_t n = 0;
     return uart_get_buffered_data_len(UART_NUM_0, &n) == ESP_OK && n > 0;
+}
+
+static void console_flush_input(void)
+{
+    uart_flush_input(UART_NUM_0);
 }
 
 static void console_init(void)
@@ -66,6 +109,8 @@ static void console_init(void)
     uart_vfs_dev_port_set_rx_line_endings(UART_NUM_0, ESP_LINE_ENDINGS_LF);
     uart_vfs_dev_port_set_tx_line_endings(UART_NUM_0, ESP_LINE_ENDINGS_LF);
 }
+
+#endif
 
 /* NVS: :EspNvs, WiFi credentials, keys and settings. A full or newer-format
  * partition is erased, ESP-IDF's documented recovery. */
@@ -248,7 +293,7 @@ static void between_sessions(void)
     /* Discard keys typed while quitting, so a stray one cannot skip this --
      * BEFORE showing the prompt, or a key pressed in answer to it could be
      * flushed away and the wait would never end. */
-    uart_flush_input(UART_NUM_0);
+    console_flush_input();
     write(STDOUT_FILENO, msg, sizeof(msg) - 1);
 
     fd_set r;
@@ -270,7 +315,7 @@ static void vim_task(void *arg)
      * what a session opens is owned by the task that begins it. */
     esp_vim_session_begin(&s_session);
     /* The poll registry lives in the port's .bss, just reset. */
-    esp_vim_register_input_poll(0, uart_console_pending);
+    esp_vim_register_input_poll(0, console_pending);
 
     probe_terminal_size();                         /* the window may have changed */
     if (session == 1)

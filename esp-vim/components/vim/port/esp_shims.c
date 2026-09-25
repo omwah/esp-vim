@@ -326,6 +326,12 @@ extern int __real_tcgetattr(int fd, struct termios *t);
 int __wrap_tcgetattr(int fd, struct termios *t)
 {
     int rc = __real_tcgetattr(fd, t);
+    if (rc != 0 && t != NULL && isatty(fd)) {
+        /* A console with no termios at all (the USB Serial/JTAG port): it is
+         * still a terminal, so describe one. */
+        memset(t, 0, sizeof *t);
+        rc = 0;
+    }
     if (rc != 0 || t == NULL)
         return rc;
 
@@ -343,6 +349,18 @@ int __wrap_tcgetattr(int fd, struct termios *t)
     t->c_cc[VSUSP]  = 0x1a;             /* ^Z */
     t->c_cc[VMIN]   = 1;
     t->c_cc[VTIME]  = 0;
+    return rc;
+}
+
+/* Setting modes on a console with no termios: nothing to set -- it is already
+ * raw (see console_init() in main/) -- so succeed rather than fail. */
+extern int __real_tcsetattr(int fd, int action, const struct termios *t);
+
+int __wrap_tcsetattr(int fd, int action, const struct termios *t)
+{
+    int rc = __real_tcsetattr(fd, action, t);
+    if (rc != 0 && isatty(fd))
+        rc = 0;
     return rc;
 }
 

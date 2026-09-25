@@ -1256,6 +1256,13 @@ What it changes in the plan:
   port's assumptions against it: raw mode, line endings, the zero-timeout poll, the size
   probe, and CTRL-C. The Phase 5 note about USB-JTAG panic output hanging the console
   (hence `CONSOLE_SECONDARY_NONE`) needs re-checking in that configuration.
+- **Done 2026-09-25, the project's first run on silicon:** the `es3c28p` variant
+  (`pixi run vim-build-es3c28p`). ESP-IDF's own console choice
+  (`ESP_CONSOLE_USB_SERIAL_JTAG`) selects the transport. Boot messages and Vim share the
+  port, the size probe works, and Vim answers typed commands. The port has no termios, so
+  `tcgetattr`/`tcsetattr` on it report a plain tty instead of failing. `:EspSerial`
+  defaults to the freed UART0 pins (43/44), and I2C to the touch bus (16/15). Still to
+  check on the board: CTRL-C, panic output, and the S3 gate (next item).
 - **Do this before 10b, as the first real-hardware run.** Vim over USB-Serial/JTAG on this
   board needs no display work, and it **settles the open S3 heap corruption**
   (PHASE5.md, known issue): run the S3 gate on real silicon. If it passes there

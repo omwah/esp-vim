@@ -17,7 +17,12 @@
 #include "soc/uart_pins.h"
 #include "sdkconfig.h"
 
-#if defined(CONFIG_ESP_CONSOLE_UART_CUSTOM)
+/* The console's pins: a :EspGpio on them would cut off the user. */
+#if defined(CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG) && defined(CONFIG_IDF_TARGET_ESP32S3)
+# include "soc/usb_pins.h"
+# define CONSOLE_TX USBPHY_DM_NUM
+# define CONSOLE_RX USBPHY_DP_NUM
+#elif defined(CONFIG_ESP_CONSOLE_UART_CUSTOM)
 # define CONSOLE_TX CONFIG_ESP_CONSOLE_UART_TX_GPIO
 # define CONSOLE_RX CONFIG_ESP_CONSOLE_UART_RX_GPIO
 #else

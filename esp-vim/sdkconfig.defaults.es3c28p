@@ -1,0 +1,16 @@
+# Hosyond ES3C28P (ESP32-S3-WROOM-1 N16R8, 2.8" ILI9341V + FT6336G CYD): layered
+# on sdkconfig.defaults and sdkconfig.defaults.esp32s3 by scripts/vim-build.sh
+# es3c28p. Pin map: ../esp32-pocket-toy notes, summarised in docs/PLAN.md 10b.
+
+# The board's only USB port is the S3's own USB Serial/JTAG -- no USB-UART
+# bridge -- so the console (boot messages and Vim) goes there, not to UART0.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# :EspSerial on the UART0 header pins, free now that the console is on USB (the
+# S3 default, 17/18, is the touch controller's INT/RST here).
+CONFIG_ESP_VIM_SERIAL_TX=43
+CONFIG_ESP_VIM_SERIAL_RX=44
+# :EspI2cScan / :EspSensors default to the board's own bus: touch (FT6336G, 0x38)
+# and the audio codec (0x18). The S3 default, 8/9, is I2S output and battery ADC.
+CONFIG_ESP_VIM_I2C_SDA=16
+CONFIG_ESP_VIM_I2C_SCL=15

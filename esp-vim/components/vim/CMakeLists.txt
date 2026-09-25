@@ -257,7 +257,7 @@ set(VIM_WRAPPED
     # file identity: fstat must agree with stat (see esp_shims.c)
     fstat close fclose
     # process model, console, tty
-    system exit _exit select tcgetattr
+    system exit _exit select tcgetattr tcsetattr
 )
 foreach(sym IN LISTS VIM_WRAPPED)
     target_link_libraries(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=${sym}")

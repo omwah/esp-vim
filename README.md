@@ -180,7 +180,11 @@ pixi run vim-build-tab5       # M5Stack Tab5;  pixi run vim-build-s3 for ESP32-S
 pixi run -- bash -c '. scripts/env.sh && idf.py -C esp-vim -B esp-vim/build-tab5 -p /dev/ttyACM0 flash'
 ```
 
-For an ESP32-S3 board, use `build-esp32s3`. The Tab5's WiFi comes from its ESP32-C6
+For an ESP32-S3 board, use `build-esp32s3`; for the Hosyond ES3C28P, whose only USB
+port is the S3's own, `pixi run vim-build-es3c28p` and `build-es3c28p`, which put the
+console on that port. Attach a terminal to the board's serial port with, for example,
+`pixi run -- socat -,raw,echo=0,escape=0x1d /dev/ttyACM0,raw,echo=0` (detach with
+`Ctrl-]`). The Tab5's WiFi comes from its ESP32-C6
 running Espressif's esp-hosted firmware; `pixi run c6-build` builds that firmware at the
 version this build speaks, for when the C6 needs updating. (Plain `vim-build` is the P4
 with Ethernet, which is what the emulator models.)
