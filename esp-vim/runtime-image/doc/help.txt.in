@@ -135,10 +135,34 @@ window at the bottom: "R" refreshes it, "q" closes it.
 		changes, unless you add !.  Unlike |esp-quit| this is a real
 		reset.
 
+NETWORK							*esp-network*
+
+:EspNet							*:EspNet*
+		The network interface: whether it is up, its address,
+		gateway, DNS server and MAC address.
+
+:EspGet[!] {url} [{file}]				*:EspGet*
+		Download {url} (http:// or https://) into {file}, by default
+		the last part of the URL in the current directory.  An
+		existing file is only replaced with !.  HTTPS certificates are
+		checked against a built-in list of public certificate
+		authorities.  CTRL-C stops a download; a stopped or failed
+		download never leaves a partial file behind.
+
+Reading a web page or file works like on any Vim: >
+	:e https://example.com/notes.txt
+<opens it in a buffer; save a copy with ":w {file}".
+
+Spell checking downloads its dictionary the first time you use it: >
+	:set spell spelllang=en
+<asks whether to fetch the English dictionary and saves it in
+/fat/.vim/spell/.  It needs the network, and space: English is about 1 MB.
+
 The same information is available to scripts, as Dicts and Lists:
 esp_info(), esp_heap(), esp_tasks(), esp_gpio_pins(), esp_gpio_read(),
 esp_gpio_write(), esp_gpio_mode(), esp_nvs_list(), esp_nvs_get(),
-esp_nvs_set(), esp_nvs_erase(), esp_reboot().  Try ":echo esp_heap()".
+esp_nvs_set(), esp_nvs_erase(), esp_reboot(), esp_net_status(),
+esp_http_get().  Try ":echo esp_heap()".
 esp_gpio_read() returns -1, with an error, for a pin it may not use.
 
 ==============================================================================
@@ -286,13 +310,14 @@ Also not available:
 
 	This documentation	Only the files in |esp-docs|.  E149 for other
 				subjects; see https://vimhelp.org.
-	Spell checking		No spelling dictionaries are installed yet.
 	System clipboard	The "* and "+ registers are not connected to
 				anything.  Other registers work normally.
 	CTRL-X CTRL-O		Omni-completion engines are not installed.
 				CTRL-N, CTRL-P and CTRL-X CTRL-F work.
 	{a,b} and `cmd`		Brace and backtick expansion in file names.
-	Network access		netrw's ftp:// scp:// http:// and similar.
+	Network access		netrw's ftp://, scp:// and other methods that
+				run programs.  http:// and https:// reads work
+				(|esp-network|).
 
 ==============================================================================
 HELP FILES ON THIS DEVICE				*esp-docs*

@@ -1,0 +1,21 @@
+diff -ruN '--exclude=.git' '--exclude=*.o' '--exclude=*.rej' '--exclude=*.orig' a/runtime/pack/dist/opt/netrw/autoload/netrw.vim b/runtime/pack/dist/opt/netrw/autoload/netrw.vim
+--- a/runtime/pack/dist/opt/netrw/autoload/netrw.vim	2026-09-21 13:40:41.000000000 -0700
++++ b/runtime/pack/dist/opt/netrw/autoload/netrw.vim	2026-09-24 18:31:05.137170270 -0700
+@@ -1706,6 +1706,17 @@
+ 
+             ".........................................
+         " NetRead: (http) NetRead Method #5 (wget) {{{3
++        elseif     b:netrw_method  == 5 && exists('*esp_http_get')
++            " ESP32 (esp-vim): no programs to run, so no wget/curl; fetch with
++            " the native HTTP(S) client instead.  An in-page "#marker" is dropped.
++            let url = b:netrw_http."://".g:netrw_machine.substitute(b:netrw_fname,"#.*$","","")
++            if empty(esp_http_get(url, tmpfile))
++                return
++            endif
++            let result = s:NetrwGetFile(readcmd, tmpfile, b:netrw_method)
++            let b:netrw_lastfile = choice
++            setl ro nomod
++
+         elseif     b:netrw_method  == 5
+             if g:netrw_http_cmd == ""
+                 call netrw#msg#Notify('ERROR', 'neither the wget nor the fetch command is available')

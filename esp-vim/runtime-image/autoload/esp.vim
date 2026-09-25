@@ -230,3 +230,45 @@ function! esp#NvsComplete(lead, line, pos) abort
   endif
   return filter(uniq(sort(cands)), 'v:val =~# "^" . a:lead')
 endfunction
+
+" -------------------------------------------------------- :EspNet/:EspGet --
+
+function! esp#Net() abort
+  let n = esp_net_status()
+  let lines = ['Network   (R refresh, q close)',
+        \ s:Row('%-10s %s', 'Interface', n.iface),
+        \ s:Row('%-10s %s', 'Status', n.up ? 'up' : (n.iface ==# 'none' ? 'no network interface' : 'no link or no address yet')),
+        \ ]
+  if n.up
+    call extend(lines, [
+          \ s:Row('%-10s %s', 'Address', n.ip),
+          \ s:Row('%-10s %s', 'Netmask', n.netmask),
+          \ s:Row('%-10s %s', 'Gateway', n.gw),
+          \ s:Row('%-10s %s', 'DNS', empty(n.dns) ? '-' : n.dns)])
+  endif
+  if !empty(n.mac)
+    call add(lines, s:Row('%-10s %s', 'MAC', n.mac))
+  endif
+  call s:Show('Net', lines, 0, function('esp#Net'))
+endfunction
+
+" :EspGet[!] {url} [{file}]: download; the file defaults to the URL's last
+" path component in the current directory.
+function! esp#Get(bang, url, ...) abort
+  let name = a:0 ? a:1 : matchstr(substitute(a:url, '[?#].*', '', ''), '[^/]\+$')
+  if empty(name) || a:url =~# '^[a-z]\+://[^/]*/\=$'
+    let name = 'index.html'
+  endif
+  let path = fnamemodify(name, ':p')
+  if !a:bang && (filereadable(path) || isdirectory(path))
+    echohl ErrorMsg | echomsg 'EspGet: ' . path . ' exists (add ! to replace it)' | echohl None
+    return
+  endif
+  echo 'Downloading ' . a:url . ' ...'
+  redraw
+  let r = esp_http_get(a:url, path)
+  if !empty(r)
+    redraw
+    echo printf('%s: %d bytes', fnamemodify(r.path, ':~:.'), r.size)
+  endif
+endfunction

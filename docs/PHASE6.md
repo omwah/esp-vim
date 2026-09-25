@@ -150,3 +150,69 @@ written to the device and sourced, so the published example can't silently break
 `:diffthis` is exercised, since the README lists diff among the features. The emulator
 time cap in `uart_session.py` went from 360 s to 600 s, because the interactive gate now
 takes about six minutes.
+
+## 6c — Network, HTTP(S) and spell download (2026-09-24)
+
+**Result:** the P4 build has a network in the emulator. `:EspNet` shows it, `:EspGet` and
+`esp_http_get()` download over http and https (certificates checked), `:e https://…`
+opens a page through netrw, and `:set spell` downloads its dictionary on first use. P4
+gate: all checks pass, including six new ones.
+
+### Networking in the emulator: the P4's Ethernet
+
+A throwaway test app answered the plan's open question. `esp-emu` models the P4's EMAC
+(`dw_gmac`), and with `--net user` ESP-IDF's EMAC driver plus the **generic 802.3 PHY**
+driver gets a DHCP lease (192.168.4.2, gateway 192.168.4.1), resolves DNS, and reaches the
+internet. The host's `127.0.0.1` is reachable from the device **as the gateway**, so tests
+run their own HTTP server with no internet at all.
+
+So networking arrives on the P4 without the C6 or the two-emulator setup. That's
+**emulator scaffolding**: the Tab5 has no Ethernet, and its network is WiFi through the
+C6 (6f). The interface is a Kconfig choice (`ESP_VIM_NET`: Ethernet by default where the
+chip has an EMAC, else none), so a board without a PHY just never gets a link.
+
+### `components/esp_net`
+
+Interface bring-up (non-blocking; DHCP continues in the background) and an HTTP(S)
+client. It's outside the Vim component for the same reasons as `esp_fs`: it outlives Vim
+sessions, and the web server (6e) will use it. The client:
+- streams with `esp_http_client`, `open`/`read`;
+- follows up to 5 redirects;
+- treats anything but a final 200 as an error;
+- checks certificates against ESP-IDF's CA bundle;
+- takes the same progress callback as `esp_fs`, so **CTRL-C and the spinner work during
+  a download**.
+
+Downloads validate the destination with `esp_fs_check` and write `{dest}.part`, replacing
+the target only when complete: a failed or stopped download leaves nothing behind.
+mbedTLS allocates from PSRAM (`CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC`); TLS needs tens of KB
+per connection, and the S3 has only about 100 KB of internal RAM free.
+
+### Vim side
+
+- `esp_net_status()` and `esp_http_get(url [, file])`, in patch 0008 (21 builtins,
+  still one block). `:EspNet` shows the interface; `:EspGet[!] {url} [{file}]` downloads,
+  refusing to overwrite without `!`.
+- **Patch `0009-netrw-native-http`**: netrw's http method shells out to wget or curl. When
+  `esp_http_get()` exists it fetches natively instead: one hunk, every other platform
+  unchanged. That also fixes **spell download**, since `spellfile.vim` fetches through
+  `:Nread`. The dictionary lands in `/fat/.vim/spell/`.
+- **`TMPDIR=/fat/.tmp`**, emptied at every boot. Vim tries `$TMPDIR`, `/tmp`, `.` and
+  `$HOME` for temp files; there's no `/tmp`, and `.` may be the read-only `/vimrt`. netrw
+  downloads into a temp file. A session that ends by restarting never runs Vim's own
+  temp-directory cleanup, hence the boot-time clean.
+
+### Tests
+
+The harness now starts every emulator with `--net user` and serves a temp directory over
+HTTP on a free port. New checks:
+- the network comes up with an address;
+- `:EspGet` downloads a file;
+- a 404 is an error and leaves no file or `.part`;
+- `:e http://…` opens a page through netrw;
+- spell download: `g:spellfile_URL` points at the local server, which serves a
+  dictionary built by the host's Vim (`mkspell`) from four words; the test answers
+  `spellfile.vim`'s prompts, then checks `spellbadword('helo world')`;
+- an **https** request to a real site, skipped when the host has no internet.
+
+The spell check is skipped if the host has no `vim`.

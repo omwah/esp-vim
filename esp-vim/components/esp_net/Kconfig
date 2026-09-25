@@ -1,0 +1,23 @@
+menu "esp-vim network"
+
+    choice ESP_VIM_NET
+        prompt "Network interface"
+        default ESP_VIM_NET_ETH if SOC_EMAC_SUPPORTED
+        default ESP_VIM_NET_NONE
+        help
+            How the device reaches the network. WiFi (native on the ESP32-S3,
+            through the ESP32-C6 on the Tab5) is added in Phase 6f.
+
+        config ESP_VIM_NET_NONE
+            bool "None"
+
+        config ESP_VIM_NET_ETH
+            bool "Ethernet (internal EMAC, generic IEEE 802.3 PHY)"
+            depends on SOC_EMAC_SUPPORTED
+            help
+                The ESP32-P4's EMAC. This is also what esp-emu models, so the
+                P4 build has networking in the emulator (--net user). A board
+                with no Ethernet PHY simply never gets a link.
+    endchoice
+
+endmenu

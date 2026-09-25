@@ -473,3 +473,20 @@ than knowing about Vim, which is how CTRL-C and the spinner work during a copy.
 
 `:EspFiles` is `autoload/espfiles.vim`, not a `pack/*/start` package. A start package's
 plugin files are sourced at every startup; an autoload file costs nothing until first use.
+
+## 2026-09-24 — In the emulator, the P4's network is its Ethernet
+
+The plan expected emulator networking to need the two-emulator esp-hosted setup (a C6
+slave image) or an unverified EMAC path. A throwaway test app showed `esp-emu` models the
+P4 EMAC well enough for ESP-IDF's driver with the generic PHY: DHCP, DNS, HTTP. So 6c
+builds and tests the whole network stack (HTTP, TLS, netrw, spell download) on one
+emulator. The cost, to keep in view: this isn't the Tab5's production path (WiFi through
+the C6), which 6f and Phase 9 must still prove.
+
+## 2026-09-24 — netrw's http method calls esp_http_get(), by patch
+
+netrw is where Vim's network file access lives, and `spellfile.vim` depends on it. Its
+http method builds a wget/curl command line. Rather than re-implementing `:Nread` or
+replacing `spellfile.vim`, patch 0009 adds a branch in front: if `esp_http_get()` exists,
+use it. One hunk, inert everywhere else, and every netrw feature built on http reads
+(`:e`, `:Nread`, spell download) works unchanged.

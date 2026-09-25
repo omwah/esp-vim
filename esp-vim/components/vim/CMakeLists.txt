@@ -178,12 +178,12 @@ idf_component_register(
     SRCS "${VIM_SOURCES}" "${VIM_XDIFF_SOURCES}" "port/pathdef.c" "port/esp_shims.c"
          "port/esp_busy.c"
          "api/esp_api_sys.c" "api/esp_api_nvs.c" "api/esp_api_gpio.c"
-         "api/esp_api_fs.c"
+         "api/esp_api_fs.c" "api/esp_api_net.c"
     INCLUDE_DIRS "port"
     PRIV_INCLUDE_DIRS "${VIM_SRC}" "${VIM_SRC}/proto"   # upstream Makefile passes -Iproto
     REQUIRES fatfs vfs esp_partition esp_driver_uart esp_timer heap
              # the esp_*() builtins (api/)
-             nvs_flash esp_driver_gpio esp_psram spi_flash esp_hw_support esp_fs
+             nvs_flash esp_driver_gpio esp_psram spi_flash esp_hw_support esp_fs esp_net
     LDFRAGMENTS "linker.lf"     # brackets Vim's .data/.bss for session restarts
 )
 

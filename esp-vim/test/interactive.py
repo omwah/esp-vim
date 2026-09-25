@@ -12,9 +12,14 @@ Exit status is non-zero if any check fails. The raw UART log is kept on
 failure (path printed) since that is what you need to see why.
 """
 
+import functools
+import http.server
 import re
+import shutil
+import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -40,11 +45,49 @@ def check(ok, label, detail=""):
         failures += 1
 
 
+# The host as seen from the emulated device (slirp's gateway).
+HOST_FROM_DEVICE = "192.168.4.1"
+
+
+def start_http_server(root):
+    """Serve {root} on a free 127.0.0.1 port; the device sees it at the gateway."""
+    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(root))
+    handler.log_message = lambda *a: None
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    return srv, f"http://{HOST_FROM_DEVICE}:{srv.server_address[1]}"
+
+
+def make_spell_file(root):
+    """A tiny English spell file built by a host Vim, so the spell-download
+    check needs no internet. Returns False (check skipped) with no host Vim."""
+    vim = shutil.which("vim")
+    if not vim:
+        return False
+    words = root / "words.txt"
+    words.write_text("hello\nworld\nvim\neditor\n")
+    r = subprocess.run([vim, "-u", "NONE", "-i", "NONE", "-N", "-es",
+                        "-c", "set encoding=utf-8",
+                        "-c", f"mkspell! {root / 'en'} {words}", "-c", "qa!"],
+                       capture_output=True, timeout=60)
+    return (root / "en.utf-8.spl").is_file()
+
+
 def main():
     log = Path(tempfile.mkstemp(prefix="vim-interactive-", suffix=".log")[1])
+    www = Path(tempfile.mkdtemp(prefix="vim-www-"))
+    (www / "hello.txt").write_text("hello from the host\n")
+    (www / "page.txt").write_text("line one\nline two\n")
+    have_spell = make_spell_file(www)
+    srv, base = start_http_server(www)
     print(f"interactive session (target: {TARGET}, PSRAM {PSRAM[TARGET]})")
     try:
         with Session(term_size=(40, 120), log=str(log)) as s:
+            # Echo an expression's value between markers and return it. The
+            # 'X' . '=' split keeps the marker out of the echoed command line.
+            def probe(tag, expr):
+                s.type(f":echo '{tag}' . '=' . {expr} . '|'\r")
+                return s.expect(rf"{tag}=([^|]*)\|".encode(), 30).group(1).decode()
             term = s.expect(rb"ESPVIM-TERM ([^\r\n]*\))", 60).group(1).decode()
             s.expect("ESPVIM-READY", 60)
             s.expect(f"Vim running on {CHIP}", 60)
@@ -261,6 +304,71 @@ def main():
             s.type(":diffoff! | only | enew!\r")
             s.quiet(1.0)
 
+            # 2j. Network (Phase 6c): the P4's Ethernet under --net user, the
+            #     HTTP client, netrw's http:// reads, spell download.
+            got = ""
+            for _ in range(20):                      # DHCP may still be running
+                got = probe("NS", "(esp_net_status().up ? 1 : 0) . ':' . esp_net_status().ip")
+                if got.startswith("1"):
+                    break
+                time.sleep(1)
+            check(got.startswith("1:"), "network is up with an address", f"up:ip {got!r}")
+            s.type(f":call mkdir('/fat/net', 'p') | EspGet {base}/hello.txt /fat/net/hello.txt\r")
+            s.quiet(1.5, timeout=60)
+            got = probe("HG", "join(readfile('/fat/net/hello.txt'))")
+            check(got == "hello from the host", ":EspGet downloads a file", f"got {got!r}")
+            s.type(f":let v:errmsg = '' | silent! call esp_http_get('{base}/missing.txt', '/fat/net/missing.txt')\r")
+            s.quiet(1.0)
+            got = probe("HM", "(v:errmsg =~# 'HTTP 404') . filereadable('/fat/net/missing.txt') . filereadable('/fat/net/missing.txt.part')")
+            check(got == "100", "a 404 is an error and leaves no file behind", f"404:file:part {got!r}")
+            s.type(f":e {base}/page.txt\r")
+            s.quiet(2.0, timeout=60)
+            got = probe("HE", "getline(1) . ':' . getline(2)")
+            check(got == "line one:line two", ":e http://... opens the page through netrw", f"got {got!r}")
+            s.type(":bwipe!\r")
+            # HTTPS against a real site: TLS plus certificate checking against
+            # ESP-IDF's CA bundle. Needs the internet, so skipped when the host
+            # itself cannot reach the site.
+            try:
+                import urllib.request
+                urllib.request.urlopen("https://example.com/", timeout=5).read(1)
+                online = True
+            except Exception:
+                online = False
+            if online:
+                s.type(":let g:r = esp_http_get('https://example.com/')\r")
+                s.quiet(2.0, timeout=90)
+                got = probe("HS", "get(g:r, 'status', 0) . ':' . (get(g:r, 'body', '') =~? 'example domain')")
+                check(got == "200:1", "https:// works, with certificate checking", f"status:body {got!r}")
+            else:
+                print("  SKIP  https (the host has no internet access)")
+            if have_spell:
+                s.type(f":let g:spellfile_URL = '{base}' | set spell spelllang=en\r")
+                # spellfile.vim asks a few questions, in an order that depends on
+                # what exists: create the spell directory, download, which
+                # directory, and a missing .sug file ends in "Press ENTER".
+                answers = [(b"Shall I create", "y"), (b"downloading it", "y"),
+                           (b"In which directory", "1"), (b"getting the .sug", "n"),
+                           (b"Press ENTER", "\r")]
+                end = time.time() + 180
+                while time.time() < end:
+                    s.quiet(2.0, timeout=120)
+                    tail = s.buf[-500:]
+                    for pat, key in answers:
+                        if pat in tail:
+                            s.buf = b""
+                            s.type(key)
+                            break
+                    else:
+                        break
+                got = probe("SP", "filereadable(expand('~/.vim/spell/en.utf-8.spl')) . ':' . spellbadword('helo world')[0]")
+                check(got == "1:helo", "spell checking downloads its dictionary", f"file:bad-word {got!r}")
+                s.type(":set nospell\r")
+            else:
+                print("  SKIP  spell download (no host vim to build a test spell file)")
+            s.type(":call esp_fs_delete('/fat/net') | enew!\r")
+            s.quiet(1.0)
+
             # 2h. esp_fs path validation (Phase 6b). Every one of these must be
             #     refused: into read-only /vimrt, ".." out of /fat, a storage
             #     root itself, outside all roots, a directory into itself.
@@ -282,9 +390,6 @@ def main():
             # byte at a time (20 ms apart), host jitter can stretch the sequence
             # past 'ttimeoutlen' and Vim then sees ESC and stray characters.
             F = {"F3": "\x1bOR", "F5": "\x1b[15~", "F7": "\x1b[18~", "F8": "\x1b[19~", "F10": "\x1b[21~"}
-            def probe(tag, expr):
-                s.type(f":echo '{tag}' . '=' . {expr} . '|'\r")
-                return s.expect(rf"{tag}=([^|]*)\|".encode(), 30).group(1).decode()
             s.type(":EspFiles /fat/fm /fat/fm2\r")
             s.quiet(1.5)
             got = probe("P", "tabpagenr('$') . ':' . b:espfiles.dir . ':' . getbufvar(winbufnr(2), 'espfiles').dir")

@@ -48,7 +48,10 @@ class Session:
             args.append("--reuse")
         if save_state:
             args.append("--save-state")
-        args += ["--", "--uart-tcp", f"127.0.0.1:{port}", *extra]
+        # --net user: slirp networking with no host setup. The P4's Ethernet
+        # comes up on it (DHCP gives 192.168.4.2), and the host's 127.0.0.1 is
+        # reachable from the device as the gateway, 192.168.4.1.
+        args += ["--", "--uart-tcp", f"127.0.0.1:{port}", "--net", "user", *extra]
         # stdin held open: an immediate EOF would reach the emulator's console.
         self.proc = subprocess.Popen(args, stdin=subprocess.PIPE,
                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,

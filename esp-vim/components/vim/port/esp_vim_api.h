@@ -21,6 +21,10 @@ void f_esp_fs_mkdir(typval_T *argvars, typval_T *rettv);
 void f_esp_fs_move(typval_T *argvars, typval_T *rettv);
 void f_esp_fs_roots(typval_T *argvars, typval_T *rettv);
 
+/* api/esp_api_net.c (over components/esp_net) */
+void f_esp_http_get(typval_T *argvars, typval_T *rettv);
+void f_esp_net_status(typval_T *argvars, typval_T *rettv);
+
 /* api/esp_api_sys.c */
 void f_esp_heap(typval_T *argvars, typval_T *rettv);
 void f_esp_info(typval_T *argvars, typval_T *rettv);

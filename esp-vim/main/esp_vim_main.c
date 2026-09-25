@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/stat.h>
 #include <sys/select.h>
 #include "esp_timer.h"
 
@@ -19,6 +20,7 @@
 #include "esp_vfs_fat.h"
 #include "nvs_flash.h"
 #include "esp_fs.h"
+#include "esp_net.h"
 #include "esp_heap_caps.h"
 #include "driver/uart.h"
 #include "driver/uart_vfs.h"
@@ -112,6 +114,16 @@ static void environment_init(void)
      * but empty directory makes executable() answer an honest 0.
      */
     setenv("PATH", "/fat/bin", 1);
+    /*
+     * Temporary files: Vim tries $TMPDIR, then /tmp, "." and $HOME, and on this
+     * filesystem layout /tmp does not exist and "." may be the read-only /vimrt.
+     * netrw downloads into a temp file, so this matters. Emptied at every boot:
+     * a session that ends by restarting never runs Vim's own cleanup.
+     */
+    esp_fs_err_t ferr;
+    esp_fs_delete("/fat/.tmp", NULL, NULL, &ferr);     /* fine if absent */
+    mkdir("/fat/.tmp", 0777);
+    setenv("TMPDIR", "/fat/.tmp", 1);
     setenv("VIM", "/vimrt", 1);
     setenv("VIMRUNTIME", "/vimrt", 1);
     setenv("LINES", "24", 1);
@@ -286,6 +298,7 @@ void app_main(void)
     console_init();
     storage_init();
     environment_init();
+    esp_net_init();             /* returns at once; DHCP carries on in the background */
 
     /*
      * app_main's task becomes the session supervisor: start a Vim session,
