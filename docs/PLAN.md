@@ -1111,6 +1111,55 @@ F-key handling and the file manager's bindings stay written once. Specific to Bl
 Bonds are stored in NVS by the BT stack. On boot, bonded keyboards reconnect when you
 press a key; nothing scans unless asked, to save power on battery.
 
+### Pairing with no keyboard: the touch overlay (Tab5)
+
+The Tab5 must be able to pair its first Bluetooth keyboard **with nothing else attached**:
+no Tab5 keyboard, no USB keyboard, no serial cable. Pairing only needs taps, because a
+BLE passkey is typed on the Bluetooth keyboard itself, so a touch overlay is enough and
+no on-screen keyboard is needed. Decided with the user, 2026-09-24:
+
+| Question | Decision |
+|---|---|
+| How pairing starts | **Automatically.** No other way is needed without a keyboard |
+| UI toolkit | **LVGL overlay** (LVGL comes with the Tab5 BSP), not a Vim view |
+| On-screen keyboard | **None.** Pairing only; a general OSK is out of scope |
+| Boards without a screen | **Not supported.** They pair over serial or USB with `:EspBtKeyboard` |
+| A bonded keyboard doesn't show up at boot | **Wait ~10 s** (a keypress wakes most keyboards), then show "Waiting for <name>… / Pair a different keyboard" |
+| The only keyboard disconnects mid-session | **Show the overlay automatically** once it has been gone ~15 s |
+| "Just Works" keyboards (no passkey) | **Allowed after a tap** on "Pair", which a nearby attacker can't do |
+| How many | **Several bonded (up to 4), one active**: whichever connects is used |
+
+**When it appears.** "No keyboard" means no connected Bluetooth keyboard, no Tab5 keyboard
+answering at I2C 0x6D, and no USB HID keyboard enumerated. Serial input doesn't count,
+since there's no telling whether anyone is on the other end. The overlay never appears
+while a keyboard is present, and closes itself as soon as one connects.
+
+**What it shows.**
+- Nearby keyboards advertising HID (name, signal strength), refreshed as they appear, and
+  the bonded ones marked as such.
+- Tap one to pair. A passkey keyboard gets the six digits in large type: "Type 123456 on
+  the keyboard, then Enter". A Just Works keyboard gets a "Pair" confirmation.
+- "Not now" dismisses it until the next boot or disconnect. Long-press a bonded keyboard
+  to forget it, which frees a slot when all four are used.
+
+**How it's built.**
+- LVGL runs in **its own task**, independent of Vim. The overlay works while Vim is busy,
+  and in the gap between sessions after `:q`.
+- **Display ownership:** Phase 10's terminal renderer draws straight to the panel
+  (dirty rectangles, no LVGL in the hot path). While the overlay is up, the renderer stops
+  drawing but libvterm keeps its screen model current. LVGL takes the panel, and touch goes
+  to LVGL instead of the touch-as-mouse path. On dismiss, the terminal repaints fully. One
+  owner at a time: no compositing.
+- The overlay talks to the BT host through the same thread-safe pairing API that
+  `:EspBtKeyboard` uses, so both front ends share one implementation. It never touches
+  Vim. Notices Vim should show (e.g. "Paired: <name>") go on the Vim-drained queue.
+
+**Defaults I chose; not yet confirmed:**
+- the 10 s and 15 s timeouts;
+- the limit of 4 bonds;
+- long-press to forget;
+- the overlay can't be opened by hand; with a keyboard present, use `:EspBtKeyboard`.
+
 ### Threading and security
 
 - NimBLE callbacks run on the BT host task. As with the web server (Phase 6), they
@@ -1160,7 +1209,7 @@ become part of the gate. If not, this phase is tested on hardware only.
 | Phase 9 | `:EspUsbMsc on` with a host PC — `/fat` mounts as a drive, refuses while a buffer is modified or the web server runs, and the volume is intact after remount (the concurrency hazard is the thing being tested) |
 | Phase 10 | USB keyboard drives an interactive session on the panel with no UART attached; F-keys reach the file manager |
 | Phase 10 | Tab5 keyboard: `Esc` reaches Vim, `Ctrl-W`/`Ctrl-R`/`Ctrl-[` work, `Sym`+digit produces F-keys, and the file manager is fully drivable from it |
-| Phase 11 | Pair a BLE keyboard (passkey), type into Vim with no other input attached, reboot and confirm it reconnects on a keypress, `:EspBtKeyboard forget` stops its input; an unbonded device's input is refused; keystroke latency measured with and without a WiFi transfer (Tab5) |
+| Phase 11 | **With nothing else attached** (no Tab5 keyboard, no USB keyboard, no serial): the overlay appears at boot, a passkey keyboard and a Just Works keyboard each pair by touch, the overlay closes when the keyboard connects, and reappears ~15 s after it is switched off. Also: pair a BLE keyboard (passkey), type into Vim with no other input attached, reboot and confirm it reconnects on a keypress, `:EspBtKeyboard forget` stops its input; an unbonded device's input is refused; keystroke latency measured with and without a WiFi transfer (Tab5) |
 
 The Phase 5 scripted round trip is the regression test for everything after it, and the
 thing to re-run after each upstream Vim re-sync.
