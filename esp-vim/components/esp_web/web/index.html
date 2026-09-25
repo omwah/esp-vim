@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>esp-vim</title>
+<style>
+  :root { --bg:#fbfbfa; --fg:#1d1d1b; --mute:#6b6b66; --line:#dcdcd6; --acc:#1f6f43; --bad:#a3261a; --card:#fff; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#161615; --fg:#e8e8e3; --mute:#9a9a93; --line:#34342f; --acc:#5fbf86; --bad:#e0685c; --card:#1e1e1c; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg);
+         font:14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 980px; margin: 0 auto; }
+  header { display:flex; flex-wrap:wrap; gap:12px; align-items:baseline; justify-content:space-between; margin-bottom:12px; }
+  h1 { font-size:20px; margin:0; }
+  h2 { font-size:15px; margin:0 0 8px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:14px; margin-bottom:14px; }
+  .mute { color:var(--mute); }
+  .err { color:var(--bad); min-height:1.4em; }
+  button, input, select { font:inherit; color:inherit; }
+  button { background:transparent; border:1px solid var(--line); border-radius:6px; padding:4px 10px; cursor:pointer; }
+  button.primary { background:var(--acc); border-color:var(--acc); color:#fff; }
+  input[type=text], input[type=password], input[type=number], select {
+    background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:5px 8px; }
+  .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  .path { font-family: ui-monospace, Menlo, Consolas, monospace; word-break:break-all; }
+  table { width:100%; border-collapse:collapse; }
+  td, th { padding:5px 6px; border-bottom:1px solid var(--line); text-align:left; }
+  th { font-weight:600; color:var(--mute); }
+  td.num { text-align:right; font-variant-numeric: tabular-nums; white-space:nowrap; }
+  td.act { white-space:nowrap; text-align:right; }
+  .scroll { overflow-x:auto; }
+  a.dir { color:var(--acc); cursor:pointer; text-decoration:none; font-weight:600; }
+  .status { display:grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap:8px; }
+  .stat b { display:block; font-size:18px; font-variant-numeric: tabular-nums; }
+  #drop.over { outline:2px dashed var(--acc); }
+  .settings { display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:10px; }
+  label { display:flex; gap:6px; align-items:center; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>esp-vim</h1>
+    <div class="row"><span class="mute" id="who"></span><button id="logout" hidden>Log out</button></div>
+  </header>
+
+  <section class="card" id="login" hidden>
+    <h2>Log in</h2>
+    <form id="loginform" class="row">
+      <input type="password" id="password" autocomplete="current-password" placeholder="Password" required>
+      <button class="primary" type="submit">Log in</button>
+    </form>
+    <p class="err" id="loginerr"></p>
+    <p class="mute">Set or change the password on the device with <code>:EspWebPasswd</code>.</p>
+  </section>
+
+  <div id="app" hidden>
+    <section class="card">
+      <h2>Now editing</h2>
+      <div class="status" id="status"></div>
+    </section>
+
+    <section class="card" id="drop">
+      <div class="row" style="justify-content:space-between">
+        <h2 style="margin:0">Files <span class="path" id="cwd"></span></h2>
+        <span class="mute" id="space"></span>
+      </div>
+      <div class="row" style="margin:10px 0">
+        <button id="up">Up</button>
+        <button id="mkdir">New folder</button>
+        <label class="row"><input type="file" id="files" multiple> </label>
+        <span class="mute">or drop files here</span>
+      </div>
+      <p class="err" id="fileerr"></p>
+      <div class="scroll"><table>
+        <thead><tr><th>Name</th><th class="num">Size</th><th class="num">Modified</th><th></th></tr></thead>
+        <tbody id="entries"></tbody>
+      </table></div>
+    </section>
+
+    <section class="card">
+      <h2>Editor settings</h2>
+      <form id="settings" class="settings"></form>
+      <div class="row" style="margin-top:10px"><button class="primary" id="save">Save</button><span class="mute" id="saved"></span></div>
+      <p class="err" id="seterr"></p>
+    </section>
+  </div>
+</main>
+<script src="/app.js"></script>
+</body>
+</html>

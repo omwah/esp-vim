@@ -91,6 +91,20 @@ int esp_fs_delete(const char *path, esp_fs_progress_cb progress, void *ctx, esp_
 /* Create a directory (its parent must exist). */
 int esp_fs_mkdir(const char *path, esp_fs_err_t *err);
 
+/*
+ * Streaming, for front ends that move data themselves (the web server).
+ *
+ * esp_fs_open_read(): a validated file open for reading; its size in *size.
+ * esp_fs_create_part(): validate {path} for writing (refusing an existing file
+ *   unless {overwrite}) and open "{path}.part" for the data.
+ * esp_fs_finish_part(): with {ok}, replace {path} by the finished part;
+ *   otherwise delete the part. A failed upload never leaves a truncated file.
+ * All return -1 with a message on failure; the open calls return an fd.
+ */
+int esp_fs_open_read(const char *path, uint64_t *size, esp_fs_err_t *err);
+int esp_fs_create_part(const char *path, bool overwrite, esp_fs_err_t *err);
+int esp_fs_finish_part(const char *path, bool ok, esp_fs_err_t *err);
+
 #ifdef __cplusplus
 }
 #endif

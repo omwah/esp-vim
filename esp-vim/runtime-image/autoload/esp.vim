@@ -236,7 +236,7 @@ endfunction
 function! esp#Net() abort
   let n = esp_net_status()
   let lines = ['Network   (R refresh, q close)',
-        \ s:Row('%-10s %s', 'Interface', n.iface),
+        \ s:Row('%-10s %s', 'Interface', n.iface . (empty(n.ssid) ? '' : ' (' . n.ssid . ')')),
         \ s:Row('%-10s %s', 'Status', n.up ? 'up' : (n.iface ==# 'none' ? 'no network interface' : 'no link or no address yet')),
         \ ]
   if n.up
@@ -245,6 +245,9 @@ function! esp#Net() abort
           \ s:Row('%-10s %s', 'Netmask', n.netmask),
           \ s:Row('%-10s %s', 'Gateway', n.gw),
           \ s:Row('%-10s %s', 'DNS', empty(n.dns) ? '-' : n.dns)])
+    if n.rssi
+      call add(lines, s:Row('%-10s %d dBm', 'Signal', n.rssi))
+    endif
   endif
   if !empty(n.mac)
     call add(lines, s:Row('%-10s %s', 'MAC', n.mac))
@@ -271,4 +274,49 @@ function! esp#Get(bang, url, ...) abort
     redraw
     echo printf('%s: %d bytes', fnamemodify(r.path, ':~:.'), r.size)
   endif
+endfunction
+
+" --------------------------------------------------------------- :EspWifi* --
+
+function! esp#WifiScan() abort
+  echo 'Scanning...'
+  redraw
+  let aps = sort(esp_wifi_scan(), {a, b -> b.rssi - a.rssi})
+  let lines = ['WiFi networks: ' . len(aps) . '   (R rescan, q close)',
+        \ s:Row('%-32s %6s %4s  %s', 'Network', 'Signal', 'Chan', 'Security')]
+  for a in aps
+    call add(lines, s:Row('%-32s %4d dB %4d  %s', empty(a.ssid) ? '(hidden)' : a.ssid, a.rssi, a.channel, a.auth))
+  endfor
+  call s:Show('WifiScan', lines, 2, function('esp#WifiScan'))
+endfunction
+
+" :EspWifiConnect {ssid} [{password}]: without a password, asks for one
+" (leave it empty for an open network). The network is remembered in NVS.
+function! esp#WifiConnect(ssid, ...) abort
+  if a:0
+    let pw = a:1
+  else
+    call inputsave()
+    let pw = inputsecret('Password for ' . a:ssid . ' (empty if open): ')
+    call inputrestore()
+  endif
+  if !esp_wifi_connect(a:ssid, pw)
+    return
+  endif
+  " Wait up to 20 s for an address, showing progress; CTRL-C stops waiting.
+  for i in range(40)
+    let n = esp_net_status()
+    if n.up
+      redraw
+      echo 'Connected to ' . n.ssid . ': ' . n.ip . ' (' . n.rssi . ' dBm)'
+      return
+    endif
+    redraw
+    echo 'Connecting to ' . a:ssid . repeat('.', i % 4 + 1)
+    sleep 500m
+  endfor
+  redraw
+  echohl WarningMsg
+  echomsg 'EspWifiConnect: no connection yet; it keeps trying in the background (:EspNet)'
+  echohl None
 endfunction

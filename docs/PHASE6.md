@@ -310,3 +310,152 @@ New checks:
 - an `:EspFiles` remote pane lists, uploads, makes a directory and deletes.
 
 The emulator time cap is now 1500 s; the full interactive gate takes about 7 minutes.
+
+## 6e — The web interface (2026-09-24)
+
+**Result:** `:EspWebStart` serves a password-protected HTTPS page. From it a browser can:
+- browse, download, upload (including drag and drop), make folders, rename and delete;
+- change editor settings, which Vim applies within a second and again at every start;
+- watch what's being edited: file, cursor, line/word/character counts, modified, mode.
+
+`:EspWebStop`, `:EspWebStatus` and `:EspWebPasswd` complete it. The new gate script
+`esp-vim/test/web.py` drives it from the host over real HTTPS: all 23 checks pass.
+
+### `components/esp_web`
+
+ESP-IDF's `esp_https_server`, with the plan's security model implemented as written:
+
+| Requirement | How |
+|---|---|
+| HTTPS only | self-signed **ECDSA P-256** certificate made on the device at first start (mbedTLS X.509 writer), kept in NVS; its SHA-256 fingerprint is shown by `:EspWebStart` |
+| no default password | refuses to start until `:EspWebPasswd` sets one (8+ characters) |
+| password storage | **PBKDF2-HMAC-SHA256**, 20,000 iterations, random 16-byte salt, compared in constant time; setting it logs everyone out |
+| sessions | random 256-bit id in a cookie: `HttpOnly; Secure; SameSite=Strict`; at most 4; an hour's idle ends one |
+| CSRF | every state-changing request needs the session's token in `X-CSRF-Token` |
+| brute force | after each failure, logins are refused for 2^n seconds (at most 64) |
+| file access | only through `esp_fs`, which gained validated streaming calls: `esp_fs_open_read`, and `esp_fs_create_part`/`esp_fs_finish_part`, so an upload writes `.part` and replaces the target only when complete |
+| page | `index.html` plus `app.js`, embedded; `Content-Security-Policy` allows scripts only from the device, plus `nosniff`, `X-Frame-Options: DENY`, `no-store` |
+
+**Threading, as the plan required:** the server never touches Vim. Two things cross over,
+under one mutex:
+- **the status snapshot**, written by the Vim task (`esp_web_publish`) and read by the
+  server;
+- **settings**, which the server validates against an allow-list (tabstop, shiftwidth,
+  expandtab, number, relativenumber, wrap, background, and a shipped colorscheme), writes
+  to NVS, and flags. The Vim task takes the flag and applies them itself.
+
+The Vim side is a **once-a-second Vim timer**, started by `:EspWebStart`. It runs on
+Vim's main loop, so applying settings is as safe as a user typing `:set`. It republishes
+the status only when buffer, changedtick, cursor or mode changed, so `wordcount()`
+isn't recomputed for nothing. Stored settings are applied again at every start.
+
+**Deviation from the plan: status is polled once a second, not pushed with Server-Sent
+Events.** `esp_http_server` handles requests on one task, and a held-open event stream
+would block every other request. Polling a small JSON endpoint is simple, and at this
+rate it costs nothing.
+
+### Networking in the emulator: port forwarding
+
+The browser, or the test, runs on the host, so it must reach *into* the emulated device.
+`esp-emu`'s user networking supports QEMU-style forwarding although `--help` doesn't
+mention it: `--net user,hostfwd=tcp:127.0.0.1:HOST-:443`. `uart_session.Session` takes
+`hostfwd=[(host_port, device_port)]`.
+
+### Tests (`esp-vim/test/web.py`, part of `pixi run vim-test`)
+
+- no password means no server;
+- a short password is refused;
+- the certificate the host receives has **exactly the fingerprint Vim printed**;
+- the page is served;
+- the API refuses a browser that hasn't logged in;
+- a wrong password gets 401, and an immediate retry gets 429;
+- the right password gets a cookie and a CSRF token;
+- listing works;
+- a change without the CSRF token gets 403;
+- upload works, and replacing a file needs `overwrite=1`;
+- download works;
+- mkdir, move and recursive delete work;
+- a `..` path out to `/vimrt` is refused, and the target file is intact;
+- an out-of-range setting is refused;
+- settings saved in the browser show up in Vim's `&tabstop`/`&number`;
+- the live status reports file, lines, words and cursor;
+- logout ends the session;
+- `:EspWebStop` closes the port;
+- no Vim errors in the whole session.
+
+## 6f, part 1 — Serial, I2C, ADC, sensors (2026-09-24)
+
+**Result:** the chip's peripherals from Vim. `esp-vim/test/hw.py` (part of
+`pixi run vim-test`) passes; the serial port is tested for real against a host socket.
+
+| Command | Builtins | Notes |
+|---|---|---|
+| `:EspSerial {port} {baud} [{tx} {rx}]` | `esp_serial_open/read/write/close()` | a window showing what arrives, live (polled ten times a second); `s` sends a line, `q` closes; UART0, the console, is refused |
+| `:EspSerialSend {text}` | | appends `g:esp_serial_eol` (`\r\n`) |
+| `:EspI2cScan [{sda} {scl}]` | `esp_i2c_scan()` | a bus built for the call on any free controller, probing 0x08–0x77 |
+| `:EspSensors [{sda} {scl}]` | `esp_sensors()` | names what it recognises, by address **and** ID register where the chip has one (BMI270, BME/BMP280, FT6336, GT911, ES8311, PI4IOE5V6408, the Tab5 keyboard, ...) |
+| `:EspAdc {pin}` | `esp_adc_read()` | raw value, plus millivolts by ESP-IDF's curve-fitting calibration |
+
+- Default pins come from a new menuconfig menu, **"esp-vim board"** (`main/Kconfig.projbuild`):
+  - serial: GPIO22/23 on the P4, 17/18 on the S3;
+  - I2C: GPIO31/32 on the P4 (the Tab5's internal bus), 8/9 on the S3.
+
+  Every pin passes the same check as `:EspGpio`.
+- **Found: the emulator build's Ethernet collides with the Tab5's I2C bus.** The P4's EMAC
+  claims its RMII pins, GPIO28–31, 34, 35, 49, 50 and 52, so GPIO31 is correctly refused
+  in the Ethernet-enabled emulator build. A Tab5 build must set `ESP_VIM_NET=NONE`
+  (PLAN.md, Phase 9).
+- `:EspSensors` identifies devices; it doesn't read them. Reading the BMI270 means
+  uploading its 8 KB configuration blob first, which is Tab5 bring-up work (Phase 9).
+- The harness learned that a Vim timer tick makes Vim hide and show the cursor, and that
+  this alone isn't "busy". `quiet()` ignores output made only of those bytes; they can
+  arrive split across reads, so it tests bytes, not whole sequences.
+- `uart_session.Session` now picks a **free** UART port per session. The gate starts four
+  emulators back to back, and a fixed port was sometimes still held by the previous one.
+
+## 6f, part 2 — WiFi on the ESP32-S3 (2026-09-25)
+
+**Result:** `:EspWifiScan`, `:EspWifiConnect {ssid} [{password}]` (asks for the password
+if it isn't given; waits for an address with progress), `:EspWifiDisconnect` and
+`:EspWifiStatus`, with `esp_wifi_scan()`, `esp_wifi_connect()`, `esp_wifi_disconnect()`.
+`esp_net_status()` gains `ssid` and `rssi`. The network is stored in NVS and rejoined at
+every boot. `esp-vim/test/wifi.py` passes on the S3 against esp-emu's soft access point:
+- a scan finds it, with its security;
+- connect gets an address;
+- HTTP works over WiFi;
+- disconnect forgets the network.
+
+It skips on builds whose network isn't WiFi.
+
+`esp_net` gains a WiFi interface choice, the default where the chip has a radio. The code
+uses only the standard `esp_wifi_*` API, so it will serve the Tab5 unchanged through
+`esp_wifi_remote` (part 3).
+
+### Three fixes WiFi forced on the S3
+
+The S3 has about 135 KB of internal RAM for everything. With WiFi up, boot failed in a
+loop, first as "Unhandled interrupt 12", then as "cannot create the Vim task". A
+standalone WiFi app, even with this project's full sdkconfig, worked fine, which pointed
+at the app's own memory and ordering:
+
+1. **Vim's task stack is reserved at link time** (`xTaskCreateStaticPinnedToCore`,
+   `main/esp_vim_main.c`). Taken from the heap at the first session, 64 KB in one piece
+   no longer existed once WiFi had run. The supervisor now waits until the previous
+   session's task is fully deleted before reusing the stack.
+2. **On the S3, Vim's `.bss` (40 KB) lives in PSRAM** (`ESP_VIM_BSS_IN_PSRAM`,
+   `components/vim/linker.lf`). The static stack alone overflowed internal DRAM by 6 KB.
+   ESP-IDF can put `.bss`, though not `.data`, in external RAM. The linker fragment needs
+   a scheme that retargets the *standard* `bss` fragment, not a new one: only then does
+   the generator also exclude `libvim.a` from the internal `.bss` catch-all. A first
+   attempt left the bracket empty for exactly that reason. Only the Vim task, and the
+   file wrappers from task context, touch it; never an interrupt or cache-off code.
+3. **Boot order: NVS, network, console, storage.** WiFi needs NVS, and bringing the
+   network up after the console UART driver left WiFi's interrupt unhandled in the
+   emulator.
+
+Plus WiFi's internal-RAM appetite is reduced on the S3:
+- IRAM speed-ups off (`ESP_WIFI_IRAM_OPT`, `ESP_WIFI_RX_IRAM_OPT`, `LWIP_IRAM_OPTIMIZATION`);
+- 4 static RX buffers (block-ack window 6);
+- buffers from PSRAM (`SPIRAM_TRY_ALLOCATE_WIFI_LWIP`).
+
+None of this matters at an editor's traffic levels.

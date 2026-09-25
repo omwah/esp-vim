@@ -2,6 +2,7 @@ menu "esp-vim network"
 
     choice ESP_VIM_NET
         prompt "Network interface"
+        default ESP_VIM_NET_WIFI if SOC_WIFI_SUPPORTED
         default ESP_VIM_NET_ETH if SOC_EMAC_SUPPORTED
         default ESP_VIM_NET_NONE
         help
@@ -10,6 +11,14 @@ menu "esp-vim network"
 
         config ESP_VIM_NET_NONE
             bool "None"
+
+        config ESP_VIM_NET_WIFI
+            bool "WiFi (the chip's own radio)"
+            depends on SOC_WIFI_SUPPORTED
+            help
+                Station mode. :EspWifiConnect stores the network in NVS and the
+                device reconnects at every boot. esp-emu provides a soft AP
+                (myssid / mypassword) for testing.
 
         config ESP_VIM_NET_ETH
             bool "Ethernet (internal EMAC, generic IEEE 802.3 PHY)"

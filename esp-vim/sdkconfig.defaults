@@ -49,3 +49,9 @@ CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
 CONFIG_MBEDTLS_PEM_WRITE_C=y
 # libssh2's own debug logging costs flash and is never switched on at runtime.
 # CONFIG_LIBSSH2_DEBUG_ENABLE is not set
+
+# The web interface serves HTTPS (esp_https_server). Its certificate is made
+# with mbedTLS's X.509 writer, which ESP-IDF always enables.
+CONFIG_ESP_HTTPS_SERVER_ENABLE=y
+CONFIG_HTTPD_MAX_URI_LEN=1024
+CONFIG_HTTPD_MAX_REQ_HDR_LEN=1024

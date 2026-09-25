@@ -506,3 +506,59 @@ int esp_fs_mkdir(const char *path, esp_fs_err_t *err)
     unlock();
     return rc;
 }
+
+/* ------------------------------------------------------------ streaming -- */
+
+int esp_fs_open_read(const char *path, uint64_t *size, esp_fs_err_t *err)
+{
+    char p[PATH_MAX_LEN];
+    if (esp_fs_check(path, false, p, sizeof p, err) != 0)
+        return -1;
+    struct stat st;
+    if (stat(p, &st) != 0)
+        return fail_errno(err, p);
+    if (S_ISDIR(st.st_mode))
+        return fail(err, "%s: is a directory", p);
+    int fd = open(p, O_RDONLY);
+    if (fd < 0)
+        return fail_errno(err, p);
+    if (size != NULL)
+        *size = (uint64_t)st.st_size;
+    return fd;
+}
+
+int esp_fs_create_part(const char *path, bool overwrite, esp_fs_err_t *err)
+{
+    char p[PATH_MAX_LEN], part[PATH_MAX_LEN + 8];
+    if (esp_fs_check(path, true, p, sizeof p, err) != 0)
+        return -1;
+    struct stat st;
+    if (stat(p, &st) == 0) {
+        if (S_ISDIR(st.st_mode))
+            return fail(err, "%s: is a directory", p);
+        if (!overwrite)
+            return fail(err, "%s: already exists", p);
+    }
+    snprintf(part, sizeof part, "%s.part", p);
+    int fd = open(part, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+    return fd >= 0 ? fd : fail_errno(err, part);
+}
+
+int esp_fs_finish_part(const char *path, bool ok, esp_fs_err_t *err)
+{
+    char p[PATH_MAX_LEN], part[PATH_MAX_LEN + 8];
+    if (esp_fs_check(path, true, p, sizeof p, err) != 0)
+        return -1;
+    snprintf(part, sizeof part, "%s.part", p);
+    if (!ok) {
+        unlink(part);
+        return 0;
+    }
+    lock();
+    unlink(p);                  /* FAT will not rename onto an existing name */
+    int rc = rename(part, p) == 0 ? 0 : fail_errno(err, p);
+    unlock();
+    if (rc != 0)
+        unlink(part);
+    return rc;
+}

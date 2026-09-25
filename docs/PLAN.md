@@ -15,7 +15,7 @@
 | 3 — OS shim layer | **done** (2026-09-23), see [PHASE3.md](PHASE3.md) — Vim runs, edits, saves; `pixi run vim-test` |
 | 4 — Storage + curated runtime | **done** (2026-09-24), see [PHASE4.md](PHASE4.md) — runtime 74% of `vimrt`, 30 filetypes, 0.47 MB PSRAM to open a file |
 | 5 — Emulator bring-up over UART | **done** (2026-09-24), see [PHASE5.md](PHASE5.md) — interactive over UART; `:q` restarts in place; chip-named splash, device help, busy indicator. P4 gate green. **S3: open intermittent heap corruption under the emulator**, gate informational until tested on silicon |
-| 6 — `:Esp*` commands, file manager, transports, web | **in progress**, see [PHASE6.md](PHASE6.md). 6a–6d done 2026-09-24: device commands, `esp_fs` + `:EspFiles`, network + HTTP(S) + spell download, SCP/SFTP |
+| 6 — `:Esp*` commands, file manager, transports, web | **in progress**, see [PHASE6.md](PHASE6.md). 6a–6e done 2026-09-24; 6f in progress (serial, I2C, ADC, sensors, S3 WiFi done; P4 WiFi via the C6 and BLE next) |
 | 7 — MicroPython | not started |
 | 8 — Git | not started. **Being reconsidered:** libgit2 instead of pure Python; test build scheduled after Phase 6 (see Phase 8) |
 | 9 — Tab5 hardware over UART | not started |
@@ -650,8 +650,8 @@ for one:
 | 6b | `esp_fs` (one file-ops core with path validation) and the two-pane `:EspFiles` manager, local roots | **done** |
 | 6c | networking in the emulator (EMAC + `--net user`), `esp_http_get`, spell download | **done** |
 | 6d | libssh2: SCP/SFTP builtins, netrw transports, remote panes | **done** |
-| 6e | web file manager, settings, live status | next |
-| 6f | radio via esp-hosted/C6 (`:EspWifi*`, `:EspBle*`), `:EspSerial`, `:EspI2cScan`, `:EspAdc`, `:EspSensors`. Also establish, for Phase 11: can esp-hosted carry a BLE **HID host** (NimBLE on the P4, controller on the C6), and what does `esp-emu --ble-hci` bridge to? | |
+| 6e | web file manager, settings, live status | **done** |
+| 6f (in progress: serial/I2C/ADC/sensors and S3 WiFi done) | radio via esp-hosted/C6 (`:EspWifi*`, `:EspBle*`), `:EspSerial`, `:EspI2cScan`, `:EspAdc`, `:EspSensors`. Also establish, for Phase 11: can esp-hosted carry a BLE **HID host** (NimBLE on the P4, controller on the C6), and what does `esp-emu --ble-hci` bridge to? | |
 | — | `:EspUsbMsc` | hardware only, Phase 9 |
 | 6z | **libgit2 feasibility build** (see Phase 8): decides how Phase 8 is built | after 6f, before Phase 7 |
 
@@ -1007,6 +1007,13 @@ over `--net user`.
 ---
 
 ## Phase 9 — Tab5 hardware over UART
+
+> **Board profile needed (found in 6f).** The P4 emulator build enables the internal
+> Ethernet MAC (`ESP_VIM_NET_ETH`) because that's how the emulator gets a network. The
+> MAC claims its RMII pins, GPIO28–31, 34, 35, 49, 50 and 52, and **GPIO31/32 is the
+> Tab5's internal I2C bus**. So the Tab5 build must set `ESP_VIM_NET=NONE`, getting its
+> network over WiFi through the C6 instead. `:EspGpio` and the I2C commands already refuse
+> reserved pins, so the conflict shows as a clear error rather than a hang.
 
 Same firmware, real silicon. Flash over USB-C, console on UART0. What the emulator cannot
 tell you and this phase will: real flash timing (`memline.c` swap-less behaviour on a slow

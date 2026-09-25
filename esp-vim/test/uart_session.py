@@ -33,8 +33,14 @@ PSRAM = {"esp32p4": "32M", "esp32s3": "8M"}
 
 
 class Session:
-    def __init__(self, port=5599, chip=None, psram=None, extra=(), term_size=None,
-                 reuse=False, save_state=False, log=None):
+    def __init__(self, port=None, chip=None, psram=None, extra=(), term_size=None,
+                 reuse=False, save_state=False, log=None, hostfwd=()):
+        # A free port by default: back-to-back sessions (the gate runs several)
+        # must not wait for the previous emulator to let go of a fixed one.
+        if port is None:
+            with socket.socket() as so:
+                so.bind(("127.0.0.1", 0))
+                port = so.getsockname()[1]
         self.port = port
         chip = chip or TARGET
         psram = psram or PSRAM[chip]
@@ -51,7 +57,10 @@ class Session:
         # --net user: slirp networking with no host setup. The P4's Ethernet
         # comes up on it (DHCP gives 192.168.4.2), and the host's 127.0.0.1 is
         # reachable from the device as the gateway, 192.168.4.1.
-        args += ["--", "--uart-tcp", f"127.0.0.1:{port}", "--net", "user", *extra]
+        # hostfwd: (host_port, device_port) pairs, so the host can reach a
+        # server on the device (QEMU syntax; esp-emu supports it undocumented).
+        net = "user" + "".join(f",hostfwd=tcp:127.0.0.1:{h}-:{g}" for h, g in hostfwd)
+        args += ["--", "--uart-tcp", f"127.0.0.1:{port}", "--net", net, *extra]
         # stdin held open: an immediate EOF would reach the emulator's console.
         self.proc = subprocess.Popen(args, stdin=subprocess.PIPE,
                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -107,12 +116,18 @@ class Session:
                 raise TimeoutError(f"timed out waiting for {pattern!r}; last output: {tail!r}")
             self._pump()
 
+    # Vim hides and shows the cursor every time a timer wakes it (the serial
+    # window polls ten times a second): that alone is not "the device is busy".
+    # (A chunk can split a sequence, so test the bytes, not whole sequences.)
+    _CURSOR_ONLY = re.compile(rb"^[\x1b\[?25hl]+$")
+
     def quiet(self, settle=1.0, timeout=30.0):
         """Wait until the device has been silent for `settle` seconds (screen drawn)."""
         end = time.time() + timeout
         last = time.time()
         while time.time() < end:
-            if self._pump():
+            before = len(self.buf)
+            if self._pump() and not self._CURSOR_ONLY.match(self.buf[before:]):
                 last = time.time()
             elif time.time() - last >= settle:
                 return

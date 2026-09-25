@@ -114,6 +114,27 @@ window at the bottom: "R" refreshes it, "q" closes it.
 		depends on -- flash, PSRAM, the console -- are refused.  Pins
 		keep their state after you quit Vim, until the next reset.
 
+:EspSerial {port} {baud} [{tx} {rx}]			*:EspSerial*
+		Open serial port UART{port} (1, or 2 where the chip has it;
+		UART0 is the console) and show what arrives in a window,
+		live.  In that window "s" sends a line and "q" closes the
+		port.  The pins default to the board's; give {tx} {rx} for
+		others.
+:EspSerialSend {text}					*:EspSerialSend*
+		Send {text} and a line ending (g:esp_serial_eol, "\r\n" by
+		default) to the open port.
+
+:EspI2cScan [{sda} {scl}]				*:EspI2cScan*
+		List the addresses of the I2C devices that answer, on the
+		board's bus or the pins given.
+:EspSensors [{sda} {scl}]				*:EspSensors*
+		The same, with each device named where it is recognised --
+		IMUs, environment sensors, touch controllers, codecs, IO
+		expanders -- by its address and, where the chip has one, its
+		ID register.
+:EspAdc {pin}						*:EspAdc*
+		Read an analog pin: the raw value and, calibrated, millivolts.
+
 :EspNvs							*:EspNvs*
 		List everything in NVS, the small key/value store that keeps
 		settings across reboots.
@@ -183,13 +204,56 @@ If a server's key later changes the connection is refused -- that is what
 a man-in-the-middle looks like.  If you know why it changed, delete that
 server's line from /fat/.ssh/known_hosts.
 
+THE WEB INTERFACE					*esp-web*
+
+A browser on the same network can manage the device's files, change editor
+settings and watch what is being edited -- line, column, word and character
+counts -- live.  It is off until you start it, and it needs a password.
+
+:EspWebPasswd						*:EspWebPasswd*
+		Set the web password (at least 8 characters).  There is no
+		default password; the web interface will not start without
+		one.  Only a salted hash is stored.  Setting it logs every
+		browser out.
+
+:EspWebStart [{port}]					*:EspWebStart*
+		Start the web interface (port 443 unless given) and show its
+		address and the SHA-256 fingerprint of its certificate.
+
+:EspWebStop						*:EspWebStop*
+		Stop it; every browser is logged out.
+
+:EspWebStatus						*:EspWebStatus*
+		Whether it is running, its address, how many browsers are
+		logged in, and the certificate fingerprint.
+
+The connection is HTTPS with a certificate the device made itself, so the
+browser warns that it does not know it.  Compare the fingerprint the browser
+shows with the one :EspWebStart printed; if they match, the connection is to
+this device.  The certificate is kept, so this is needed once per browser.
+
+Files: browse, download, upload (also by dropping files on the page), make
+folders, rename and delete -- with the same checks as |:EspFiles|: /vimrt is
+read-only and nothing outside /fat, /sd and /vimrt can be reached.
+
+Settings: tabstop, shiftwidth, expandtab, number, relativenumber, wrap,
+background and colorscheme.  Saved on the device and applied within a
+second, and again at every start.
+
+Security: logins are refused for a while after wrong passwords, at most four
+browsers are logged in at once, a session ends after an hour unused, and
+every change needs a token only the logged-in page has.
+
 The same information is available to scripts, as Dicts and Lists:
 esp_info(), esp_heap(), esp_tasks(), esp_gpio_pins(), esp_gpio_read(),
 esp_gpio_write(), esp_gpio_mode(), esp_nvs_list(), esp_nvs_get(),
 esp_nvs_set(), esp_nvs_erase(), esp_reboot(), esp_net_status(),
 esp_http_get(), and for SSH esp_ssh_get(), esp_ssh_put(), esp_ssh_list(),
 esp_ssh_mkdir(), esp_ssh_remove(), esp_ssh_rename(), esp_ssh_hostkey(),
-esp_ssh_trust(), esp_ssh_keygen().  Try ":echo esp_heap()".
+esp_ssh_trust(), esp_ssh_keygen(), and for the web interface esp_web_start(),
+esp_web_stop(), esp_web_info(), esp_web_passwd(), esp_settings(), and for the
+hardware esp_serial_open(), esp_serial_read(), esp_serial_write(),
+esp_serial_close(), esp_i2c_scan(), esp_sensors(), esp_adc_read().  Try ":echo esp_heap()".
 esp_gpio_read() returns -1, with an error, for a pin it may not use.
 
 ==============================================================================

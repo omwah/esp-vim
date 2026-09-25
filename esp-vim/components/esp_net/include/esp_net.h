@@ -28,10 +28,21 @@ extern "C" {
 
 typedef struct {
     bool up;                    /* link up and an IPv4 address assigned */
-    char iface[12];             /* "ethernet", "none" */
+    char iface[12];             /* "wifi", "ethernet", "none" */
     char ip[16], netmask[16], gw[16], dns[16];
     char mac[18];
+    char ssid[33];              /* WiFi: the network joined (or being joined) */
+    int rssi;                   /* WiFi: signal, dBm; 0 when not connected */
 } esp_net_status_t;
+
+typedef struct {
+    char ssid[33];
+    int rssi;
+    int channel;
+    const char *auth;           /* "open", "wpa2", "wpa3", ... */
+} esp_net_ap_t;
+
+typedef bool (*esp_net_ap_cb)(void *ctx, const esp_net_ap_t *ap);
 
 typedef struct {
     int status;                 /* HTTP status of the final response */
@@ -49,6 +60,12 @@ typedef bool (*esp_net_sink_cb)(void *ctx, const char *data, size_t len);
 esp_err_t esp_net_init(void);
 
 void esp_net_get_status(esp_net_status_t *status);
+
+/* WiFi builds only (else -1, "no WiFi"). Scan blocks for about two seconds.
+ * Connect stores the network (NVS) and returns at once; watch the status. */
+int esp_net_wifi_scan(esp_net_ap_cb cb, void *ctx, char *err, size_t errlen);
+int esp_net_wifi_connect(const char *ssid, const char *password, char *err, size_t errlen);
+int esp_net_wifi_disconnect(char *err, size_t errlen);
 
 /*
  * GET {url} (http or https; certificates checked against ESP-IDF's CA bundle;

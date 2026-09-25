@@ -51,7 +51,7 @@ static esp_err_t configure(int pin, gpio_mode_t mode)
     return err;
 }
 
-static bool usable(int pin)
+bool esp_api_gpio_usable(int pin)
 {
     return GPIO_IS_VALID_GPIO(pin)
         && pin != CONSOLE_TX && pin != CONSOLE_RX
@@ -69,7 +69,7 @@ static int pin_arg(typval_T *tv, const char *fn)
         semsg("%s(): GPIO %lld does not exist on the %s", fn, (long long)pin, ESP_VIM_CHIP);
         return -1;
     }
-    if (!usable((int)pin)) {
+    if (!esp_api_gpio_usable((int)pin)) {
         semsg("%s(): GPIO %lld is in use by the system (flash, PSRAM or console)",
               fn, (long long)pin);
         return -1;
@@ -83,7 +83,7 @@ void f_esp_gpio_pins(typval_T *argvars UNUSED, typval_T *rettv)
     if (rettv_list_alloc(rettv) == FAIL)
         return;
     for (int pin = 0; pin < GPIO_NUM_MAX; pin++)
-        if (usable(pin))
+        if (esp_api_gpio_usable(pin))
             list_append_number(rettv->vval.v_list, pin);
 }
 

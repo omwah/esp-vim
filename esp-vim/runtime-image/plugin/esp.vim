@@ -19,3 +19,25 @@ command! -bar -nargs=* -complete=dir EspFiles call espfiles#Open(<f-args>)
 command! -bar EspNet call esp#Net()
 command! -bar -bang -nargs=+ EspGet call esp#Get(<bang>0, <f-args>)
 command! -bar -bang EspSshKeygen call esp#ssh#Keygen(<bang>0)
+command! -bar -nargs=? EspWebStart call esp#web#Start(<f-args>)
+command! -bar EspWebStop call esp#web#Stop()
+command! -bar EspWebStatus call esp#web#Status()
+command! -bar EspWebPasswd call esp#web#Passwd()
+
+" Editor settings saved from the web interface persist in NVS; apply them at
+" startup. (Checked with a builtin, so the autoload file only loads if needed.)
+let s:set = esp_settings()
+if s:set.tabstop != 8 || s:set.shiftwidth != 8 || s:set.expandtab || s:set.number
+      \ || s:set.relativenumber || !s:set.wrap || !empty(s:set.colorscheme) || !empty(s:set.background)
+  autocmd VimEnter * ++once call esp#web#ApplySettings()
+endif
+unlet s:set
+command! -bar -nargs=+ EspSerial call esp#hw#Serial(<f-args>)
+command! -nargs=+ EspSerialSend call esp#hw#SerialSend(<q-args>)
+command! -bar -nargs=* EspI2cScan call esp#hw#I2cScan(<f-args>)
+command! -bar -nargs=* EspSensors call esp#hw#Sensors(<f-args>)
+command! -bar -nargs=1 EspAdc call esp#hw#Adc(<f-args>)
+command! -bar EspWifiScan call esp#WifiScan()
+command! -nargs=+ EspWifiConnect call esp#WifiConnect(<f-args>)
+command! -bar EspWifiDisconnect call esp_wifi_disconnect() | echo 'WiFi disconnected and forgotten'
+command! -bar EspWifiStatus call esp#Net()

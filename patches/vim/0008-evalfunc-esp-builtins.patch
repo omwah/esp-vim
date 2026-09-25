@@ -1,6 +1,5 @@
-diff -ruN '--exclude=.git' '--exclude=*.o' '--exclude=*.rej' '--exclude=*.orig' a/src/evalfunc.c b/src/evalfunc.c
 --- a/src/evalfunc.c	2026-09-21 13:40:41.000000000 -0700
-+++ b/src/evalfunc.c	2026-09-24 19:15:23.678590368 -0700
++++ b/src/evalfunc.c	2026-09-24 23:08:59.526322859 -0700
 @@ -14,6 +14,11 @@
  
  #include "vim.h"
@@ -13,7 +12,7 @@ diff -ruN '--exclude=.git' '--exclude=*.o' '--exclude=*.rej' '--exclude=*.orig' 
  #if defined(FEAT_EVAL)
  
  #ifdef VMS
-@@ -2279,6 +2284,71 @@
+@@ -2279,6 +2284,105 @@
  			ret_void,	    f_err_teapot},
      {"escape",		2, 2, FEARG_1,	    arg2_string,
  			ret_string,	    f_escape},
@@ -21,6 +20,8 @@ diff -ruN '--exclude=.git' '--exclude=*.o' '--exclude=*.rej' '--exclude=*.orig' 
 +    // Keep these sorted: lookup is a binary search over this table, and an
 +    // out-of-order row breaks unrelated builtins.  All "esp_" names sort
 +    // between "escape" and "eval".
++    {"esp_adc_read",	1, 1, FEARG_1,	    arg1_number,
++			ret_dict_any,	    f_esp_adc_read},
 +    {"esp_fs_copy",	2, 3, FEARG_1,	    arg3_string_string_bool,
 +			ret_bool,	    f_esp_fs_copy},
 +    {"esp_fs_delete",	1, 1, FEARG_1,	    arg1_string,
@@ -47,6 +48,8 @@ diff -ruN '--exclude=.git' '--exclude=*.o' '--exclude=*.rej' '--exclude=*.orig' 
 +			ret_dict_any,	    f_esp_heap},
 +    {"esp_http_get",	1, 2, FEARG_1,	    arg2_string,
 +			ret_dict_any,	    f_esp_http_get},
++    {"esp_i2c_scan",	0, 2, FEARG_1,	    arg2_number,
++			ret_list_number,    f_esp_i2c_scan},
 +    {"esp_info",	0, 0, 0,	    NULL,
 +			ret_dict_any,	    f_esp_info},
 +    {"esp_net_status",	0, 0, 0,	    NULL,
@@ -61,6 +64,18 @@ diff -ruN '--exclude=.git' '--exclude=*.o' '--exclude=*.rej' '--exclude=*.orig' 
 +			ret_bool,	    f_esp_nvs_set},
 +    {"esp_reboot",	0, 0, 0,	    NULL,
 +			ret_void,	    f_esp_reboot},
++    {"esp_sensors",	0, 2, FEARG_1,	    arg2_number,
++			ret_list_dict_any,  f_esp_sensors},
++    {"esp_serial_close", 1, 1, FEARG_1,	    arg1_number,
++			ret_void,	    f_esp_serial_close},
++    {"esp_serial_open",	2, 4, FEARG_1,	    NULL,
++			ret_bool,	    f_esp_serial_open},
++    {"esp_serial_read",	1, 1, FEARG_1,	    arg1_number,
++			ret_string,	    f_esp_serial_read},
++    {"esp_serial_write", 2, 2, FEARG_1,	    arg2_number_string,
++			ret_number,	    f_esp_serial_write},
++    {"esp_settings",	0, 0, 0,	    NULL,
++			ret_dict_any,	    f_esp_settings},
 +    {"esp_ssh_get",	2, 3, FEARG_1,	    NULL,
 +			ret_dict_any,	    f_esp_ssh_get},
 +    {"esp_ssh_hostkey",	1, 1, FEARG_1,	    arg1_string,
@@ -81,6 +96,24 @@ diff -ruN '--exclude=.git' '--exclude=*.o' '--exclude=*.rej' '--exclude=*.orig' 
 +			ret_bool,	    f_esp_ssh_trust},
 +    {"esp_tasks",	0, 0, 0,	    NULL,
 +			ret_list_dict_any,  f_esp_tasks},
++    {"esp_web_info",	0, 0, 0,	    NULL,
++			ret_dict_any,	    f_esp_web_info},
++    {"esp_web_passwd",	1, 1, FEARG_1,	    arg1_string,
++			ret_bool,	    f_esp_web_passwd},
++    {"esp_web_publish",	1, 1, FEARG_1,	    arg1_dict_any,
++			ret_void,	    f_esp_web_publish},
++    {"esp_web_settings_changed", 0, 0, 0,  NULL,
++			ret_bool,	    f_esp_web_settings_changed},
++    {"esp_web_start",	0, 1, FEARG_1,	    arg1_number,
++			ret_dict_any,	    f_esp_web_start},
++    {"esp_web_stop",	0, 0, 0,	    NULL,
++			ret_void,	    f_esp_web_stop},
++    {"esp_wifi_connect", 1, 2, FEARG_1,	    arg2_string,
++			ret_bool,	    f_esp_wifi_connect},
++    {"esp_wifi_disconnect", 0, 0, 0,	    NULL,
++			ret_void,	    f_esp_wifi_disconnect},
++    {"esp_wifi_scan",	0, 0, 0,	    NULL,
++			ret_list_dict_any,  f_esp_wifi_scan},
 +#endif
      {"eval",		1, 1, FEARG_1,	    arg1_string,
  			ret_any,	    f_eval},

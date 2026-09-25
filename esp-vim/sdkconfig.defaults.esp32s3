@@ -12,3 +12,18 @@ CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
 # Vim's heap lives in PSRAM, so give the data cache in front of it more room.
 CONFIG_ESP32S3_DATA_CACHE_64KB=y
 CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y
+
+# WiFi (esp_net): its and lwIP's buffers in PSRAM -- internal RAM on the S3 is
+# about 100 KB free, and the radio alone would take half of it.
+CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
+# Internal RAM is what WiFi really costs on the S3: without these the Vim task's
+# 64 KB stack no longer fits and boot fails ("cannot create the Vim task").
+# WiFi's and lwIP's IRAM speed-ups take SRAM the S3 shares between code and
+# data, and static RX buffers are internal; an editor's traffic needs neither.
+# CONFIG_ESP_WIFI_IRAM_OPT is not set
+# CONFIG_ESP_WIFI_RX_IRAM_OPT is not set
+# CONFIG_LWIP_IRAM_OPTIMIZATION is not set
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=4
+CONFIG_ESP_WIFI_RX_BA_WIN=6
+# ... and Vim's .bss goes to PSRAM (ESP_VIM_BSS_IN_PSRAM, components/vim/linker.lf).
+CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y

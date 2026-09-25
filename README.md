@@ -201,7 +201,7 @@ someone's shell history. `pixi task list` shows them all.
 | `pixi run runtime` | Curate `$VIMRUNTIME` into `build-deps/vimrt-<target>/` (one per chip) and generate `filetype.vim` (checks it fits the partition) |
 | `pixi run vim-build` | Build the Vim firmware for ESP32-P4 (`esp-vim/build-esp32p4/`); runs `runtime` first |
 | `pixi run vim-build-s3` | Build the ESP32-S3 variant (`esp-vim/build-esp32s3/`) |
-| `pixi run vim-test` | **The regression gate** on ESP32-P4: builds, then round trips across reboots plus interactive console checks |
+| `pixi run vim-test` | **The regression gate** on ESP32-P4: builds, then round trips across reboots, interactive console checks, and the web interface |
 | `pixi run vim-test-s3` | The same gate on the ESP32-S3 variant |
 | `pixi run vim-size` | Report the Vim component's text/data/bss |
 | `pixi run screenshots` | Regenerate the README images from the firmware running in the emulator |

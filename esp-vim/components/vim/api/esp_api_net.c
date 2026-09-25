@@ -25,6 +25,54 @@ void f_esp_net_status(typval_T *argvars UNUSED, typval_T *rettv)
     dict_add_string(d, "gw", (char_u *)st.gw);
     dict_add_string(d, "dns", (char_u *)st.dns);
     dict_add_string(d, "mac", (char_u *)st.mac);
+    dict_add_string(d, "ssid", (char_u *)st.ssid);
+    dict_add_number(d, "rssi", st.rssi);
+}
+
+static bool add_ap(void *ctx, const esp_net_ap_t *ap)
+{
+    dict_T *d = dict_alloc();
+    if (d == NULL)
+        return false;
+    dict_add_string(d, "ssid", (char_u *)ap->ssid);
+    dict_add_number(d, "rssi", ap->rssi);
+    dict_add_number(d, "channel", ap->channel);
+    dict_add_string(d, "auth", (char_u *)ap->auth);
+    return list_append_dict((list_T *)ctx, d) == OK;
+}
+
+/* esp_wifi_scan() -> List of Dicts: ssid, rssi, channel, auth. */
+void f_esp_wifi_scan(typval_T *argvars UNUSED, typval_T *rettv)
+{
+    if (rettv_list_alloc(rettv) == FAIL)
+        return;
+    char err[128];
+    if (esp_net_wifi_scan(add_ap, rettv->vval.v_list, err, sizeof err) != 0)
+        semsg("esp_wifi_scan(): %s", err);
+}
+
+/* esp_wifi_connect({ssid} [, {password}]): store the network and start
+ * joining it; watch esp_net_status() for the result. */
+void f_esp_wifi_connect(typval_T *argvars, typval_T *rettv)
+{
+    char_u buf[NUMBUFLEN];
+    char_u *ssid = tv_get_string_buf_chk(&argvars[0], buf);
+    char_u *pw = argvars[1].v_type == VAR_UNKNOWN ? (char_u *)"" : tv_get_string_chk(&argvars[1]);
+    if (ssid == NULL || pw == NULL)
+        return;
+    char err[128];
+    if (esp_net_wifi_connect((char *)ssid, (char *)pw, err, sizeof err) == 0)
+        rettv->vval.v_number = TRUE;
+    else
+        semsg("esp_wifi_connect(): %s", err);
+}
+
+/* esp_wifi_disconnect(): leave the network and forget it. */
+void f_esp_wifi_disconnect(typval_T *argvars UNUSED, typval_T *rettv UNUSED)
+{
+    char err[128];
+    if (esp_net_wifi_disconnect(err, sizeof err) != 0)
+        semsg("esp_wifi_disconnect(): %s", err);
 }
 
 static bool progress(void *ctx UNUSED, uint64_t bytes UNUSED)

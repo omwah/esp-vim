@@ -24,6 +24,9 @@ void f_esp_fs_roots(typval_T *argvars, typval_T *rettv);
 /* api/esp_api_net.c (over components/esp_net) */
 void f_esp_http_get(typval_T *argvars, typval_T *rettv);
 void f_esp_net_status(typval_T *argvars, typval_T *rettv);
+void f_esp_wifi_connect(typval_T *argvars, typval_T *rettv);
+void f_esp_wifi_disconnect(typval_T *argvars, typval_T *rettv);
+void f_esp_wifi_scan(typval_T *argvars, typval_T *rettv);
 
 /* api/esp_api_ssh.c (over components/esp_ssh) */
 void f_esp_ssh_get(typval_T *argvars, typval_T *rettv);
@@ -35,6 +38,15 @@ void f_esp_ssh_put(typval_T *argvars, typval_T *rettv);
 void f_esp_ssh_remove(typval_T *argvars, typval_T *rettv);
 void f_esp_ssh_rename(typval_T *argvars, typval_T *rettv);
 void f_esp_ssh_trust(typval_T *argvars, typval_T *rettv);
+
+/* api/esp_api_web.c (over components/esp_web) */
+void f_esp_settings(typval_T *argvars, typval_T *rettv);
+void f_esp_web_info(typval_T *argvars, typval_T *rettv);
+void f_esp_web_passwd(typval_T *argvars, typval_T *rettv);
+void f_esp_web_publish(typval_T *argvars, typval_T *rettv);
+void f_esp_web_settings_changed(typval_T *argvars, typval_T *rettv);
+void f_esp_web_start(typval_T *argvars, typval_T *rettv);
+void f_esp_web_stop(typval_T *argvars, typval_T *rettv);
 
 /* api/esp_api_sys.c */
 void f_esp_heap(typval_T *argvars, typval_T *rettv);
@@ -48,7 +60,17 @@ void f_esp_nvs_get(typval_T *argvars, typval_T *rettv);
 void f_esp_nvs_list(typval_T *argvars, typval_T *rettv);
 void f_esp_nvs_set(typval_T *argvars, typval_T *rettv);
 
+/* api/esp_api_hw.c */
+void f_esp_adc_read(typval_T *argvars, typval_T *rettv);
+void f_esp_i2c_scan(typval_T *argvars, typval_T *rettv);
+void f_esp_sensors(typval_T *argvars, typval_T *rettv);
+void f_esp_serial_close(typval_T *argvars, typval_T *rettv);
+void f_esp_serial_open(typval_T *argvars, typval_T *rettv);
+void f_esp_serial_read(typval_T *argvars, typval_T *rettv);
+void f_esp_serial_write(typval_T *argvars, typval_T *rettv);
+
 /* api/esp_api_gpio.c */
+bool esp_api_gpio_usable(int pin);      /* also used by esp_api_hw.c */
 void f_esp_gpio_mode(typval_T *argvars, typval_T *rettv);
 void f_esp_gpio_pins(typval_T *argvars, typval_T *rettv);
 void f_esp_gpio_read(typval_T *argvars, typval_T *rettv);

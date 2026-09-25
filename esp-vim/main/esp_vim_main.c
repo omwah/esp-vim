@@ -22,6 +22,7 @@
 #include "esp_fs.h"
 #include "esp_net.h"
 #include "esp_ssh.h"
+#include "esp_web.h"
 #include "esp_heap_caps.h"
 #include "driver/uart.h"
 #include "driver/uart_vfs.h"
@@ -66,10 +67,10 @@ static void console_init(void)
     uart_vfs_dev_port_set_tx_line_endings(UART_NUM_0, ESP_LINE_ENDINGS_LF);
 }
 
-static void storage_init(void)
+/* NVS: :EspNvs, WiFi credentials, keys and settings. A full or newer-format
+ * partition is erased, ESP-IDF's documented recovery. */
+static void nvs_init(void)
 {
-    /* NVS: :EspNvs, and later WiFi credentials, keys and settings. A full or
-     * newer-format partition is erased, ESP-IDF's documented recovery. */
     esp_err_t n = nvs_flash_init();
     if (n == ESP_ERR_NVS_NO_FREE_PAGES || n == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_LOGW(TAG, "nvs: %s; erasing the partition", esp_err_to_name(n));
@@ -78,6 +79,10 @@ static void storage_init(void)
     }
     if (n != ESP_OK)
         ESP_LOGE(TAG, "nvs init failed: %s -- :EspNvs will not work", esp_err_to_name(n));
+}
+
+static void storage_init(void)
+{
 
     ESP_ERROR_CHECK(esp_fs_init());     /* before any task can use it */
 
@@ -296,11 +301,20 @@ void app_main(void)
         budget = ESP_VIM_HEAP_MAX;
     ESP_ERROR_CHECK(esp_vim_session_init(&s_session, budget));
 
+    /*
+     * Order matters. NVS before the network (WiFi keeps its calibration and
+     * credentials there); the network before the console UART driver, which
+     * on the ESP32-S3 otherwise left WiFi's interrupt unhandled ("Unhandled
+     * interrupt 12", in a loop) in the emulator. The network returns at once;
+     * DHCP carries on in the background.
+     */
+    nvs_init();
+    esp_net_init();
     console_init();
     storage_init();
     environment_init();
-    esp_net_init();             /* returns at once; DHCP carries on in the background */
     esp_ssh_init();
+    esp_web_init();
 
     /*
      * app_main's task becomes the session supervisor: start a Vim session,
@@ -313,14 +327,26 @@ void app_main(void)
      * yet established -- re-test unpinned on real silicon (docs/PLAN.md Phase 9).
      */
     s_supervisor = xTaskGetCurrentTaskHandle();
+    /*
+     * The Vim task's stack is reserved at link time, not taken from the heap
+     * at the first session: with WiFi up, the ESP32-S3's internal RAM no longer
+     * has 64 KB in one piece, and "cannot create the Vim task" rebooted the
+     * device in a loop. Every session reuses the same stack and TCB, so the
+     * previous task must be fully deleted first.
+     */
+    static StackType_t vim_stack[ESP_VIM_TASK_STACK];
+    static StaticTask_t vim_tcb;
     for (unsigned session = 1;; session++) {
-        if (xTaskCreatePinnedToCore(vim_task, "vim", ESP_VIM_TASK_STACK,
-                                    (void *)(uintptr_t)session, 5, &g_vim_task, 0) != pdPASS) {
+        g_vim_task = xTaskCreateStaticPinnedToCore(vim_task, "vim", ESP_VIM_TASK_STACK,
+                                                   (void *)(uintptr_t)session, 5,
+                                                   vim_stack, &vim_tcb, 0);
+        if (g_vim_task == NULL) {
             ESP_LOGE(TAG, "cannot create the Vim task");
             esp_restart();
         }
         ulTaskNotifyTake(pdTRUE, portMAX_DELAY);   /* until Vim exits */
-        vTaskDelay(1);                             /* let the idle task reclaim its stack */
+        while (eTaskGetState(g_vim_task) != eDeleted)
+            vTaskDelay(1);                         /* its stack is about to be reused */
         between_sessions();
     }
 }

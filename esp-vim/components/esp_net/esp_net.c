@@ -24,6 +24,9 @@
 #if CONFIG_ESP_VIM_NET_ETH
 #include "esp_eth.h"
 #endif
+#if CONFIG_ESP_VIM_NET_WIFI
+#include "esp_wifi.h"
+#endif
 
 static const char *TAG = "esp_net";
 static esp_netif_t *s_netif;
@@ -61,6 +64,126 @@ static esp_err_t start_ethernet(void)
 }
 #endif
 
+#if CONFIG_ESP_VIM_NET_WIFI
+/* Keep reconnecting unless the user disconnected on purpose. */
+static volatile bool s_wifi_want;
+
+static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
+{
+    if (id == WIFI_EVENT_STA_START) {
+        wifi_config_t c;
+        if (esp_wifi_get_config(WIFI_IF_STA, &c) == ESP_OK && c.sta.ssid[0]) {
+            s_wifi_want = true;             /* a network was stored: rejoin it */
+            esp_wifi_connect();
+        }
+    } else if (id == WIFI_EVENT_STA_DISCONNECTED && s_wifi_want) {
+        esp_wifi_connect();
+    }
+}
+
+static esp_err_t start_wifi(void)
+{
+    s_netif = esp_netif_create_default_wifi_sta();
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    esp_err_t err = esp_wifi_init(&cfg);
+    if (err == ESP_OK)
+        err = esp_wifi_set_storage(WIFI_STORAGE_FLASH);
+    if (err == ESP_OK)
+        err = esp_wifi_set_mode(WIFI_MODE_STA);
+    if (err == ESP_OK)
+        err = esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, wifi_event, NULL);
+    if (err == ESP_OK)
+        err = esp_wifi_start();
+    if (err == ESP_OK)
+        s_iface = "wifi";
+    return err;
+}
+
+static const char *auth_name(wifi_auth_mode_t m)
+{
+    switch (m) {
+    case WIFI_AUTH_OPEN:            return "open";
+    case WIFI_AUTH_WEP:             return "wep";
+    case WIFI_AUTH_WPA_PSK:         return "wpa";
+    case WIFI_AUTH_WPA2_PSK:        return "wpa2";
+    case WIFI_AUTH_WPA_WPA2_PSK:    return "wpa/wpa2";
+    case WIFI_AUTH_WPA3_PSK:        return "wpa3";
+    case WIFI_AUTH_WPA2_WPA3_PSK:   return "wpa2/wpa3";
+    case WIFI_AUTH_WPA2_ENTERPRISE: return "enterprise";
+    default:                        return "other";
+    }
+}
+
+int esp_net_wifi_scan(esp_net_ap_cb cb, void *ctx, char *err, size_t errlen)
+{
+    esp_err_t e = esp_wifi_scan_start(NULL, true);
+    if (e != ESP_OK)
+        return snprintf(err, errlen, "scan: %s", esp_err_to_name(e)), -1;
+    uint16_t n = 0;
+    esp_wifi_scan_get_ap_num(&n);
+    if (n > 40)
+        n = 40;
+    wifi_ap_record_t *recs = calloc(n ? n : 1, sizeof *recs);
+    if (recs == NULL) {
+        esp_wifi_clear_ap_list();
+        return snprintf(err, errlen, "out of memory"), -1;
+    }
+    esp_wifi_scan_get_ap_records(&n, recs);
+    for (uint16_t i = 0; i < n; i++) {
+        esp_net_ap_t ap = { .rssi = recs[i].rssi, .channel = recs[i].primary,
+                            .auth = auth_name(recs[i].authmode) };
+        snprintf(ap.ssid, sizeof ap.ssid, "%s", (const char *)recs[i].ssid);
+        if (!cb(ctx, &ap))
+            break;
+    }
+    free(recs);
+    return 0;
+}
+
+int esp_net_wifi_connect(const char *ssid, const char *password, char *err, size_t errlen)
+{
+    if (ssid == NULL || !*ssid || strlen(ssid) > 32)
+        return snprintf(err, errlen, "the network name must be 1 to 32 characters"), -1;
+    if (password && *password && (strlen(password) < 8 || strlen(password) > 63))
+        return snprintf(err, errlen, "a WPA password is 8 to 63 characters"), -1;
+    wifi_config_t c = {0};
+    memcpy(c.sta.ssid, ssid, strlen(ssid));
+    if (password)
+        memcpy(c.sta.password, password, strlen(password));
+    c.sta.threshold.authmode = password && *password ? WIFI_AUTH_WEP : WIFI_AUTH_OPEN;
+    s_wifi_want = false;
+    esp_wifi_disconnect();
+    esp_err_t e = esp_wifi_set_config(WIFI_IF_STA, &c);      /* stored: WIFI_STORAGE_FLASH */
+    if (e == ESP_OK) {
+        s_wifi_want = true;
+        e = esp_wifi_connect();
+    }
+    return e == ESP_OK ? 0 : (snprintf(err, errlen, "connect: %s", esp_err_to_name(e)), -1);
+}
+
+int esp_net_wifi_disconnect(char *err, size_t errlen)
+{
+    s_wifi_want = false;
+    wifi_config_t c = {0};
+    esp_wifi_disconnect();
+    esp_wifi_set_config(WIFI_IF_STA, &c);                     /* forget it */
+    return 0;
+}
+#else
+int esp_net_wifi_scan(esp_net_ap_cb cb, void *ctx, char *err, size_t errlen)
+{
+    return snprintf(err, errlen, "this build has no WiFi"), -1;
+}
+int esp_net_wifi_connect(const char *ssid, const char *password, char *err, size_t errlen)
+{
+    return snprintf(err, errlen, "this build has no WiFi"), -1;
+}
+int esp_net_wifi_disconnect(char *err, size_t errlen)
+{
+    return snprintf(err, errlen, "this build has no WiFi"), -1;
+}
+#endif
+
 esp_err_t esp_net_init(void)
 {
     esp_err_t err = esp_netif_init();
@@ -74,6 +197,10 @@ esp_err_t esp_net_init(void)
     err = start_ethernet();
     if (err != ESP_OK)
         ESP_LOGW(TAG, "ethernet: %s -- no network", esp_err_to_name(err));
+#elif CONFIG_ESP_VIM_NET_WIFI
+    err = start_wifi();
+    if (err != ESP_OK)
+        ESP_LOGW(TAG, "wifi: %s -- no network", esp_err_to_name(err));
 #endif
     return err;
 }
@@ -100,6 +227,16 @@ void esp_net_get_status(esp_net_status_t *st)
         ip4(st->netmask, sizeof st->netmask, &ip.netmask);
         ip4(st->gw, sizeof st->gw, &ip.gw);
     }
+#if CONFIG_ESP_VIM_NET_WIFI
+    wifi_config_t c;
+    if (esp_wifi_get_config(WIFI_IF_STA, &c) == ESP_OK)
+        snprintf(st->ssid, sizeof st->ssid, "%s", (const char *)c.sta.ssid);
+    wifi_ap_record_t ap;
+    if (esp_wifi_sta_get_ap_info(&ap) == ESP_OK)
+        st->rssi = ap.rssi;
+    else
+        st->up = false;                     /* an address kept after a drop */
+#endif
     esp_netif_dns_info_t dns;
     if (esp_netif_get_dns_info(s_netif, ESP_NETIF_DNS_MAIN, &dns) == ESP_OK
             && dns.ip.type == ESP_IPADDR_TYPE_V4 && dns.ip.u_addr.ip4.addr != 0)

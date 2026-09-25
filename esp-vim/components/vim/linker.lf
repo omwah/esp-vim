@@ -8,9 +8,30 @@
 # ESP-IDF's data/bss schemes cover .data+ and .bss+ only. On RISC-V the
 # component is built with -msmall-data-limit=0 (CMakeLists.txt) so nothing is
 # placed in .sdata/.sbss, which these brackets would miss.
+#
+# On the ESP32-S3 the zero-initialised part goes to PSRAM (ESP_VIM_BSS_IN_PSRAM):
+# internal RAM there cannot hold Vim's 40 KB of .bss, a 64 KB task stack and
+# WiFi. Only the Vim task (and the file wrappers, never from an interrupt or
+# with the cache off) touch it, so external memory is safe.
+# The default scheme, with Vim's zero-initialised data in external RAM. It
+# retargets the standard "bss" fragment (not a new one), so the generator also
+# excludes libvim.a from the internal .bss catch-all.
+[scheme:vim_psram_bss]
+entries:
+    text -> flash_text
+    rodata -> flash_rodata
+    data -> dram0_data
+    bss -> extern_ram
+    common -> extern_ram
+
 [mapping:vim]
 archive: libvim.a
 entries:
-    * (default);
-        data -> dram0_data SURROUND(vim_data),
-        bss -> dram0_bss SURROUND(vim_bss)
+    if ESP_VIM_BSS_IN_PSRAM = y:
+        * (vim_psram_bss);
+            data -> dram0_data SURROUND(vim_data),
+            bss -> extern_ram SURROUND(vim_bss)
+    else:
+        * (default);
+            data -> dram0_data SURROUND(vim_data),
+            bss -> dram0_bss SURROUND(vim_bss)

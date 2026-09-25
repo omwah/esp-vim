@@ -502,3 +502,21 @@ far cheaper than RSA on these chips.
 Host keys are trust-on-first-use with a fingerprint the user can check. A changed key is
 never accepted by the software; the user must delete the old line. SSH exists here to
 move files and, later, to push git. Silently accepting a changed key would defeat it.
+
+## 2026-09-24 — Web status is polled, not pushed
+
+The plan chose Server-Sent Events for the live status. `esp_http_server` serves requests
+on one task, so a held-open event stream would stall every other request, or need an
+async-handler worker task for one feature. A once-a-second poll of `/api/status` is
+simpler, survives reconnects for free, and costs nothing at this rate. The Vim side
+publishes only on change.
+
+## 2026-09-25 — Vim's stack is static; on the S3 its .bss is in PSRAM
+
+WiFi on the ESP32-S3 left too little contiguous internal RAM to create Vim's 64 KB task
+stack at run time. So the stack is reserved at link time, and to make that fit, Vim's
+40 KB `.bss` moves to PSRAM on the S3 only (the P4 has room). A PSRAM *stack* was the
+alternative and was rejected: a task whose stack is in PSRAM can't do flash operations,
+and Vim writes files. `.bss` in PSRAM is safe because only task-level code touches it,
+never interrupts or cache-off paths. It costs some speed on the S3's hottest globals,
+which hasn't been measured on hardware yet.

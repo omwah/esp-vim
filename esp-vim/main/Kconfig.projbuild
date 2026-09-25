@@ -1,0 +1,37 @@
+menu "esp-vim board"
+
+    config ESP_VIM_BSS_IN_PSRAM
+        bool "Put Vim's zero-initialised data (.bss) in PSRAM"
+        depends on SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY
+        default y if IDF_TARGET_ESP32S3
+        help
+            Frees about 40 KB of internal RAM, which the ESP32-S3 needs for
+            WiFi alongside Vim's task stack. The P4 has room to spare.
+
+    config ESP_VIM_SERIAL_TX
+        int "Default TX pin for :EspSerial"
+        default 22 if IDF_TARGET_ESP32P4
+        default 17
+        help
+            UART1's TX pin when :EspSerial is not given one. Any free GPIO;
+            pins the system uses are refused at run time.
+
+    config ESP_VIM_SERIAL_RX
+        int "Default RX pin for :EspSerial"
+        default 23 if IDF_TARGET_ESP32P4
+        default 18
+
+    config ESP_VIM_I2C_SDA
+        int "Default SDA pin for :EspI2cScan and :EspSensors"
+        default 31 if IDF_TARGET_ESP32P4
+        default 8
+        help
+            On the M5Stack Tab5 GPIO31/32 is the internal I2C bus (touch,
+            IMU, IO expanders); Ext.Port1 (the keyboard) is GPIO0/1.
+
+    config ESP_VIM_I2C_SCL
+        int "Default SCL pin for :EspI2cScan and :EspSensors"
+        default 32 if IDF_TARGET_ESP32P4
+        default 9
+
+endmenu
