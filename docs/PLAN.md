@@ -1294,8 +1294,10 @@ What it changes in the plan:
   - **Internal RAM:** 32 KB free at boot without the display; 24.7 KB with it. Most of
     the savings came from the task stack in PSRAM, chunked painting, and the SPI ISR out
     of IRAM (27 KB at first).
-  - Known bug: in this orientation the text sits a few pixels left of the glass, so
-    column 0 partly wraps to the right edge. Being measured; the fix is an X offset.
+  - The panel's memory survives a software reset, so the display is cleared in full at
+    start. Otherwise the 2 px the 318 px grid doesn't cover kept an earlier firmware's
+    pixels, which looked like column 0 wrapping to the right edge. The grid is centred,
+    with a 1 px margin each side.
   - Still to do: the web server's RAM headroom on this board (it needs WiFi to test),
     output speed with no serial terminal attached, touch, backlight control, and
     `:Esp` views at 53 columns.

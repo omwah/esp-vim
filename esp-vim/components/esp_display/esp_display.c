@@ -40,6 +40,9 @@ static const char *TAG = "esp_display";
 #define FONT_H      12
 #define STREAM_SIZE (8 * 1024)
 #define CHUNK       16              /* cells per SPI transfer: 2.3 KB of line buffer */
+/* The grid, centred: 53 cells of 6 px leave 320 - 318 = 2 px. */
+#define X0          ((CONFIG_ESP_VIM_DISP_WIDTH - COLS * FONT_W) / 2)
+#define Y0          ((CONFIG_ESP_VIM_DISP_HEIGHT - ROWS * FONT_H) / 2)
 
 /* Kconfig bools as 0/1. */
 #ifdef CONFIG_ESP_VIM_DISP_INVERT
@@ -182,8 +185,8 @@ static void paint_cells(int row, int c0, int c1)
                 px[y * w + x] = (bits & (0x80 >> x)) ? fg : bg;
         }
     }
-    esp_lcd_panel_draw_bitmap(s_panel, c0 * FONT_W, row * FONT_H,
-                              c1 * FONT_W, (row + 1) * FONT_H, s_line);
+    esp_lcd_panel_draw_bitmap(s_panel, X0 + c0 * FONT_W, Y0 + row * FONT_H,
+                              X0 + c1 * FONT_W, Y0 + (row + 1) * FONT_H, s_line);
     xSemaphoreTake(s_flushed, portMAX_DELAY);   /* the buffer is reused next */
 }
 
@@ -279,6 +282,20 @@ static esp_err_t panel_init(void)
     return e;
 }
 
+/* Black out the whole panel, margins included. Its memory survives a software
+ * reset, so a margin the grid never paints would otherwise keep whatever the
+ * previous firmware left there. */
+static void clear_panel(void)
+{
+    const int lines = CHUNK * FONT_W * FONT_H / CONFIG_ESP_VIM_DISP_WIDTH;
+    memset(s_line, 0, CHUNK * FONT_W * FONT_H * sizeof(uint16_t));
+    for (int y = 0; y < CONFIG_ESP_VIM_DISP_HEIGHT; y += lines) {
+        int y1 = y + lines < CONFIG_ESP_VIM_DISP_HEIGHT ? y + lines : CONFIG_ESP_VIM_DISP_HEIGHT;
+        esp_lcd_panel_draw_bitmap(s_panel, 0, y, CONFIG_ESP_VIM_DISP_WIDTH, y1, s_line);
+        xSemaphoreTake(s_flushed, portMAX_DELAY);
+    }
+}
+
 static void backlight_on(void)
 {
     if (CONFIG_ESP_VIM_DISP_BACKLIGHT < 0)
@@ -308,6 +325,8 @@ esp_err_t esp_display_init(void)
         ESP_LOGE(TAG, "panel: %s", esp_err_to_name(e));
         return e;
     }
+
+    clear_panel();
 
     s_vt = vterm_new_with_allocator(ROWS, COLS, &s_alloc, NULL);
     if (s_vt == NULL)
