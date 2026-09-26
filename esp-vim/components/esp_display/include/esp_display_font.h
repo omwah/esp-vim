@@ -5,10 +5,12 @@
 #include <stdint.h>
 
 typedef struct {
-    uint8_t width, height;          /* cell size in pixels; width <= 8 */
+    uint8_t width, height;          /* cell size in pixels; width <= 16 */
+    uint8_t bytes_per_row;          /* 1 (width <= 8) or 2, big-endian */
     uint16_t count;
     const uint32_t *codepoints;     /* sorted */
-    const uint8_t *bitmaps;         /* count * height rows, MSB leftmost */
+    const uint8_t *bitmaps;         /* count * height * bytes_per_row, MSB leftmost */
 } esp_display_font_t;
 
-extern const esp_display_font_t esp_display_font;
+extern const esp_display_font_t esp_display_font;       /* the terminal's, 6x12 */
+extern const esp_display_font_t esp_display_font_big;   /* the overlay's, 12x24 */

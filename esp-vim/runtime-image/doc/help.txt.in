@@ -262,6 +262,14 @@ go to Vim just as the console's do, and both work at once.
 :EspBtKeyboard forget
 		Disconnect the keyboard and forget it.
 
+On boards with a touch screen, pairing needs no keyboard at all.  When there is
+no Bluetooth keyboard -- 10 seconds after starting, or 15 seconds after it went
+away -- a pairing screen comes up by itself, listing the keyboards in range.
+Tap yours, then "Pair".  "Not now" puts it away until a keyboard has come and
+gone again, and it closes by itself as soon as a keyboard connects: pressing a
+key wakes a paired one.  Keys typed on the serial console don't count, since
+nobody may be there.
+
 
 REMOTE FILES: SCP AND SFTP				*esp-ssh*
 

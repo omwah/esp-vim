@@ -27,6 +27,7 @@
 #include "esp_ble.h"
 #include "esp_kbd.h"
 #include "esp_touch.h"
+#include "esp_pairui.h"
 #include "esp_heap_caps.h"
 #include "driver/uart.h"
 #include "driver/uart_vfs.h"
@@ -408,6 +409,7 @@ void app_main(void)
     esp_ssh_init();
     esp_web_init();
     esp_ble_kbd_boot();     /* a bonded Bluetooth keyboard reconnects by itself */
+    esp_pairui_start();     /* no keyboard: offer to pair one by touch */
 
     /*
      * app_main's task becomes the session supervisor: start a Vim session,

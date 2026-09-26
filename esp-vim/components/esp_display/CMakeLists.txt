@@ -4,6 +4,8 @@
 set(VTERM "${CMAKE_CURRENT_LIST_DIR}/../../../build-deps/vim/src/libvterm")
 set(FONT_BDF "${CMAKE_CURRENT_LIST_DIR}/../../../build-deps/spleen/spleen-6x12.bdf")
 set(FONT_C "${CMAKE_CURRENT_BINARY_DIR}/esp_display_font.c")
+set(FONT_BIG_BDF "${CMAKE_CURRENT_LIST_DIR}/../../../build-deps/spleen/spleen-12x24.bdf")
+set(FONT_BIG_C "${CMAKE_CURRENT_BINARY_DIR}/esp_display_font_big.c")
 
 if(CONFIG_ESP_VIM_DISPLAY)
     if(NOT EXISTS "${FONT_BDF}")
@@ -23,7 +25,13 @@ if(CONFIG_ESP_VIM_DISPLAY)
         COMMAND ${python} "${CMAKE_CURRENT_LIST_DIR}/../../../scripts/bdf2c.py" "${FONT_BDF}" "${FONT_C}"
         DEPENDS "${FONT_BDF}" "${CMAKE_CURRENT_LIST_DIR}/../../../scripts/bdf2c.py"
         VERBATIM)
-    target_sources(${COMPONENT_LIB} PRIVATE "${FONT_C}")
+    # The overlay's (the Bluetooth pairing screen): big enough to tap.
+    add_custom_command(
+        OUTPUT "${FONT_BIG_C}"
+        COMMAND ${python} "${CMAKE_CURRENT_LIST_DIR}/../../../scripts/bdf2c.py" "${FONT_BIG_BDF}" "${FONT_BIG_C}" esp_display_font_big
+        DEPENDS "${FONT_BIG_BDF}" "${CMAKE_CURRENT_LIST_DIR}/../../../scripts/bdf2c.py"
+        VERBATIM)
+    target_sources(${COMPONENT_LIB} PRIVATE "${FONT_C}" "${FONT_BIG_C}")
     # As Vim's Makefile builds it, but with libvterm's own character-width
     # tables rather than Vim's: the display task must not call into Vim.
     target_compile_definitions(${COMPONENT_LIB} PRIVATE INLINE=)

@@ -87,6 +87,9 @@ static VTermScreen *s_screen;
 static VTermPos s_cursor;
 static bool s_cursor_visible = true;
 static volatile int s_mouse;            /* the terminal's mouse mode: VTERM_PROP_MOUSE_* */
+static SemaphoreHandle_t s_panel_lock;  /* one drawer at a time: terminal or overlay */
+static volatile bool s_overlay;         /* the overlay has the panel */
+static volatile bool s_repaint;         /* repaint the whole terminal (after the overlay) */
 static int s_dirty_lo[ROWS], s_dirty_hi[ROWS];  /* damaged columns [lo, hi) per row */
 
 /* -------------------------------------------------------------- damage -- */
@@ -135,19 +138,24 @@ static const VTermScreenCallbacks s_callbacks = {
 
 /* ------------------------------------------------------------ painting -- */
 
-static const uint8_t *glyph(uint32_t cp)
+static const uint8_t *glyph_in(const esp_display_font_t *f, uint32_t cp)
 {
-    int lo = 0, hi = FONT.count - 1;
+    int lo = 0, hi = f->count - 1;
     while (lo <= hi) {
         int mid = (lo + hi) / 2;
-        if (FONT.codepoints[mid] == cp)
-            return FONT.bitmaps + mid * FONT_H;
-        if (FONT.codepoints[mid] < cp)
+        if (f->codepoints[mid] == cp)
+            return f->bitmaps + mid * f->height * f->bytes_per_row;
+        if (f->codepoints[mid] < cp)
             lo = mid + 1;
         else
             hi = mid - 1;
     }
-    return cp == '?' ? NULL : glyph('?');
+    return cp == '?' ? NULL : glyph_in(f, '?');
+}
+
+static const uint8_t *glyph(uint32_t cp)
+{
+    return glyph_in(&FONT, cp);
 }
 
 /* RGB565, byte-swapped: the panel takes the high byte first. */
@@ -214,17 +222,119 @@ static void paint_damage(void)
     }
 }
 
+static void clear_panel(void);
+
 static void display_task(void *arg)
 {
     static char buf[512];
     for (;;) {
-        size_t n = xStreamBufferReceive(s_stream, buf, sizeof buf, portMAX_DELAY);
-        vterm_input_write(s_vt, buf, n);
+        /* Wake at least every 100 ms: the overlay may have handed the panel back. */
+        size_t n = xStreamBufferReceive(s_stream, buf, sizeof buf, pdMS_TO_TICKS(100));
+        if (n)
+            vterm_input_write(s_vt, buf, n);
         /* Take whatever else is already waiting, so a burst is painted once. */
         while ((n = xStreamBufferReceive(s_stream, buf, sizeof buf, 0)) > 0)
             vterm_input_write(s_vt, buf, n);
+        if (s_overlay)
+            continue;                   /* libvterm keeps the screen; painting waits */
+        xSemaphoreTake(s_panel_lock, portMAX_DELAY);
+        if (s_repaint) {
+            s_repaint = false;
+            clear_panel();
+            for (int row = 0; row < ROWS; row++)
+                mark(row, 0, COLS);
+        }
         paint_damage();
+        xSemaphoreGive(s_panel_lock);
     }
+}
+
+/* ----------------------------------------------------------------- overlay -- */
+
+#define BIG         esp_display_font_big
+#define OV_W        12                  /* checked against the font at init */
+#define OV_H        24
+#define OV_COLS     (CONFIG_ESP_VIM_DISP_WIDTH / OV_W)
+#define OV_ROWS     (CONFIG_ESP_VIM_DISP_HEIGHT / OV_H)
+#define OV_X0       ((CONFIG_ESP_VIM_DISP_WIDTH - OV_COLS * OV_W) / 2)
+#define OV_Y0       ((CONFIG_ESP_VIM_DISP_HEIGHT - OV_ROWS * OV_H) / 2)
+#define OV_CHUNK    (CHUNK * FONT_W * FONT_H / (OV_W * OV_H))    /* cells per transfer */
+
+static uint16_t swap565(uint8_t r, uint8_t g, uint8_t b)
+{
+    uint16_t v = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
+    return (uint16_t)(v >> 8 | v << 8);
+}
+
+/* Up to OV_CHUNK cells of text at (row, col), in one transfer. Panel lock held. */
+static void overlay_cells(int row, int col, const char *text, int n, bool inverse)
+{
+    uint16_t fg = swap565(0xE5, 0xE5, 0xE5), bg = swap565(0x00, 0x00, 0x00);
+    if (inverse) {
+        uint16_t t = fg; fg = bg; bg = t;
+    }
+    int w = n * OV_W;
+    for (int i = 0; i < n; i++) {
+        const uint8_t *g = text[i] == ' ' ? NULL : glyph_in(&BIG, (unsigned char)text[i]);
+        uint16_t *px = s_line + i * OV_W;
+        for (int y = 0; y < OV_H; y++) {
+            unsigned bits = g ? (g[2 * y] << 8 | g[2 * y + 1]) : 0;
+            for (int x = 0; x < OV_W; x++)
+                px[y * w + x] = (bits & (0x8000 >> x)) ? fg : bg;
+        }
+    }
+    esp_lcd_panel_draw_bitmap(s_panel, OV_X0 + col * OV_W, OV_Y0 + row * OV_H,
+                              OV_X0 + (col + n) * OV_W, OV_Y0 + (row + 1) * OV_H, s_line);
+    xSemaphoreTake(s_flushed, portMAX_DELAY);
+}
+
+bool esp_display_overlay_begin(int *rows, int *cols)
+{
+    if (!s_active)
+        return false;
+    xSemaphoreTake(s_panel_lock, portMAX_DELAY);
+    s_overlay = true;
+    clear_panel();
+    xSemaphoreGive(s_panel_lock);
+    *rows = OV_ROWS;
+    *cols = OV_COLS;
+    return true;
+}
+
+void esp_display_overlay_text(int row, int col, const char *text, bool inverse)
+{
+    if (!s_overlay || row < 0 || row >= OV_ROWS)
+        return;
+    int n = strlen(text);
+    if (col + n > OV_COLS)
+        n = OV_COLS - col;
+    xSemaphoreTake(s_panel_lock, portMAX_DELAY);
+    for (int i = 0; i < n; i += OV_CHUNK)
+        overlay_cells(row, col + i, text + i, n - i < OV_CHUNK ? n - i : OV_CHUNK, inverse);
+    xSemaphoreGive(s_panel_lock);
+}
+
+void esp_display_overlay_clear(void)
+{
+    if (!s_overlay)
+        return;
+    xSemaphoreTake(s_panel_lock, portMAX_DELAY);
+    clear_panel();
+    xSemaphoreGive(s_panel_lock);
+}
+
+void esp_display_overlay_cell_at(int x, int y, int *row, int *col)
+{
+    *row = (y - OV_Y0) / OV_H;
+    *col = (x - OV_X0) / OV_W;
+}
+
+void esp_display_overlay_end(void)
+{
+    if (!s_overlay)
+        return;
+    s_repaint = true;                   /* the display task repaints the terminal */
+    s_overlay = false;
 }
 
 /* ---------------------------------------------------------- touch-as-mouse -- */
@@ -398,12 +508,17 @@ esp_err_t esp_display_init(void)
         ESP_LOGE(TAG, "font is %dx%d, expected %dx%d", FONT.width, FONT.height, FONT_W, FONT_H);
         return ESP_ERR_INVALID_SIZE;
     }
+    if (BIG.width != OV_W || BIG.height != OV_H || BIG.bytes_per_row != 2) {
+        ESP_LOGE(TAG, "overlay font is %dx%d, expected %dx%d", BIG.width, BIG.height, OV_W, OV_H);
+        return ESP_ERR_INVALID_SIZE;
+    }
     s_flushed = xSemaphoreCreateBinary();
     s_write_lock = xSemaphoreCreateMutex();
+    s_panel_lock = xSemaphoreCreateMutex();
     s_stream = xStreamBufferCreateWithCaps(STREAM_SIZE, 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     s_line = heap_caps_malloc(CHUNK * FONT_W * FONT_H * sizeof(uint16_t),
                               MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-    if (!s_flushed || !s_write_lock || !s_stream || !s_line)
+    if (!s_flushed || !s_write_lock || !s_panel_lock || !s_stream || !s_line)
         return ESP_ERR_NO_MEM;
 
     esp_err_t e = panel_init();

@@ -78,9 +78,12 @@ int esp_ble__start(char *err, size_t errlen)
     if (s_synced_once)
         return 0;
     if (!s_inited) {
-        /* NimBLE warns that it can't persist keys it doesn't need for
-         * scanning; warnings would land on the editor's screen. */
-        esp_log_level_set("NimBLE", ESP_LOG_ERROR);
+        /* Their logs would land in the middle of the editor's screen on the
+         * console -- e.g. a scan cancelling a background reconnect is an
+         * "error" to them. What matters is in esp_ble_kbd_status(). */
+        esp_log_level_set("NimBLE", ESP_LOG_NONE);
+        esp_log_level_set("NIMBLE_HIDH", ESP_LOG_NONE);
+        esp_log_level_set("ESP_HIDH", ESP_LOG_NONE);
         esp_err_t e = nimble_port_init();   /* also initialises the controller */
         if (e != ESP_OK)
             return snprintf(err, errlen, "Bluetooth start: %s", esp_err_to_name(e)), -1;

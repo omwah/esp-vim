@@ -44,6 +44,17 @@ void esp_display_write(const void *buf, size_t len);
  */
 void esp_display_touch(int ev, int x, int y, void *ctx);
 
+/*
+ * A full-screen overlay in a big font (12x24 cells: 26x10 on the ES3C28P), for
+ * the Bluetooth pairing screen. While it's up the terminal isn't drawn, though
+ * libvterm keeps its screen current; ending it repaints the terminal. Any task.
+ */
+bool esp_display_overlay_begin(int *rows, int *cols);   /* false without a display */
+void esp_display_overlay_text(int row, int col, const char *text, bool inverse);  /* ASCII */
+void esp_display_overlay_clear(void);
+void esp_display_overlay_cell_at(int x, int y, int *row, int *col);
+void esp_display_overlay_end(void);
+
 #ifdef __cplusplus
 }
 #endif

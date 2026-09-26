@@ -21,7 +21,7 @@
 | 9 — Tab5 hardware over UART | not started |
 | 10 — Tab5 display console | not started |
 | 10b — ESP32-S3 CYD display console | **in progress, pulled forward** (2026-09-25): Vim on the Hosyond ES3C28P's panel; see Phase 10b |
-| 11 — Bluetooth keyboards (late-stage goal) | **in progress, pulled forward** (2026-09-25): a BLE keyboard pairs by command and types into Vim on the ES3C28P; see Phase 11 |
+| 11 — Bluetooth keyboards (late-stage goal) | **in progress, pulled forward** (2026-09-25): on the ES3C28P a BLE keyboard pairs by command or by touch (the overlay) and types into Vim; see Phase 11 |
 
 Toolchain: ESP-IDF **v5.5.5**, riscv32-esp-elf 14.2.0, emulator esp-emu 0.43.0.
 
@@ -1125,9 +1125,28 @@ after a restart. The touch pairing overlay is still to come.
   - the test keyboard's second keyboard report (ID 2, 20 bytes: N-key rollover) isn't decoded;
     only the 8-byte boot-format one is;
   - modified cursor/function keys (xterm's `CSI 1;5A` forms);
-  - the touch pairing overlay;
+  - the overlay's long-press to forget a keyboard, and a "Paired: <name>" notice in Vim;
   - several bonded keyboards;
   - Tab5 (esp-hosted HCI).
+
+### The touch overlay, first version (2026-09-25)
+
+`components/esp_pairui`, on the ES3C28P. It keeps the decisions below, with one
+change: it is a **text overlay drawn by the display console** in Spleen 12x24 (26x10
+big cells), not LVGL. LVGL would cost flash and internal RAM the S3 can't spare, and
+the overlay is a list and two buttons. `esp_display` hands the panel over (the
+terminal stops drawing, libvterm keeps its screen, and it repaints on return), and
+touches go to the overlay while it's up.
+- It appears 10 s after boot with no keyboard, or 15 s after the keyboard went away,
+  and closes when one connects.
+- It scans in 3 s windows every 7 s, leaving gaps in which a bonded keyboard can
+  reconnect (waking one closes the overlay).
+- Tap a keyboard, then "Pair" (Just Works); "Not now" dismisses it until a keyboard
+  has come and gone.
+- Tested on the board: shown at boot and closed by waking the bonded keyboard; after
+  forgetting, paired by touch alone, and typing worked.
+- Not yet: long-press to forget; marking bonded keyboards in the list; a
+  "Paired: <name>" notice in Vim.
 
 ### Stack
 
