@@ -1,0 +1,46 @@
+# Freenove FNK0115Q (ESP32-S3-WROOM-1 N16R8, 5.0" 800x480 IPS RGB panel + GT911):
+# layered on sdkconfig.defaults and sdkconfig.defaults.esp32s3 by
+# scripts/vim-build.sh fnk0115. Pin map: Freenove's sketches and schematic for
+# the board (github.com/Freenove/Freenove_ESP32_S3_Display_FNK0115).
+
+# The console stays on UART0 (GPIO43/44), which the board's CH340 bridges to
+# its USB port -- the S3 default. GPIO19/20, the S3's own USB, are the touch
+# panel's I2C bus here.
+
+# :EspI2cScan / :EspSensors default to that bus, which the board's header P3
+# also brings out (GPIO19/20, with 17/18). The S3 default, 8/9, drives the panel.
+CONFIG_ESP_VIM_I2C_SDA=19
+CONFIG_ESP_VIM_I2C_SCL=20
+
+# The console on the 5" panel (esp_display; the Kconfig RGB defaults are this
+# board's pins and timings): 100x30 cells in Spleen 8x16. The frame buffer
+# (750 KB) is in PSRAM and the LCD peripheral streams it out on its own.
+CONFIG_ESP_VIM_DISPLAY=y
+CONFIG_ESP_VIM_DISP_RGB=y
+
+# The GT911 touch panel (esp_touch; the Kconfig GT911 defaults are this
+# board's): taps, drags and swipes become mouse events in Vim.
+CONFIG_ESP_VIM_TOUCH=y
+CONFIG_ESP_VIM_TOUCH_GT911=y
+
+# The LCD peripheral must fetch 26 MB/s of frame buffer from PSRAM, which
+# shares its bus with the flash: flash in QIO rather than DIO keeps code
+# fetches off that bus for half the time. When the DMA still falls behind,
+# restarting it at every VSYNC puts the picture back in place at the next
+# frame, instead of it rolling round the screen.
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_LCD_RGB_RESTART_IN_VSYNC=y
+# The program runs from a copy in PSRAM (about 3.3 MB of it; Vim's heap, half
+# of what PSRAM is left, comes to about 2.4 MB): cache misses are then served
+# by the octal PSRAM, four times faster than the flash, and hold the shared bus
+# for a quarter of the time -- Bluetooth's controller alone, running from
+# flash, made the picture jitter. Espressif's advice for RGB panels on the S3.
+CONFIG_SPIRAM_XIP_FROM_PSRAM=y
+# That also lets the Vim task's 64 KB stack live in PSRAM (ESP_VIM_STACK_IN_PSRAM,
+# on by default then), which pays for two 10-line bounce buffers in internal RAM
+# (32 KB): the LCD streams from them, and an interrupt on core 1 refills them
+# from the frame buffer -- the DMA no longer waits on PSRAM, so drawing, which
+# the CPU does in PSRAM, can't make the picture flicker.
+CONFIG_ESP_VIM_DISP_BOUNCE_LINES=10
+# The panel won't take a pixel clock much below Freenove's 13 MHz: at 10 it
+# shows its own test pattern instead.

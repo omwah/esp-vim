@@ -8,6 +8,16 @@ menu "esp-vim board"
             Frees about 40 KB of internal RAM, which the ESP32-S3 needs for
             WiFi alongside Vim's task stack. The P4 has room to spare.
 
+    config ESP_VIM_STACK_IN_PSRAM
+        bool "Put the Vim task's stack in PSRAM"
+        depends on SPIRAM_FETCH_INSTRUCTIONS && SPIRAM_RODATA && SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY
+        default y
+        help
+            Frees its 64 KB of internal RAM. A task whose stack is in PSRAM
+            must not run while flash is written, which disables the cache in
+            front of PSRAM -- unless the program itself runs from PSRAM
+            (SPIRAM_XIP_FROM_PSRAM), when flash writes leave the cache on.
+
     config ESP_VIM_SERIAL_TX
         int "Default TX pin for :EspSerial"
         default 22 if IDF_TARGET_ESP32P4

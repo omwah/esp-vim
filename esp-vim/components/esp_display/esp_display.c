@@ -5,8 +5,9 @@
  * in practice the Vim task) only copies bytes in. The display task, pinned to
  * the other core, feeds them to libvterm, then repaints the rows libvterm
  * reports damaged: a row's damaged cells are drawn into one line buffer and
- * sent to the panel as a single SPI transfer. libvterm is only ever touched by
- * the display task.
+ * sent to the panel as a single SPI transfer -- or, on an RGB panel, copied
+ * into its frame buffer in PSRAM, which the LCD peripheral streams out by
+ * itself. libvterm is only ever touched by the display task.
  */
 
 #include "esp_display.h"
@@ -16,11 +17,15 @@
 #include <string.h>
 
 #include "driver/gpio.h"
-#include "driver/spi_master.h"
 #include "esp_heap_caps.h"
-#include "esp_lcd_ili9341.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_ops.h"
+#if CONFIG_ESP_VIM_DISP_RGB
+# include "esp_lcd_panel_rgb.h"
+#else
+# include "driver/spi_master.h"
+# include "esp_lcd_ili9341.h"
+#endif
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -40,8 +45,13 @@ static const char *TAG = "esp_display";
 #define FONT        esp_display_font
 #define COLS        (CONFIG_ESP_VIM_DISP_WIDTH / FONT_W)
 #define ROWS        (CONFIG_ESP_VIM_DISP_HEIGHT / FONT_H)
-#define FONT_W      6               /* checked against the font at init */
-#define FONT_H      12
+#if CONFIG_ESP_VIM_DISP_FONT_8X16
+# define FONT_W     8               /* checked against the font at init */
+# define FONT_H     16
+#else
+# define FONT_W     6
+# define FONT_H     12
+#endif
 #define STREAM_SIZE (8 * 1024)
 #define CHUNK       16              /* cells per SPI transfer: 2.3 KB of line buffer */
 /* The grid, centred: 53 cells of 6 px leave 320 - 318 = 2 px. */
@@ -73,6 +83,14 @@ static const char *TAG = "esp_display";
 # define DISP_ORDER LCD_RGB_ELEMENT_ORDER_BGR
 #else
 # define DISP_ORDER LCD_RGB_ELEMENT_ORDER_RGB
+#endif
+
+/* An SPI panel takes each pixel's high byte first; an RGB panel's frame buffer
+ * is plain little-endian RGB565. */
+#if CONFIG_ESP_VIM_DISP_RGB
+# define PIXEL(v)   ((uint16_t)(v))
+#else
+# define PIXEL(v)   ((uint16_t)((v) >> 8 | (v) << 8))
 #endif
 
 static esp_lcd_panel_handle_t s_panel;
@@ -158,19 +176,31 @@ static const uint8_t *glyph(uint32_t cp)
     return glyph_in(&FONT, cp);
 }
 
-/* RGB565, byte-swapped: the panel takes the high byte first. */
+/* RGB565, in the panel's byte order. */
 static uint16_t rgb565(VTermColor *c)
 {
     vterm_screen_convert_color_to_rgb(s_screen, c);
     uint16_t v = ((c->red & 0xF8) << 8) | ((c->green & 0xFC) << 3) | (c->blue >> 3);
-    return (uint16_t)(v >> 8 | v << 8);
+    return PIXEL(v);
 }
 
+#if !CONFIG_ESP_VIM_DISP_RGB
 static bool on_color_done(esp_lcd_panel_io_handle_t io, esp_lcd_panel_io_event_data_t *e, void *ctx)
 {
     BaseType_t woken = pdFALSE;
     xSemaphoreGiveFromISR(s_flushed, &woken);
     return woken == pdTRUE;
+}
+#endif
+
+/* Draw from the line buffer, and wait until it may be reused: an SPI
+ * transfer runs on, an RGB panel's copy is done on return. */
+static void draw(int x0, int y0, int x1, int y1)
+{
+    esp_lcd_panel_draw_bitmap(s_panel, x0, y0, x1, y1, s_line);
+#if !CONFIG_ESP_VIM_DISP_RGB
+    xSemaphoreTake(s_flushed, portMAX_DELAY);
+#endif
 }
 
 /* Cells [c0, c1) of a row, at most CHUNK of them, in one transfer. */
@@ -200,9 +230,7 @@ static void paint_cells(int row, int c0, int c1)
                 px[y * w + x] = (bits & (0x80 >> x)) ? fg : bg;
         }
     }
-    esp_lcd_panel_draw_bitmap(s_panel, X0 + c0 * FONT_W, Y0 + row * FONT_H,
-                              X0 + c1 * FONT_W, Y0 + (row + 1) * FONT_H, s_line);
-    xSemaphoreTake(s_flushed, portMAX_DELAY);   /* the buffer is reused next */
+    draw(X0 + c0 * FONT_W, Y0 + row * FONT_H, X0 + c1 * FONT_W, Y0 + (row + 1) * FONT_H);
 }
 
 static void paint_row(int row, int c0, int c1)
@@ -252,8 +280,13 @@ static void display_task(void *arg)
 /* ----------------------------------------------------------------- overlay -- */
 
 #define BIG         esp_display_font_big
-#define OV_W        12                  /* checked against the font at init */
-#define OV_H        24
+#if CONFIG_ESP_VIM_DISP_OVERLAY_16X32
+# define OV_W       16                  /* checked against the font at init */
+# define OV_H       32
+#else
+# define OV_W       12
+# define OV_H       24
+#endif
 #define OV_COLS     (CONFIG_ESP_VIM_DISP_WIDTH / OV_W)
 #define OV_ROWS     (CONFIG_ESP_VIM_DISP_HEIGHT / OV_H)
 #define OV_X0       ((CONFIG_ESP_VIM_DISP_WIDTH - OV_COLS * OV_W) / 2)
@@ -263,7 +296,7 @@ static void display_task(void *arg)
 static uint16_t swap565(uint8_t r, uint8_t g, uint8_t b)
 {
     uint16_t v = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
-    return (uint16_t)(v >> 8 | v << 8);
+    return PIXEL(v);
 }
 
 /* Up to OV_CHUNK cells of text at (row, col), in one transfer. Panel lock held. */
@@ -283,9 +316,7 @@ static void overlay_cells(int row, int col, const char *text, int n, bool invers
                 px[y * w + x] = (bits & (0x8000 >> x)) ? fg : bg;
         }
     }
-    esp_lcd_panel_draw_bitmap(s_panel, OV_X0 + col * OV_W, OV_Y0 + row * OV_H,
-                              OV_X0 + (col + n) * OV_W, OV_Y0 + (row + 1) * OV_H, s_line);
-    xSemaphoreTake(s_flushed, portMAX_DELAY);
+    draw(OV_X0 + col * OV_W, OV_Y0 + row * OV_H, OV_X0 + (col + n) * OV_W, OV_Y0 + (row + 1) * OV_H);
 }
 
 bool esp_display_overlay_begin(int *rows, int *cols)
@@ -430,6 +461,79 @@ static void vt_free(void *ptr, void *data)
 
 static VTermAllocatorFunctions s_alloc = { .malloc = vt_malloc, .free = vt_free };
 
+#if CONFIG_ESP_VIM_DISP_RGB
+
+static esp_err_t panel_init(void)
+{
+    esp_lcd_rgb_panel_config_t cfg = {
+        .clk_src = LCD_CLK_SRC_DEFAULT,
+        .timings = {
+            .pclk_hz = CONFIG_ESP_VIM_DISP_PCLK_HZ,
+            .h_res = CONFIG_ESP_VIM_DISP_WIDTH,
+            .v_res = CONFIG_ESP_VIM_DISP_HEIGHT,
+            .hsync_pulse_width = CONFIG_ESP_VIM_DISP_HSYNC_PULSE,
+            .hsync_back_porch = CONFIG_ESP_VIM_DISP_HSYNC_BACK,
+            .hsync_front_porch = CONFIG_ESP_VIM_DISP_HSYNC_FRONT,
+            .vsync_pulse_width = CONFIG_ESP_VIM_DISP_VSYNC_PULSE,
+            .vsync_back_porch = CONFIG_ESP_VIM_DISP_VSYNC_BACK,
+            .vsync_front_porch = CONFIG_ESP_VIM_DISP_VSYNC_FRONT,
+#if CONFIG_ESP_VIM_DISP_PCLK_ACTIVE_NEG
+            .flags.pclk_active_neg = 1,
+#endif
+        },
+        .data_width = 16,
+        .bits_per_pixel = 16,
+        .num_fbs = 1,
+        .bounce_buffer_size_px = CONFIG_ESP_VIM_DISP_BOUNCE_LINES * CONFIG_ESP_VIM_DISP_WIDTH,
+        .dma_burst_size = 64,
+        .hsync_gpio_num = CONFIG_ESP_VIM_DISP_HSYNC,
+        .vsync_gpio_num = CONFIG_ESP_VIM_DISP_VSYNC,
+        .de_gpio_num = CONFIG_ESP_VIM_DISP_DE,
+        .pclk_gpio_num = CONFIG_ESP_VIM_DISP_PCLK,
+        .disp_gpio_num = -1,
+        .flags.fb_in_psram = 1,
+    };
+    /* "D0,D1,...,D15" */
+    const char *p = CONFIG_ESP_VIM_DISP_DATA;
+    for (int i = 0; i < 16; i++) {
+        char *end;
+        cfg.data_gpio_nums[i] = (int)strtol(p, &end, 10);
+        if (end == p)
+            return ESP_ERR_INVALID_ARG;
+        p = *end == ',' ? end + 1 : end;
+    }
+    esp_err_t e = esp_lcd_new_rgb_panel(&cfg, &s_panel);
+    if (e == ESP_OK)
+        e = esp_lcd_panel_reset(s_panel);
+    if (e == ESP_OK)
+        e = esp_lcd_panel_init(s_panel);
+    return e;
+}
+
+/* The panel's interrupt runs on the core that creates it, and with a bounce
+ * buffer it copies every frame out of PSRAM: create it on core 1, beside the
+ * display task, and leave core 0 to Vim. */
+struct panel_init_job { TaskHandle_t caller; esp_err_t result; };
+
+static void panel_init_task(void *arg)
+{
+    struct panel_init_job *job = arg;
+    job->result = panel_init();
+    xTaskNotifyGive(job->caller);
+    vTaskDelete(NULL);
+}
+
+static esp_err_t panel_init_core1(void)
+{
+    struct panel_init_job job = { .caller = xTaskGetCurrentTaskHandle() };
+    if (xTaskCreatePinnedToCore(panel_init_task, "panel_init", 3072, &job, 5, NULL, 1) != pdPASS)
+        return ESP_ERR_NO_MEM;
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+    return job.result;
+}
+
+#else
+
 static esp_err_t panel_init(void)
 {
     spi_bus_config_t bus = {
@@ -478,6 +582,8 @@ static esp_err_t panel_init(void)
     return e;
 }
 
+#endif
+
 /* Black out the whole panel, margins included. Its memory survives a software
  * reset, so a margin the grid never paints would otherwise keep whatever the
  * previous firmware left there. */
@@ -487,8 +593,7 @@ static void clear_panel(void)
     memset(s_line, 0, CHUNK * FONT_W * FONT_H * sizeof(uint16_t));
     for (int y = 0; y < CONFIG_ESP_VIM_DISP_HEIGHT; y += lines) {
         int y1 = y + lines < CONFIG_ESP_VIM_DISP_HEIGHT ? y + lines : CONFIG_ESP_VIM_DISP_HEIGHT;
-        esp_lcd_panel_draw_bitmap(s_panel, 0, y, CONFIG_ESP_VIM_DISP_WIDTH, y1, s_line);
-        xSemaphoreTake(s_flushed, portMAX_DELAY);
+        draw(0, y, CONFIG_ESP_VIM_DISP_WIDTH, y1);
     }
 }
 
@@ -516,12 +621,19 @@ esp_err_t esp_display_init(void)
     s_write_lock = xSemaphoreCreateMutex();
     s_panel_lock = xSemaphoreCreateMutex();
     s_stream = xStreamBufferCreateWithCaps(STREAM_SIZE, 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    /* SPI sends it by DMA. An RGB panel copies it into the frame buffer, and
+     * from internal RAM that copy doesn't also read PSRAM, which the LCD is
+     * streaming the frame buffer out of. */
     s_line = heap_caps_malloc(CHUNK * FONT_W * FONT_H * sizeof(uint16_t),
                               MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
     if (!s_flushed || !s_write_lock || !s_panel_lock || !s_stream || !s_line)
         return ESP_ERR_NO_MEM;
 
+#if CONFIG_ESP_VIM_DISP_RGB
+    esp_err_t e = panel_init_core1();
+#else
     esp_err_t e = panel_init();
+#endif
     if (e != ESP_OK) {
         ESP_LOGE(TAG, "panel: %s", esp_err_to_name(e));
         return e;

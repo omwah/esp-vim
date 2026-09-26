@@ -34,7 +34,7 @@ C6_IMAGE = PROJECT.parent / "build-deps" / "c6-coprocessor" / "build" / "merged.
 # ESP32-C6 co-processor, emulated as a second esp-emu linked by esp-hosted's
 # SDIO bridge (scripts/c6-build.sh makes the C6 firmware).
 VARIANT = os.environ.get("ESPVIM_TARGET", "esp32p4")
-TARGET = {"tab5": "esp32p4", "es3c28p": "esp32s3"}.get(VARIANT, VARIANT)
+TARGET = {"tab5": "esp32p4", "es3c28p": "esp32s3", "fnk0115": "esp32s3"}.get(VARIANT, VARIANT)
 COPROCESSOR = VARIANT == "tab5"
 PSRAM = {"esp32p4": "32M", "esp32s3": "8M"}
 

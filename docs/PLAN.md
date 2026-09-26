@@ -20,7 +20,7 @@
 | 8 — Git | not started. **Being reconsidered:** libgit2 instead of pure Python; test build scheduled after Phase 6 (see Phase 8) |
 | 9 — Tab5 hardware over UART | not started |
 | 10 — Tab5 display console | not started |
-| 10b — ESP32-S3 CYD display console | **in progress, pulled forward** (2026-09-25): Vim on the Hosyond ES3C28P's panel; see Phase 10b |
+| 10b — ESP32-S3 CYD display console | **in progress, pulled forward** (2026-09-25): Vim on the Hosyond ES3C28P's panel and the Freenove FNK0115Q's 5" RGB panel; see Phase 10b |
 | 11 — Bluetooth keyboards (late-stage goal) | **in progress, pulled forward** (2026-09-25): on the ES3C28P a BLE keyboard pairs by command or by touch (the overlay) and types into Vim; see Phase 11 |
 
 Toolchain: ESP-IDF **v5.5.5**, riscv32-esp-elf 14.2.0, emulator esp-emu 0.43.0.
@@ -1380,35 +1380,47 @@ What it changes in the plan:
     whose numbering changes between replugs. Other Espressif boards with the same USB
     VID:PID may be attached.
 
-#### Second CYD board (build-only until it arrives): Freenove FNK0115Q, 5.0" 800×480
+#### Second CYD board: Freenove FNK0115Q, 5.0" 800×480
 
-Freenove ESP32-S3 Display, **FNK0115, 5.0" variant FNK0115Q** (Amazon B0H93PLQVX).
-The user doesn't have it yet, so it's **build-only**: its board definition and
-configuration must compile in `pixi run vim-build-s3` (or a per-board variant), but nothing
-is flashed or run until it arrives.
+Freenove ESP32-S3 Display, **FNK0115, 5.0" IPS variant FNK0115Q**. Pins and timings
+come from Freenove's sketches and schematic for the board
+(github.com/Freenove/Freenove_ESP32_S3_Display_FNK0115); the other variants (4.3" IPS,
+and TN panels with resistive XPT2046 touch) differ in panel size, timings and touch.
 
-| | Known (listing, and a project built for this board) |
+| | |
 |---|---|
-| Module | ESP32-S3, 16 MB flash, 8 MB PSRAM (PSRAM mode: **to confirm**) |
-| Panel | 800×480 IPS, **parallel RGB** (ST7262-class). The listing says "SPI"; take the RGB reading as the working assumption and confirm from the schematic |
-| Touch | **GT911** capacitive, up to 5 points; I2C pins to confirm |
-| SD card | SPI: MISO 13, MOSI 11, SCLK 12, CS 10 (confirmed on the 4.3" FNK0115L) |
-| Audio | speaker (only the 5.0" has one) |
-| USB | "USB-C code uploader": **native USB or a USB-UART bridge is unknown** |
+| Module | ESP32-S3-WROOM-1 **N16R8**: 16 MB flash (quad, runs in QIO), 8 MB **octal** PSRAM |
+| USB | USB-C through a **CH340** bridge to UART0 (43/44). The S3's own USB pins are the touch bus, so **no USB keyboard hosting** on this board |
+| Panel | 800×480 IPS, **16-bit parallel RGB**: DE 40, VSYNC 41, HSYNC 39, PCLK 42; B 8/3/46/9/1, G 5/6/7/15/16/4, R 45/48/47/21/14; backlight 2. **PCLK 13 MHz**, porches 4/4/8 both ways, data on the falling edge. At 10 MHz the panel shows its own colour-cycling test pattern: 13 is near its floor |
+| Touch | **GT911**, I2C SDA 19 / SCL 20, INT 18, RST 38, address **0x5D** (chosen by INT at reset); reports in panel coordinates, no rotation |
+| SD card | SPI: CS 10, SCLK 12, MISO 13, MOSI 11 |
+| Other | NS4168 I2S amplifier (BCLK 0, LRCLK 18, DATA 17); BOOT button GPIO0; header P3 brings out 17/18/19/20 |
 
-Why it matters:
-
-- **Grid:** 800×480 gives 100×30 cells at 8×16. That is comfortably Vim-sized, unlike the
-  ES3C28P's 40×15.
-- **Possible USB keyboard.** If its USB-C port is the S3's native USB (OTG-capable) and
-  the board can supply 5 V to a device, it could host a USB keyboard (ESP-IDF `usb_host` +
-  the HID class driver, full-speed, the same normalised key events as Phase 10). **Confirm
-  on arrival:** is the USB-C wired to GPIO19/20 (native USB) or to a bridge chip, does
-  VBUS get 5 V in host mode, and is there then any console left (UART pins, or USB-Serial/JTAG
-  when not hosting)? Hosting a keyboard on the only USB port means the console must move
-  to UART pins or to the screen.
-- **RGB panel and PSRAM bandwidth**, as noted above for RGB CYDs: this is the board that
-  measures it.
+- **Done 2026-09-25: the `fnk0115` variant** (`pixi run vim-build-fnk0115`). The
+  display and touch components grew a second backend each, chosen in Kconfig:
+  `ESP_VIM_DISP_RGB` (esp_lcd's RGB driver, frame buffer in PSRAM) beside the ILI9341,
+  and `ESP_VIM_TOUCH_GT911` beside the FT6336G. The fonts are Kconfig choices too:
+  Spleen 8×16 for the terminal (**100×30 cells**) and 16×32 for the pairing overlay.
+  The console stays on UART0, and `:EspI2cScan` defaults to the touch bus. Tap, swipe,
+  drag and pairing by touch all work, as on the ES3C28P.
+- **RGB panel and PSRAM bandwidth: measured, and it decides the configuration.**
+  The LCD's DMA reads 26 MB/s of frame buffer from PSRAM, over the bus the flash
+  shares. Each step, as seen on the panel:
+  - As first built (flash in DIO, DMA straight from PSRAM), the picture rolled round
+    the screen. QIO flash plus `LCD_RGB_RESTART_IN_VSYNC` (resync at each frame) made it
+    mostly steady, but Bluetooth scanning (its controller runs from flash) made it
+    jitter.
+  - `SPIRAM_XIP_FROM_PSRAM` (the program runs from a copy in PSRAM, about 3.3 MB) took
+    the flash off the bus; then each keystroke's redraw still flickered.
+  - The cure is a **bounce buffer**: two 10-line buffers in internal RAM (32 KB) that
+    the LCD streams from, refilled by an interrupt on core 1. That is too much internal
+    RAM on its own (Bluetooth then fails with `ESP_ERR_NO_MEM`). But with the program in
+    PSRAM, flash writes no longer disable the cache (ESP-IDF's
+    `SPI_FLASH_CACHE_NO_DISABLE`), so the Vim task's 64 KB stack can live in PSRAM
+    (`ESP_VIM_STACK_IN_PSRAM`, on by default in that case). That pays for it.
+  - Result: a steady picture while typing and scanning, **70.9 KB of internal RAM
+    free** with Bluetooth up, and Vim's heap at 2.5 MB (half of the PSRAM left).
+    Saving files works from the PSRAM stack.
 
 
 ---

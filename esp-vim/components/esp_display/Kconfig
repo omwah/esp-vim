@@ -1,22 +1,65 @@
 menu "esp-vim display"
 
     config ESP_VIM_DISPLAY
-        bool "Show the console on an ILI9341 SPI LCD"
+        bool "Show the console on an LCD"
         default n
         help
             Mirror the console to a panel: Vim's output is drawn with a
-            6x12 font (Spleen), and input still comes from the console. The
-            defaults below are the Hosyond ES3C28P's (docs/PLAN.md, 10b).
+            bitmap font (Spleen), and input still comes from the console.
+            The SPI defaults below are the Hosyond ES3C28P's (docs/PLAN.md,
+            10b); the RGB ones the Freenove FNK0115's.
 
     if ESP_VIM_DISPLAY
 
+    choice ESP_VIM_DISP_BUS
+        prompt "Panel"
+        default ESP_VIM_DISP_ILI9341
+    config ESP_VIM_DISP_ILI9341
+        bool "ILI9341 on SPI"
+    config ESP_VIM_DISP_RGB
+        bool "RGB parallel panel (16-bit RGB565, frame buffer in PSRAM)"
+        depends on SOC_LCD_RGB_SUPPORTED && SPIRAM
+    endchoice
+
+    choice ESP_VIM_DISP_FONT
+        prompt "Font"
+        default ESP_VIM_DISP_FONT_8X16 if ESP_VIM_DISP_RGB
+        default ESP_VIM_DISP_FONT_6X12
+    config ESP_VIM_DISP_FONT_6X12
+        bool "Spleen 6x12"
+    config ESP_VIM_DISP_FONT_8X16
+        bool "Spleen 8x16"
+    endchoice
+
+    choice ESP_VIM_DISP_OVERLAY_FONT
+        prompt "Overlay font (the Bluetooth pairing screen)"
+        default ESP_VIM_DISP_OVERLAY_16X32 if ESP_VIM_DISP_RGB
+        default ESP_VIM_DISP_OVERLAY_12X24
+    config ESP_VIM_DISP_OVERLAY_12X24
+        bool "Spleen 12x24"
+    config ESP_VIM_DISP_OVERLAY_16X32
+        bool "Spleen 16x32"
+    endchoice
+
     config ESP_VIM_DISP_WIDTH
         int "Width in pixels, as mounted"
+        default 800 if ESP_VIM_DISP_RGB
         default 320
 
     config ESP_VIM_DISP_HEIGHT
         int "Height in pixels, as mounted"
+        default 480 if ESP_VIM_DISP_RGB
         default 240
+
+    config ESP_VIM_DISP_BACKLIGHT
+        int "Backlight GPIO (-1: none)"
+        default 2 if ESP_VIM_DISP_RGB
+        default 45
+    config ESP_VIM_DISP_BACKLIGHT_ON_LEVEL
+        int "Backlight on level"
+        default 1
+
+    if ESP_VIM_DISP_ILI9341
 
     config ESP_VIM_DISP_SPI_MHZ
         int "SPI clock, MHz"
@@ -39,13 +82,6 @@ menu "esp-vim display"
     config ESP_VIM_DISP_RST
         int "Reset GPIO (-1: none, software reset)"
         default -1
-    config ESP_VIM_DISP_BACKLIGHT
-        int "Backlight GPIO (-1: none)"
-        default 45
-    config ESP_VIM_DISP_BACKLIGHT_ON_LEVEL
-        int "Backlight on level"
-        default 1
-
     config ESP_VIM_DISP_INVERT
         bool "Invert colours (IPS panels that show complements)"
         default y
@@ -63,6 +99,62 @@ menu "esp-vim display"
     config ESP_VIM_DISP_BGR
         bool "Panel is BGR"
         default y
+
+    endif # ESP_VIM_DISP_ILI9341
+
+    if ESP_VIM_DISP_RGB
+
+    config ESP_VIM_DISP_PCLK_HZ
+        int "Pixel clock, Hz"
+        default 13000000
+    config ESP_VIM_DISP_PCLK_ACTIVE_NEG
+        bool "Data changes on the falling edge of the pixel clock"
+        default y
+    config ESP_VIM_DISP_HSYNC_PULSE
+        int "HSYNC pulse width"
+        default 4
+    config ESP_VIM_DISP_HSYNC_BACK
+        int "HSYNC back porch"
+        default 8
+    config ESP_VIM_DISP_HSYNC_FRONT
+        int "HSYNC front porch"
+        default 4
+    config ESP_VIM_DISP_VSYNC_PULSE
+        int "VSYNC pulse width"
+        default 4
+    config ESP_VIM_DISP_VSYNC_BACK
+        int "VSYNC back porch"
+        default 8
+    config ESP_VIM_DISP_VSYNC_FRONT
+        int "VSYNC front porch"
+        default 4
+
+    config ESP_VIM_DISP_DE
+        int "DE GPIO"
+        default 40
+    config ESP_VIM_DISP_VSYNC
+        int "VSYNC GPIO"
+        default 41
+    config ESP_VIM_DISP_HSYNC
+        int "HSYNC GPIO"
+        default 39
+    config ESP_VIM_DISP_PCLK
+        int "PCLK GPIO"
+        default 42
+    config ESP_VIM_DISP_DATA
+        string "Data GPIOs D0..D15: B0-B4, G0-G5, R0-R4"
+        default "8,3,46,9,1,5,6,7,15,16,4,45,48,47,21,14"
+
+    config ESP_VIM_DISP_BOUNCE_LINES
+        int "Bounce buffer, in lines (0: none)"
+        default 0
+        help
+            Lines of internal RAM the LCD streams through, twice over,
+            instead of reading the frame buffer in PSRAM directly: steadier
+            when flash is written, at 2 x lines x width x 2 bytes of
+            internal RAM.
+
+    endif # ESP_VIM_DISP_RGB
 
     endif
 

@@ -14,6 +14,7 @@
 #include <sys/select.h>
 #include "esp_timer.h"
 
+#include "esp_attr.h"
 #include "esp_err.h"
 #include "esp_log.h"
 #include "esp_system.h"
@@ -429,6 +430,9 @@ void app_main(void)
      * device in a loop. Every session reuses the same stack and TCB, so the
      * previous task must be fully deleted first.
      */
+#if CONFIG_ESP_VIM_STACK_IN_PSRAM
+    EXT_RAM_BSS_ATTR
+#endif
     static StackType_t vim_stack[ESP_VIM_TASK_STACK];
     static StaticTask_t vim_tcb;
     for (unsigned session = 1;; session++) {

@@ -121,7 +121,7 @@ Targeted boards:
 |---|---|---|---|
 | [M5Stack Tab5](https://docs.m5stack.com/en/core/Tab5) | ESP32-P4 | 16 MB / 32 MB | 1280×720 touch screen; clip-on keyboard (no F-keys: its `Sym` layer gives F1–F12), USB keyboards, BLE keyboards through its ESP32-C6 radio |
 | ESP32-S3 "Cheap Yellow Display" (CYD) boards, starting with the Hosyond **ES3C28P** (2.8", 320×240, capacitive touch) | ESP32-S3 | 16 MB / 8 MB required | built-in touch LCD; BLE keyboards, paired by touch; console over the S3's own USB |
-| Freenove ESP32-S3 Display **FNK0115Q** (5.0", 800×480, capacitive touch) | ESP32-S3 | 16 MB / 8 MB | touch LCD; BLE keyboards, and USB keyboards if its USB port can host (to be confirmed); **build only until tested** |
+| Freenove ESP32-S3 Display **FNK0115Q** (5.0", 800×480, capacitive touch) | ESP32-S3 | 16 MB / 8 MB | touch LCD, 100×30 cells; BLE keyboards, paired by touch; console over its USB-serial bridge |
 | ESP32-S3 development boards | ESP32-S3 | 16 MB / 8 MB required | none: a serial terminal |
 
 - **CYD boards:** only the **ESP32-S3** variants with 16 MB flash and 8 MB PSRAM (the
@@ -182,7 +182,8 @@ pixi run -- bash -c '. scripts/env.sh && idf.py -C esp-vim -B esp-vim/build-tab5
 
 For an ESP32-S3 board, use `build-esp32s3`; for the Hosyond ES3C28P, whose only USB
 port is the S3's own, `pixi run vim-build-es3c28p` and `build-es3c28p`, which put the
-console on that port. Attach a terminal to the board's serial port with, for example,
+console on that port; for the Freenove FNK0115Q, `pixi run vim-build-fnk0115` and
+`build-fnk0115` (its console is UART0, through the board's USB-serial bridge). Attach a terminal to the board's serial port with, for example,
 `pixi run -- socat -,raw,echo=0,escape=0x1d /dev/ttyACM0,raw,echo=0` (detach with
 `Ctrl-]`). The Tab5's WiFi comes from its ESP32-C6
 running Espressif's esp-hosted firmware; `pixi run c6-build` builds that firmware at the

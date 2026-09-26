@@ -2,9 +2,18 @@
 # libvterm that ships inside Vim's source (build-deps/vim/src/libvterm), and a
 # font table generated from the vendored Spleen font (scripts/bdf2c.py).
 set(VTERM "${CMAKE_CURRENT_LIST_DIR}/../../../build-deps/vim/src/libvterm")
-set(FONT_BDF "${CMAKE_CURRENT_LIST_DIR}/../../../build-deps/spleen/spleen-6x12.bdf")
+# The terminal's font and the overlay's, as configured (Kconfig).
+set(FONT_SIZE "6x12")
+if(CONFIG_ESP_VIM_DISP_FONT_8X16)
+    set(FONT_SIZE "8x16")
+endif()
+set(FONT_BIG_SIZE "12x24")
+if(CONFIG_ESP_VIM_DISP_OVERLAY_16X32)
+    set(FONT_BIG_SIZE "16x32")
+endif()
+set(FONT_BDF "${CMAKE_CURRENT_LIST_DIR}/../../../build-deps/spleen/spleen-${FONT_SIZE}.bdf")
 set(FONT_C "${CMAKE_CURRENT_BINARY_DIR}/esp_display_font.c")
-set(FONT_BIG_BDF "${CMAKE_CURRENT_LIST_DIR}/../../../build-deps/spleen/spleen-12x24.bdf")
+set(FONT_BIG_BDF "${CMAKE_CURRENT_LIST_DIR}/../../../build-deps/spleen/spleen-${FONT_BIG_SIZE}.bdf")
 set(FONT_BIG_C "${CMAKE_CURRENT_BINARY_DIR}/esp_display_font_big.c")
 
 if(CONFIG_ESP_VIM_DISPLAY)
