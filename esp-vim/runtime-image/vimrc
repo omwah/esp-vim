@@ -100,7 +100,20 @@ let g:help_example_languages = {}
 " Visual selection visible: Vim's dark default, the reverse of black on grey,
 " is barely different from plain text on this panel. Override either in
 " /fat/.vimrc (after a colorscheme, set Visual there too).
+"
+" A black-and-white one (the RLCD-4.2's): black on white, and no colours at all.
+" With t_Co at 0 Vim highlights as for a monochrome terminal, with its "term="
+" attributes -- keywords and comments bold, constants and types underlined, a
+" Visual selection reversed -- which the display draws. defaults.vim switches
+" syntax on only when there are colours, so it's switched on here. The serial
+" console then sees the same; "set t_Co=256" in /fat/.vimrc has colours back.
 if exists('*esp_display') && esp_display().active
-  set background=dark
-  highlight Visual cterm=NONE ctermfg=NONE ctermbg=24
+  if esp_display().mono
+    set t_Co=0
+    set background=light
+    syntax on
+  else
+    set background=dark
+    highlight Visual cterm=NONE ctermfg=NONE ctermbg=24
+  endif
 endif

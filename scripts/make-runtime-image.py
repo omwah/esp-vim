@@ -18,7 +18,7 @@ than hand-picked.
 
 Fails if the estimated FAT footprint will not fit the partition.
 
-Usage: scripts/make-runtime-image.py [esp32p4|esp32s3|es3c28p ...]
+Usage: scripts/make-runtime-image.py [esp32p4|esp32s3|es3c28p|rlcd42 ...]
        (no variant: every one; or: pixi run runtime)
 """
 
@@ -35,13 +35,15 @@ ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "build-deps" / "vim" / "runtime"
 OURS = ROOT / "esp-vim" / "runtime-image"
 # One image per build variant (scripts/vim-build.sh): its chip, and the width its
-# help is written for. The ES3C28P's screen is 53 columns (320 px, 6 px font), so
-# its help.txt is reflowed to fit (scripts/helpfmt.py); the others keep Vim's 78.
+# help is written for. The ES3C28P's screen is 53 columns (320 px, 6 px font) and
+# the RLCD-4.2's 66 (400 px), so their help.txt is reflowed to fit
+# (scripts/helpfmt.py); the others keep Vim's 78.
 # A variant with nothing of its own (tab5) uses its chip's image.
 VARIANTS = {
     "esp32p4": ("esp32p4", 78),
     "esp32s3": ("esp32s3", 78),
     "es3c28p": ("esp32s3", 53),
+    "rlcd42": ("esp32s3", 66),
 }
 OUT = None                  # build-deps/vimrt-<variant>, set per variant in build()
 PARTITIONS = ROOT / "esp-vim" / "partitions.csv"

@@ -210,8 +210,8 @@ static void screen_size(const esp_display_font_info_t *f, char *buf, size_t len)
     snprintf(buf, len, "%dx%d", f->cols, f->rows);
 }
 
-/* esp_display() -> Dict: active (a display shows the console), rows, cols,
- * font (the name of the one in use, "terminus-10x20") and fonts, a List of
+/* esp_display() -> Dict: active (a display shows the console), mono (it's
+ * black and white), rows, cols, font (the name of the one in use, "terminus-10x20") and fonts, a List of
  * Dicts: size (the screen size it gives, "80x24"), font, width, height (its
  * cell in pixels), rows, cols. The system vimrc uses it to set 'background' and
  * colours for the panel. */
@@ -224,6 +224,7 @@ void f_esp_display(typval_T *argvars UNUSED, typval_T *rettv)
     if (on)
         esp_display_size(&rows, &cols);
     dict_add_bool(rettv->vval.v_dict, "active", on);
+    dict_add_bool(rettv->vval.v_dict, "mono", esp_display_mono());
     dict_add_number(rettv->vval.v_dict, "rows", rows);
     dict_add_number(rettv->vval.v_dict, "cols", cols);
     esp_display_font_info_t f;

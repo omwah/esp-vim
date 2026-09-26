@@ -4,6 +4,7 @@
 
 esp_err_t esp_display_init(void) { return ESP_ERR_NOT_SUPPORTED; }
 bool esp_display_active(void) { return false; }
+bool esp_display_mono(void) { return false; }
 void esp_display_size(int *rows, int *cols) { *rows = *cols = 0; }
 bool esp_display_font_info(int i, esp_display_font_info_t *info) { (void)i; (void)info; return false; }
 int esp_display_font(void) { return -1; }

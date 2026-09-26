@@ -77,6 +77,7 @@ vim-build-tab5 = { cmd = 'bash -c ". scripts/env.sh >/dev/null && scripts/vim-bu
 vim-build-es3c28p = { cmd = 'bash -c ". scripts/env.sh >/dev/null && scripts/vim-build.sh es3c28p"', depends-on = ["runtime"], description = "Build the Vim firmware for the Hosyond ES3C28P (ESP32-S3 CYD): console on its USB port" }
 
 vim-build-fnk0115 = { cmd = 'bash -c ". scripts/env.sh >/dev/null && scripts/vim-build.sh fnk0115"', depends-on = ["runtime"], description = "Build the Vim firmware for the Freenove FNK0115 (ESP32-S3, 5\" 800x480 RGB panel)" }
+vim-build-rlcd42 = { cmd = 'bash -c ". scripts/env.sh >/dev/null && scripts/vim-build.sh rlcd42"', depends-on = ["runtime"], description = "Build the Vim firmware for the Waveshare ESP32-S3-RLCD-4.2 (4.2\" 400x300 reflective mono LCD): console on its USB port" }
 
 c6-build = { cmd = 'bash -c ". scripts/env.sh >/dev/null && scripts/c6-build.sh"', description = "Build the ESP32-C6 co-processor firmware (esp-hosted) the Tab5 build talks to" }
 

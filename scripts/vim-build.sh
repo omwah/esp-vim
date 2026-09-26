@@ -7,6 +7,7 @@
 #   scripts/vim-build.sh esp32s3    # the S3 build variant
 #   scripts/vim-build.sh es3c28p    # esp32s3, console on USB (Hosyond ES3C28P CYD)
 #   scripts/vim-build.sh fnk0115    # esp32s3, 5" RGB panel (Freenove FNK0115)
+#   scripts/vim-build.sh rlcd42     # esp32s3, 4.2" mono RLCD (Waveshare ESP32-S3-RLCD-4.2)
 #
 # Each variant builds in its own directory, esp-vim/build-<variant>/, with its
 # own sdkconfig inside it, so switching never reconfigures another one. A board
@@ -19,8 +20,8 @@ VARIANT="${1:-${ESPVIM_TARGET:-esp32p4}}"
 case "$VARIANT" in
     esp32p4|esp32s3) TARGET="$VARIANT" ;;
     tab5)            TARGET=esp32p4 ;;
-    es3c28p|fnk0115) TARGET=esp32s3 ;;
-    *) echo "vim-build: unsupported variant '$VARIANT' (esp32p4, tab5, esp32s3, es3c28p, fnk0115)" >&2; exit 1 ;;
+    es3c28p|fnk0115|rlcd42) TARGET=esp32s3 ;;
+    *) echo "vim-build: unsupported variant '$VARIANT' (esp32p4, tab5, esp32s3, es3c28p, fnk0115, rlcd42)" >&2; exit 1 ;;
 esac
 
 PROJECT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../esp-vim" && pwd)"

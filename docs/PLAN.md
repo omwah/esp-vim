@@ -1444,10 +1444,46 @@ and TN panels with resistive XPT2046 touch) differ in panel size, timings and to
   too narrow), so Terminus (SIL OFL 1.1, vendored as an LFS archive) supplies
   **10×20, 80×24 cells**, the default, and 11×22 (72×21). Spleen 8×16 stays.
   Kconfig `ESP_VIM_DISP_FONTS` lists the fonts built in, and `:EspFont 72x21` /
-  `esp_display_font()` switch between them, named for the screen size they give. The display task resizes libvterm, and
-  Vim takes the new size through `$LINES`/`$COLUMNS` and `shell_resized()`, as
-  there is no SIGWINCH. The choice is kept in NVS. The three tables cost 62 KB of
-  Vim's heap budget (2.49 MB), because the program runs from a copy in PSRAM.
+  `esp_display_font()` switch between them, named for the screen size they give.
+  The display task resizes libvterm, and Vim takes the new size through
+  `$LINES`/`$COLUMNS` and `shell_resized()`, as there is no SIGWINCH. The choice is
+  kept in NVS. The three tables cost 62 KB of Vim's heap budget (2.49 MB), because
+  the program runs from a copy in PSRAM.
+
+#### Waveshare ESP32-S3-RLCD-4.2: a monochrome reflective screen
+
+| | |
+|---|---|
+| Module | ESP32-S3-WROOM-1 **N16R8** (16 MB flash, 8 MB octal PSRAM) |
+| Console | USB-C is the S3's own **USB Serial/JTAG** (`/dev/ttyACM0`) |
+| Display | 4.2" reflective LCD, **ST7305**, 400×300 landscape, 1 bit per pixel, no backlight; SPI SCK 11, MOSI 12, CS 40, DC 5, RST 41 (TE 6 unused) |
+| I2C | SDA 13 / SCL 14: SHTC3 (0x70), PCF85063 RTC (0x51), ES8311 (0x18), ES7210 (0x40) |
+| Other | KEY button GPIO18, BOOT GPIO0, TF card slot, 18650 battery (ADC1 channel 3), speaker and two microphones |
+
+Pins and the panel's set-up sequence are from Waveshare's ESP-IDF examples for the
+board (github.com/waveshareteam/ESP32-S3-RLCD-4.2).
+
+- **Done 2026-09-26: the `rlcd42` variant** (`pixi run vim-build-rlcd42`). A third
+  display backend, `ESP_VIM_DISP_ST7305`, beside the ILI9341 and RGB ones: the
+  renderer draws into a 15 KB 1-bit frame buffer in the panel's own layout (portrait
+  300×400, each byte 4 pixels across and 2 down; landscape is a quarter turn of it)
+  and sends it whole, in 12 ms at 10 MHz, after each burst of damage. The line
+  buffer and everything above it are unchanged, so the overlay and `:EspFont` work
+  as on the colour panels.
+- **Monochrome rendering.** Black on white paper. A cell is drawn inverted when it is
+  reversed, is the cursor, or has a background colour of its own, so a Visual
+  selection or a search match stays visible whatever the colour scheme; bold is
+  drawn a pixel heavier. `esp_display()` reports `mono`, and the system vimrc then
+  sets `t_Co=0`: Vim highlights as for a monochrome terminal, with its `term=`
+  attributes (keywords and comments bold, constants and types underlined, Visual
+  reversed), and `syntax on` there, since `defaults.vim` only turns it on with
+  colours. The serial console gets the same; `set t_Co=256` in `/fat/.vimrc` undoes
+  it.
+- **Fonts:** Spleen 6×12, **66×25** (the default), 5×8 (80×37), Terminus 8×14
+  (50×21) and Spleen 8×16 (50×18). `:help` is reflowed to 66 columns.
+- **Input:** the USB console, or a BLE keyboard paired with `:EspBtKeyboard`: there
+  is no touch panel. Vim's heap is 4.2 MB (no program copy in PSRAM here).
+- **Not yet:** the TF card, the KEY button, the battery gauge and audio.
 
 
 ---

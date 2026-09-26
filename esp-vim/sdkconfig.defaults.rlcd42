@@ -1,0 +1,27 @@
+# Waveshare ESP32-S3-RLCD-4.2 (ESP32-S3-WROOM-1 N16R8, 4.2" 400x300 reflective
+# monochrome LCD, ST7305): layered on sdkconfig.defaults and
+# sdkconfig.defaults.esp32s3 by scripts/vim-build.sh rlcd42. Pin map: Waveshare's
+# ESP-IDF examples for the board (github.com/waveshareteam/ESP32-S3-RLCD-4.2).
+
+# The board's USB-C port is the S3's own USB Serial/JTAG -- no USB-UART bridge
+# -- so the console (boot messages and Vim) goes there, not to UART0.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# :EspSerial on the UART0 header pins, free now that the console is on USB.
+CONFIG_ESP_VIM_SERIAL_TX=43
+CONFIG_ESP_VIM_SERIAL_RX=44
+# :EspI2cScan / :EspSensors default to the board's own bus: SHTC3 (0x70),
+# PCF85063 RTC (0x51), ES8311 (0x18) and ES7210 (0x40).
+CONFIG_ESP_VIM_I2C_SDA=13
+CONFIG_ESP_VIM_I2C_SCL=14
+
+# The console on the 4.2" ST7305 as well (esp_display; the Kconfig ST7305
+# defaults are this board's pins): landscape 400x300, black on white, 66x25
+# cells in Spleen 6x12, and :EspFont switches to 80x37, 50x21 or 50x18. No
+# backlight: it's reflective. No touch panel either: input is the USB console
+# or a Bluetooth keyboard.
+CONFIG_ESP_VIM_DISPLAY=y
+CONFIG_ESP_VIM_DISP_ST7305=y
+# The SPI driver's interrupt code in flash rather than internal RAM, as on the
+# ES3C28P: a transfer that ends during a flash write is simply noticed later.
+# CONFIG_SPI_MASTER_ISR_IN_IRAM is not set

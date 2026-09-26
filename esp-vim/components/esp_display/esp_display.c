@@ -7,7 +7,9 @@
  * reports damaged: a row's damaged cells are drawn into one line buffer and
  * sent to the panel as a single SPI transfer -- or, on an RGB panel, copied
  * into its frame buffer in PSRAM, which the LCD peripheral streams out by
- * itself. libvterm is only ever touched by the display task.
+ * itself. A monochrome ST7305 has a 1-bit frame buffer here, in the panel's own
+ * layout, sent whole once a burst of damage is painted. libvterm is only ever
+ * touched by the display task.
  */
 
 #include "esp_display.h"
@@ -22,6 +24,8 @@
 #include "esp_lcd_panel_ops.h"
 #if CONFIG_ESP_VIM_DISP_RGB
 # include "esp_lcd_panel_rgb.h"
+#elif CONFIG_ESP_VIM_DISP_ST7305
+# include "driver/spi_master.h"
 #else
 # include "driver/spi_master.h"
 # include "esp_lcd_ili9341.h"
@@ -86,15 +90,27 @@ static int s_cols, s_rows, s_x0, s_y0;
 # define DISP_ORDER LCD_RGB_ELEMENT_ORDER_RGB
 #endif
 
+#if CONFIG_ESP_VIM_DISP_ST7305
+# define DISP_MONO  1
+#else
+# define DISP_MONO  0
+#endif
+
 /* An SPI panel takes each pixel's high byte first; an RGB panel's frame buffer
- * is plain little-endian RGB565. */
-#if CONFIG_ESP_VIM_DISP_RGB
+ * is plain little-endian RGB565, and a monochrome one's line buffer only tells
+ * ink (0) from paper. */
+#if CONFIG_ESP_VIM_DISP_RGB || DISP_MONO
 # define PIXEL(v)   ((uint16_t)(v))
 #else
 # define PIXEL(v)   ((uint16_t)((v) >> 8 | (v) << 8))
 #endif
 
+#define INK         0x0000          /* monochrome: black */
+#define PAPER       0xFFFF          /* ... and white */
+
+#if !DISP_MONO
 static esp_lcd_panel_handle_t s_panel;
+#endif
 static SemaphoreHandle_t s_flushed;     /* the line buffer's transfer is done */
 static SemaphoreHandle_t s_write_lock;  /* one writer at a time */
 static StreamBufferHandle_t s_stream;
@@ -182,7 +198,7 @@ static const uint8_t *glyph(uint32_t cp)
 }
 
 /* RGB565, in the panel's byte order. */
-static uint16_t rgb565(VTermColor *c)
+static __attribute__((unused)) uint16_t rgb565(VTermColor *c)
 {
     vterm_screen_convert_color_to_rgb(s_screen, c);
     uint16_t v = ((c->red & 0xF8) << 8) | ((c->green & 0xFC) << 3) | (c->blue >> 3);
@@ -198,6 +214,68 @@ static bool on_color_done(esp_lcd_panel_io_handle_t io, esp_lcd_panel_io_event_d
 }
 #endif
 
+#if DISP_MONO
+
+/*
+ * The ST7305's frame buffer: 1 bit per pixel, 1 white. Its own layout is
+ * portrait, 300 wide and 400 tall, each byte a block 4 pixels across and 2 down
+ * (bit 7 the top left, then down, then across); landscape turns it a quarter,
+ * as Waveshare's driver does.
+ */
+#define NATIVE_W    300
+#define NATIVE_H    400
+#define FB_SIZE     (NATIVE_W * NATIVE_H / 8)
+
+static esp_lcd_panel_io_handle_t s_io;
+static uint8_t *s_fb;                   /* DMA-capable */
+static bool s_fb_dirty;
+
+static inline void fb_set(int x, int y, bool white)
+{
+#if CONFIG_ESP_VIM_DISP_MIRROR_X
+    x = CONFIG_ESP_VIM_DISP_WIDTH - 1 - x;
+#endif
+#if CONFIG_ESP_VIM_DISP_MIRROR_Y
+    y = CONFIG_ESP_VIM_DISP_HEIGHT - 1 - y;
+#endif
+    int px = x, py = y;
+    if (CONFIG_ESP_VIM_DISP_WIDTH > CONFIG_ESP_VIM_DISP_HEIGHT) {
+        px = NATIVE_W - 1 - y;
+        py = x;
+    }
+    uint8_t *b = s_fb + (py >> 1) * (NATIVE_W / 4) + (px >> 2);
+    uint8_t mask = 0x80 >> (((px & 3) << 1) | (py & 1));
+    *b = white ? *b | mask : *b & ~mask;
+}
+
+/* Send the frame buffer, if anything was drawn into it. 15 KB: 12 ms at 10 MHz. */
+static void flush(void)
+{
+    if (!s_fb_dirty)
+        return;
+    s_fb_dirty = false;
+    esp_lcd_panel_io_tx_param(s_io, 0x2A, (uint8_t[]){ 0x12, 0x2A }, 2);  /* columns */
+    esp_lcd_panel_io_tx_param(s_io, 0x2B, (uint8_t[]){ 0x00, 0xC7 }, 2);  /* rows */
+    esp_lcd_panel_io_tx_color(s_io, 0x2C, s_fb, FB_SIZE);
+    xSemaphoreTake(s_flushed, portMAX_DELAY);
+}
+
+/* Draw from the line buffer into the frame buffer; flush() sends it. */
+static void draw(int x0, int y0, int x1, int y1)
+{
+    const uint16_t *p = s_line;
+    for (int y = y0; y < y1; y++)
+        for (int x = x0; x < x1; x++)
+            fb_set(x, y, *p++ != INK);
+    s_fb_dirty = true;
+}
+
+#else
+
+static void flush(void)
+{
+}
+
 /* Draw from the line buffer, and wait until it may be reused: an SPI
  * transfer runs on, an RGB panel's copy is done on return. */
 static void draw(int x0, int y0, int x1, int y1)
@@ -208,6 +286,8 @@ static void draw(int x0, int y0, int x1, int y1)
 #endif
 }
 
+#endif
+
 /* Cells [c0, c1) of a row, at most CHUNK of them, in one transfer. */
 static void paint_cells(int row, int c0, int c1)
 {
@@ -217,12 +297,20 @@ static void paint_cells(int row, int c0, int c1)
         VTermPos pos = { .row = row, .col = col };
         if (!vterm_screen_get_cell(s_screen, pos, &cell))
             continue;
-        uint16_t fg = rgb565(&cell.fg), bg = rgb565(&cell.bg);
         bool inverse = cell.attrs.reverse
             ^ (s_cursor_visible && row == s_cursor.row && col == s_cursor.col);
+#if DISP_MONO
+        /* Black on white, and white on black where the cell is reversed, is
+         * the cursor, or has a background colour of its own (a Visual
+         * selection, a search match): colour itself can't be shown. */
+        inverse ^= !VTERM_COLOR_IS_DEFAULT_BG(&cell.bg);
+        uint16_t fg = inverse ? PAPER : INK, bg = inverse ? INK : PAPER;
+#else
+        uint16_t fg = rgb565(&cell.fg), bg = rgb565(&cell.bg);
         if (inverse) {
             uint16_t t = fg; fg = bg; bg = t;
         }
+#endif
         uint32_t ch = cell.chars[0];
         /* The right half of a double-width character is blank; so is conceal. */
         const uint8_t *g = (ch == 0 || ch == (uint32_t)-1 || cell.attrs.conceal) ? NULL : glyph(ch);
@@ -230,6 +318,10 @@ static void paint_cells(int row, int c0, int c1)
         for (int y = 0; y < FONT_H; y++) {
             unsigned bits = !g ? 0 : s_font->bytes_per_row == 2 ? (g[2 * y] << 8 | g[2 * y + 1])
                                                                 : g[y] << 8;
+#if DISP_MONO
+            if (cell.attrs.bold)
+                bits |= bits >> 1;      /* bold: a pixel heavier */
+#endif
             if (cell.attrs.underline && y == FONT_H - 1)
                 bits = 0xFFFF;
             for (int x = 0; x < FONT_W; x++)
@@ -304,6 +396,7 @@ static void display_task(void *arg)
                 mark(row, 0, COLS);
         }
         paint_damage();
+        flush();
         xSemaphoreGive(s_panel_lock);
     }
 }
@@ -324,7 +417,7 @@ static void display_task(void *arg)
 #define OV_Y0       ((CONFIG_ESP_VIM_DISP_HEIGHT - OV_ROWS * OV_H) / 2)
 #define OV_CHUNK    (s_line_px / (OV_W * OV_H))     /* cells per transfer */
 
-static uint16_t swap565(uint8_t r, uint8_t g, uint8_t b)
+static __attribute__((unused)) uint16_t swap565(uint8_t r, uint8_t g, uint8_t b)
 {
     uint16_t v = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
     return PIXEL(v);
@@ -333,7 +426,11 @@ static uint16_t swap565(uint8_t r, uint8_t g, uint8_t b)
 /* Up to OV_CHUNK cells of text at (row, col), in one transfer. Panel lock held. */
 static void overlay_cells(int row, int col, const char *text, int n, bool inverse)
 {
+#if DISP_MONO
+    uint16_t fg = INK, bg = PAPER;
+#else
     uint16_t fg = swap565(0xE5, 0xE5, 0xE5), bg = swap565(0x00, 0x00, 0x00);
+#endif
     if (inverse) {
         uint16_t t = fg; fg = bg; bg = t;
     }
@@ -357,6 +454,7 @@ bool esp_display_overlay_begin(int *rows, int *cols)
     xSemaphoreTake(s_panel_lock, portMAX_DELAY);
     s_overlay = true;
     clear_panel();
+    flush();
     xSemaphoreGive(s_panel_lock);
     *rows = OV_ROWS;
     *cols = OV_COLS;
@@ -373,6 +471,7 @@ void esp_display_overlay_text(int row, int col, const char *text, bool inverse)
     xSemaphoreTake(s_panel_lock, portMAX_DELAY);
     for (int i = 0; i < n; i += OV_CHUNK)
         overlay_cells(row, col + i, text + i, n - i < OV_CHUNK ? n - i : OV_CHUNK, inverse);
+    flush();
     xSemaphoreGive(s_panel_lock);
 }
 
@@ -382,6 +481,7 @@ void esp_display_overlay_clear(void)
         return;
     xSemaphoreTake(s_panel_lock, portMAX_DELAY);
     clear_panel();
+    flush();
     xSemaphoreGive(s_panel_lock);
 }
 
@@ -563,6 +663,94 @@ static esp_err_t panel_init_core1(void)
     return job.result;
 }
 
+#elif DISP_MONO
+
+/* The ST7305's set-up, as Waveshare's driver sends it: {command, data length,
+ * data...}. Voltages and timing, then 1 bit per pixel, inverted (so 1 is
+ * white), high-power mode (a steady picture while it changes), and on. */
+static const uint8_t st7305_init[] = {
+    0xD6, 2, 0x17, 0x02,                /* NVM load */
+    0xD1, 1, 0x01,                      /* booster on */
+    0xC0, 2, 0x11, 0x04,                /* gate voltage */
+    0xC1, 4, 0x41, 0x41, 0x41, 0x41,    /* source voltages */
+    0xC2, 4, 0x19, 0x19, 0x19, 0x19,
+    0xC4, 4, 0x41, 0x41, 0x41, 0x41,
+    0xC5, 4, 0x19, 0x19, 0x19, 0x19,
+    0xD8, 2, 0xA6, 0xE9,
+    0xB2, 1, 0x05,                      /* frame rate */
+    0xB3, 10, 0xE5, 0xF6, 0x05, 0x46, 0x77, 0x77, 0x77, 0x77, 0x76, 0x45,
+    0xB4, 8, 0x05, 0x46, 0x77, 0x77, 0x77, 0x77, 0x76, 0x45,
+    0x62, 3, 0x32, 0x03, 0x1F,
+    0xB7, 1, 0x13,
+    0xB0, 1, 0x64,
+};
+static const uint8_t st7305_on[] = {
+    0xC9, 1, 0x00,
+    0x36, 1, 0x48,                      /* memory access order */
+    0x3A, 1, 0x11,                      /* 1 bit per pixel */
+    0xB9, 1, 0x20,
+    0xB8, 1, 0x29,
+    0x21, 0,                            /* inversion on */
+    0x35, 1, 0x00,                      /* tearing effect line */
+    0xD0, 1, 0xFF,
+    0x38, 0,                            /* high-power mode */
+    0x29, 0,                            /* display on */
+};
+
+static esp_err_t send_all(const uint8_t *seq, size_t len)
+{
+    esp_err_t e = ESP_OK;
+    for (size_t i = 0; e == ESP_OK && i < len; i += 2 + seq[i + 1])
+        e = esp_lcd_panel_io_tx_param(s_io, seq[i], seq[i + 1] ? seq + i + 2 : NULL, seq[i + 1]);
+    return e;
+}
+
+static esp_err_t panel_init(void)
+{
+    spi_bus_config_t bus = {
+        .sclk_io_num = CONFIG_ESP_VIM_DISP_SCLK,
+        .mosi_io_num = CONFIG_ESP_VIM_DISP_MOSI,
+        .miso_io_num = -1,
+        .quadwp_io_num = -1,
+        .quadhd_io_num = -1,
+        .max_transfer_sz = FB_SIZE,
+    };
+    esp_err_t e = spi_bus_initialize(SPI3_HOST, &bus, SPI_DMA_CH_AUTO);
+    if (e != ESP_OK)
+        return e;
+    esp_lcd_panel_io_spi_config_t io_cfg = {
+        .cs_gpio_num = CONFIG_ESP_VIM_DISP_CS,
+        .dc_gpio_num = CONFIG_ESP_VIM_DISP_DC,
+        .spi_mode = 0,
+        .pclk_hz = CONFIG_ESP_VIM_DISP_SPI_MHZ * 1000 * 1000,
+        .trans_queue_depth = 4,
+        .lcd_cmd_bits = 8,
+        .lcd_param_bits = 8,
+        .on_color_trans_done = on_color_done,
+    };
+    e = esp_lcd_new_panel_io_spi((esp_lcd_spi_bus_handle_t)SPI3_HOST, &io_cfg, &s_io);
+    if (e != ESP_OK)
+        return e;
+    if (CONFIG_ESP_VIM_DISP_RST >= 0) {
+        gpio_config_t g = { .pin_bit_mask = 1ULL << CONFIG_ESP_VIM_DISP_RST,
+                            .mode = GPIO_MODE_OUTPUT };
+        gpio_config(&g);
+        gpio_set_level(CONFIG_ESP_VIM_DISP_RST, 1);
+        vTaskDelay(pdMS_TO_TICKS(50));
+        gpio_set_level(CONFIG_ESP_VIM_DISP_RST, 0);
+        vTaskDelay(pdMS_TO_TICKS(20));
+        gpio_set_level(CONFIG_ESP_VIM_DISP_RST, 1);
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+    e = send_all(st7305_init, sizeof st7305_init);
+    if (e == ESP_OK)
+        e = esp_lcd_panel_io_tx_param(s_io, 0x11, NULL, 0);    /* sleep out */
+    vTaskDelay(pdMS_TO_TICKS(200));
+    if (e == ESP_OK)
+        e = send_all(st7305_on, sizeof st7305_on);
+    return e;
+}
+
 #else
 
 static esp_err_t panel_init(void)
@@ -621,7 +809,7 @@ static esp_err_t panel_init(void)
 static void clear_panel(void)
 {
     const int lines = s_line_px / CONFIG_ESP_VIM_DISP_WIDTH;
-    memset(s_line, 0, s_line_px * sizeof(uint16_t));
+    memset(s_line, DISP_MONO ? 0xFF : 0, s_line_px * sizeof(uint16_t));    /* black, or paper */
     for (int y = 0; y < CONFIG_ESP_VIM_DISP_HEIGHT; y += lines) {
         int y1 = y + lines < CONFIG_ESP_VIM_DISP_HEIGHT ? y + lines : CONFIG_ESP_VIM_DISP_HEIGHT;
         draw(0, y, CONFIG_ESP_VIM_DISP_WIDTH, y1);
@@ -630,12 +818,12 @@ static void clear_panel(void)
 
 static void backlight_on(void)
 {
-    if (CONFIG_ESP_VIM_DISP_BACKLIGHT < 0)
-        return;
+#if CONFIG_ESP_VIM_DISP_BACKLIGHT >= 0          /* -1: none (a reflective panel) */
     gpio_config_t g = { .pin_bit_mask = 1ULL << CONFIG_ESP_VIM_DISP_BACKLIGHT,
                         .mode = GPIO_MODE_OUTPUT };
     gpio_config(&g);
     gpio_set_level(CONFIG_ESP_VIM_DISP_BACKLIGHT, CONFIG_ESP_VIM_DISP_BACKLIGHT_ON_LEVEL);
+#endif
 }
 
 /* The font chosen with esp_display_set_font() last time, else the first. */
@@ -693,13 +881,19 @@ esp_err_t esp_display_init(void)
      * streaming the frame buffer out of -- unless the LCD streams from bounce
      * buffers, when PSRAM will do and the internal RAM is better spent. */
     s_line = heap_caps_malloc(s_line_px * sizeof(uint16_t),
-#if CONFIG_ESP_VIM_DISP_RGB && CONFIG_ESP_VIM_DISP_BOUNCE_LINES > 0
+#if (CONFIG_ESP_VIM_DISP_RGB && CONFIG_ESP_VIM_DISP_BOUNCE_LINES > 0) || DISP_MONO
                               MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 #else
                               MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
 #endif
     if (!s_flushed || !s_write_lock || !s_panel_lock || !s_font_done || !s_stream || !s_line)
         return ESP_ERR_NO_MEM;
+#if DISP_MONO
+    s_fb = heap_caps_malloc(FB_SIZE, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    if (!s_fb)
+        return ESP_ERR_NO_MEM;
+    memset(s_fb, 0xFF, FB_SIZE);        /* white */
+#endif
 
 #if CONFIG_ESP_VIM_DISP_RGB
     esp_err_t e = panel_init_core1();
@@ -728,6 +922,7 @@ esp_err_t esp_display_init(void)
     for (int row = 0; row < ROWS; row++)
         mark(row, 0, COLS);             /* paint the whole (blank) screen once */
     paint_damage();
+    flush();
     backlight_on();
 
     /* Its stack in PSRAM: internal RAM is scarce on the S3, and this task never
@@ -744,6 +939,11 @@ esp_err_t esp_display_init(void)
 bool esp_display_active(void)
 {
     return s_active;
+}
+
+bool esp_display_mono(void)
+{
+    return s_active && DISP_MONO;
 }
 
 void esp_display_size(int *rows, int *cols)

@@ -7,7 +7,8 @@ menu "esp-vim display"
             Mirror the console to a panel: Vim's output is drawn with a
             bitmap font (Spleen), and input still comes from the console.
             The SPI defaults below are the Hosyond ES3C28P's (docs/PLAN.md,
-            10b); the RGB ones the Freenove FNK0115's.
+            10b), or with the ST7305 the Waveshare ESP32-S3-RLCD-4.2's; the
+            RGB ones the Freenove FNK0115's.
 
     if ESP_VIM_DISPLAY
 
@@ -19,11 +20,17 @@ menu "esp-vim display"
     config ESP_VIM_DISP_RGB
         bool "RGB parallel panel (16-bit RGB565, frame buffer in PSRAM)"
         depends on SOC_LCD_RGB_SUPPORTED && SPIRAM
+    config ESP_VIM_DISP_ST7305
+        bool "ST7305 reflective monochrome LCD on SPI (1 bit per pixel)"
+        help
+            Black on white: reverse video and cells with a background
+            colour are drawn inverted, bold is drawn a pixel heavier.
     endchoice
 
     config ESP_VIM_DISP_FONTS
         string "Fonts"
         default "terminus-10x20 terminus-11x22 spleen-8x16" if ESP_VIM_DISP_RGB
+        default "spleen-6x12 spleen-5x8 terminus-8x14 spleen-8x16" if ESP_VIM_DISP_ST7305
         default "spleen-6x12"
         help
             The terminal's fonts, separated by spaces; :EspFont switches
@@ -31,7 +38,8 @@ menu "esp-vim display"
             default. Each is spleen-WxH (5x8, 6x12, 8x16, 12x24, 16x32) or
             terminus-WxH / terminus-bold-WxH (6x12, 8x14, 8x16, 10x18, 10x20,
             11x22, 12x24, 14x28, 16x32). On the 800x480 panel, 10x20 is 80x24
-            cells, 11x22 72x21 and 8x16 100x30. Each font's glyphs take
+            cells, 11x22 72x21 and 8x16 100x30; on the 400x300 ST7305, 6x12
+            is 66x25. Each font's glyphs take
             flash: about 20 KB for Spleen 8x16, 60 KB for Terminus 10x20 --
             and as much PSRAM, where the program runs from a copy there.
 
@@ -48,57 +56,73 @@ menu "esp-vim display"
     config ESP_VIM_DISP_WIDTH
         int "Width in pixels, as mounted"
         default 800 if ESP_VIM_DISP_RGB
+        default 400 if ESP_VIM_DISP_ST7305
         default 320
 
     config ESP_VIM_DISP_HEIGHT
         int "Height in pixels, as mounted"
         default 480 if ESP_VIM_DISP_RGB
+        default 300 if ESP_VIM_DISP_ST7305
         default 240
 
     config ESP_VIM_DISP_BACKLIGHT
         int "Backlight GPIO (-1: none)"
         default 2 if ESP_VIM_DISP_RGB
+        default -1 if ESP_VIM_DISP_ST7305
         default 45
     config ESP_VIM_DISP_BACKLIGHT_ON_LEVEL
         int "Backlight on level"
         default 1
 
-    if ESP_VIM_DISP_ILI9341
+    if ESP_VIM_DISP_ILI9341 || ESP_VIM_DISP_ST7305
 
     config ESP_VIM_DISP_SPI_MHZ
         int "SPI clock, MHz"
+        default 10 if ESP_VIM_DISP_ST7305
         default 60
         help
             The ES3C28P drops bytes at 80 MHz.
 
     config ESP_VIM_DISP_SCLK
         int "SCLK GPIO"
+        default 11 if ESP_VIM_DISP_ST7305
         default 12
     config ESP_VIM_DISP_MOSI
         int "MOSI GPIO"
+        default 12 if ESP_VIM_DISP_ST7305
         default 11
     config ESP_VIM_DISP_CS
         int "CS GPIO"
+        default 40 if ESP_VIM_DISP_ST7305
         default 10
     config ESP_VIM_DISP_DC
         int "DC GPIO"
+        default 5 if ESP_VIM_DISP_ST7305
         default 46
     config ESP_VIM_DISP_RST
         int "Reset GPIO (-1: none, software reset)"
+        default 41 if ESP_VIM_DISP_ST7305
         default -1
+    # The ES3C28P, landscape with the USB port on the right: swapped and
+    # mirrored both ways (without the mirrors it's upside down).
+    config ESP_VIM_DISP_MIRROR_X
+        bool "Mirror X"
+        default n if ESP_VIM_DISP_ST7305
+        default y
+    config ESP_VIM_DISP_MIRROR_Y
+        bool "Mirror Y"
+        default n if ESP_VIM_DISP_ST7305
+        default y
+
+    endif
+
+    if ESP_VIM_DISP_ILI9341
+
     config ESP_VIM_DISP_INVERT
         bool "Invert colours (IPS panels that show complements)"
         default y
     config ESP_VIM_DISP_SWAP_XY
         bool "Swap X and Y (landscape)"
-        default y
-    # The ES3C28P, landscape with the USB port on the right: swapped and
-    # mirrored both ways (without the mirrors it's upside down).
-    config ESP_VIM_DISP_MIRROR_X
-        bool "Mirror X"
-        default y
-    config ESP_VIM_DISP_MIRROR_Y
-        bool "Mirror Y"
         default y
     config ESP_VIM_DISP_BGR
         bool "Panel is BGR"

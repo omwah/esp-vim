@@ -26,6 +26,9 @@ esp_err_t esp_display_init(void);
 /* True once esp_display_init() has succeeded. */
 bool esp_display_active(void);
 
+/* True for a black-and-white display (the ST7305): colour can't be shown. */
+bool esp_display_mono(void);
+
 /* The terminal's size in character cells. */
 void esp_display_size(int *rows, int *cols);
 
