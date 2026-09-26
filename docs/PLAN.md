@@ -586,6 +586,15 @@ that was already spent.
 **Exclude**: `doc/` (12 MB — `:help` will not work; a stated limitation), `spell/*.spl`
 (downloaded on demand), `tutor/`, `lang/`, and the long tail of `ftplugin`/`indent`.
 
+**Scripts that reach for a left-out file** (2026-09-26): markdown's syntax loads html's,
+which includes `syntax/vb.vim` and xml's `dtd.vim`, and its ftplugin calls
+`htmlcomplete#DetectOmniFlavor()`; none of those are in the image. Opening a `.md`,
+`.html` or `.xml` file stopped at a screen of errors, though the rest of each script
+ran. Rather than ship more of the runtime, the system vimrc re-registers the three
+loaders' autocommands (`synload.vim`, `ftplugin.vim`, `indent.vim`) under `:silent!`
+once each is sourced: highlighting goes as far as it can, silently. The cost is that
+real errors in those scripts are silent too (`v:errmsg` keeps the last).
+
 ---
 
 ## Phase 5 — Emulator bring-up over UART

@@ -57,6 +57,36 @@ endif
 " which a scripted or piped session never sends.
 set ttymouse=sgr
 
+" Quiet syntax, filetype plugin and indent loading. The runtime image is a
+" curated slice of Vim's (scripts/make-runtime-image.py), and some scripts reach
+" for a file it leaves out -- markdown's syntax loads html's, which includes
+" syntax/vb.vim and xml's dtd.vim; its ftplugin calls htmlcomplete#...() -- so
+" opening such a file stopped at a screen of errors, though the rest of the
+" script still ran. Each loader's autocommand is put back as it was, only under
+" :silent!, once the loader is sourced: highlighting works as far as it can,
+" and no error shows. The cost: real errors in these scripts are silent too,
+" your own in /fat/.vim included; v:errmsg keeps the last one.
+function! s:QuietLoader(file, group, func) abort
+  let info = getscriptinfo({'name': '[/\\]' .. a:file .. '$'})
+  if empty(info)
+    return
+  endif
+  let call = 'silent! call <SNR>' .. info[0].sid .. '_' .. a:func .. '()'
+  let event = a:func ==# 'SynSet' ? 'Syntax' : 'FileType'
+  " The loader's own group ("END" selects the default one, synload's): inside
+  " an autocommand, a bare :autocmd would act on esp_quiet_loaders.
+  execute 'augroup' (empty(a:group) ? 'END' : a:group)
+  execute 'autocmd!' event '*'
+  execute 'autocmd' event '*' call
+  augroup END
+endfunction
+augroup esp_quiet_loaders
+  autocmd!
+  autocmd SourcePost */syntax/synload.vim call s:QuietLoader('syntax[/\\]synload\.vim', '', 'SynSet')
+  autocmd SourcePost */ftplugin.vim call s:QuietLoader('ftplugin\.vim', 'filetypeplugin', 'LoadFTPlugin')
+  autocmd SourcePost */indent.vim call s:QuietLoader('indent\.vim', 'filetypeindent', 'LoadIndent')
+augroup END
+
 " A display console (the ES3C28P's panel): light text on black. It can't answer
 " Vim's question about its background colour, so say it here, and make the
 " Visual selection visible: Vim's dark default, the reverse of black on grey,
