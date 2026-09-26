@@ -87,6 +87,14 @@ augroup esp_quiet_loaders
   autocmd SourcePost */indent.vim call s:QuietLoader('indent\.vim', 'filetypeindent', 'LoadIndent')
 augroup END
 
+" No Vim-script highlighting of code examples in help. syntax/help.vim loads
+" all of syntax/vim.vim for ">vim" examples and again for ">vim9" ones: :help
+" then held 1.9 MB of Vim's heap instead of 0.7 MB, most of the ~2.4 MB an
+" ESP32-S3 board gives Vim, and out-of-memory errors followed. The help shipped
+" here has plain ">" examples only, which are still highlighted. To have it
+" back, set it in /fat/.vimrc: let g:help_example_languages = #{vim: 'vim'}
+let g:help_example_languages = {}
+
 " A display console (the ES3C28P's panel): light text on black. It can't answer
 " Vim's question about its background colour, so say it here, and make the
 " Visual selection visible: Vim's dark default, the reverse of black on grey,
