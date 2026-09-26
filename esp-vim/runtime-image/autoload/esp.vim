@@ -329,10 +329,17 @@ endfunction
 
 " ------------------------------------------------------------------ :EspFont --
 
-" :EspFont [{name}]: the display's font. Without a name, lists them; a name
-" may be shortened to its size ("10x20") when only one font has that size.
+" :EspFont [{size}]: the display's font, named for the screen size it gives
+" ("80x24"). Without an argument, lists them; a font's own name
+" ("terminus-10x20") picks between two that give the same size.
 function! esp#FontComplete(lead, line, pos) abort
-  return filter(map(copy(esp_display().fonts), 'v:val.name'), 'v:val =~# "^" . a:lead')
+  let sizes = []
+  for f in esp_display().fonts
+    if index(sizes, f.size) < 0
+      call add(sizes, f.size)
+    endif
+  endfor
+  return filter(sizes, 'v:val =~# "^" . a:lead')
 endfunction
 
 function! esp#Font(...) abort
@@ -342,24 +349,23 @@ function! esp#Font(...) abort
     return
   endif
   if a:0
-    let names = map(copy(d.fonts), 'v:val.name')
-    let name = a:1
-    if index(names, name) < 0
-      let short = filter(copy(names), 'v:val =~# "-" . escape(name, ".") . "$"')
-      if len(short) != 1
-        echoerr 'EspFont: no font "' . name . '"; there are ' . join(names, ', ')
-        return
-      endif
-      let name = short[0]
-    endif
-    call esp_display_font(name)
+    call esp_display_font(a:1)
     let d = esp_display()
-    echo printf('Font %s: %dx%d', d.font, d.cols, d.rows)
+    echo printf('Screen %dx%d (%s)', d.cols, d.rows, d.font)
     return
   endif
+  " Columns lined up: sizes on their "x", the font's family and cell size.
+  let rows = [['', 'Screen', 'Font', 'Glyph']]
   for f in d.fonts
-    echo printf('%s %-16s %3dx%-3d  %dx%d px', f.name ==# d.font ? '>' : ' ',
-          \ f.name, f.cols, f.rows, f.width, f.height)
+    let family = substitute(f.font, '-\d\+x\d\+$', '', '')
+    let family = substitute(toupper(family[0]) . family[1:], '-', ' ', 'g')
+    call add(rows, [f.font ==# d.font ? '>' : ' ',
+          \ printf('%*dx%-*d', 3, f.cols, 2, f.rows), family,
+          \ printf('%*dx%-*d', 2, f.width, 2, f.height)])
+  endfor
+  let widths = map(range(4), {i -> max(map(copy(rows), {_, r -> strwidth(r[i])}))})
+  for r in rows
+    echo join(map(r[:-2], {i, c -> c . repeat(' ', widths[i] - strwidth(c))}) + [r[-1]], '  ')
   endfor
 endfunction
 

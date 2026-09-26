@@ -204,10 +204,17 @@ void f_esp_console_output(typval_T *argvars, typval_T *rettv)
     rettv->vval.v_number = esp_vim_console_output() ? VVAL_TRUE : VVAL_FALSE;
 }
 
+/* A font's screen size as :EspFont names it, "80x24". */
+static void screen_size(const esp_display_font_info_t *f, char *buf, size_t len)
+{
+    snprintf(buf, len, "%dx%d", f->cols, f->rows);
+}
+
 /* esp_display() -> Dict: active (a display shows the console), rows, cols,
- * font (the name of the one in use) and fonts, a List of Dicts: name, width,
- * height, rows, cols. The system vimrc uses it to set 'background' and colours
- * for the panel. */
+ * font (the name of the one in use, "terminus-10x20") and fonts, a List of
+ * Dicts: size (the screen size it gives, "80x24"), font, width, height (its
+ * cell in pixels), rows, cols. The system vimrc uses it to set 'background' and
+ * colours for the panel. */
 void f_esp_display(typval_T *argvars UNUSED, typval_T *rettv)
 {
     if (rettv_dict_alloc(rettv) == FAIL)
@@ -229,7 +236,10 @@ void f_esp_display(typval_T *argvars UNUSED, typval_T *rettv)
         dict_T *d = dict_alloc();
         if (d == NULL)
             break;
-        dict_add_string(d, "name", (char_u *)f.name);
+        char size[16];
+        screen_size(&f, size, sizeof size);
+        dict_add_string(d, "size", (char_u *)size);
+        dict_add_string(d, "font", (char_u *)f.name);
         dict_add_number(d, "width", f.width);
         dict_add_number(d, "height", f.height);
         dict_add_number(d, "rows", f.rows);
@@ -240,32 +250,42 @@ void f_esp_display(typval_T *argvars UNUSED, typval_T *rettv)
 }
 
 /*
- * esp_display_font([{name}]) -> String: the display's font, '' without one.
- * With {name}: switch to it (one of esp_display().fonts), keep it for the next
- * start, and resize Vim to its grid. There is no SIGWINCH: $LINES and $COLUMNS
- * are where mch_get_shellsize() finds the size, as at startup.
+ * esp_display_font([{size}]) -> String: the display's screen size, as its font
+ * gives it ("80x24"); '' without a display. With {size}: switch to the first
+ * font giving that size -- or to a font by name ("terminus-10x20"), which tells
+ * apart two that give the same one -- keep it for the next start, and resize
+ * Vim to it. There is no SIGWINCH: $LINES and $COLUMNS are where
+ * mch_get_shellsize() finds the size, as at startup.
  */
 void f_esp_display_font(typval_T *argvars, typval_T *rettv)
 {
     esp_display_font_info_t f;
+    char size[16];
     rettv->v_type = VAR_STRING;
     rettv->vval.v_string = NULL;
     if (argvars[0].v_type != VAR_UNKNOWN) {
-        char_u *name = tv_get_string_chk(&argvars[0]);
-        if (name == NULL)
+        char_u *want = tv_get_string_chk(&argvars[0]);
+        if (want == NULL)
             return;
         if (!esp_display_active()) {
             emsg("esp_display_font(): no display");
             return;
         }
-        int i = 0;
-        while (esp_display_font_info(i, &f) && STRCMP(f.name, name) != 0)
-            i++;
-        if (!esp_display_font_info(i, &f)) {
-            semsg("esp_display_font(): no font \"%s\"", name);
+        int found = -1;
+        for (int i = 0; found < 0 && esp_display_font_info(i, &f); i++)
+            if (STRCMP(f.name, want) == 0)
+                found = i;
+        for (int i = 0; found < 0 && esp_display_font_info(i, &f); i++) {
+            screen_size(&f, size, sizeof size);
+            if (STRCMP(size, want) == 0)
+                found = i;
+        }
+        if (found < 0) {
+            semsg("esp_display_font(): no font gives \"%s\"", want);
             return;
         }
-        esp_err_t e = esp_display_set_font(i);
+        esp_display_font_info(found, &f);
+        esp_err_t e = esp_display_set_font(found);
         if (e != ESP_OK) {
             semsg("esp_display_font(): %s", esp_err_to_name(e));
             return;
@@ -277,6 +297,8 @@ void f_esp_display_font(typval_T *argvars, typval_T *rettv)
         setenv("COLUMNS", v, 1);
         shell_resized();
     }
-    if (esp_display_font_info(esp_display_font(), &f))
-        rettv->vval.v_string = vim_strsave((char_u *)f.name);
+    if (esp_display_font_info(esp_display_font(), &f)) {
+        screen_size(&f, size, sizeof size);
+        rettv->vval.v_string = vim_strsave((char_u *)size);
+    }
 }
