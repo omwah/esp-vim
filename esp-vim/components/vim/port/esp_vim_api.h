@@ -22,6 +22,8 @@ void f_esp_bt_keyboard_pair(typval_T *argvars, typval_T *rettv);
 void f_esp_console_output(typval_T *argvars, typval_T *rettv);
 void f_esp_display(typval_T *argvars, typval_T *rettv);
 void f_esp_display_font(typval_T *argvars, typval_T *rettv);
+void f_esp_power(typval_T *argvars, typval_T *rettv);
+void f_esp_sleep(typval_T *argvars, typval_T *rettv);
 
 /* api/esp_api_fs.c (over components/esp_fs) */
 void f_esp_fs_copy(typval_T *argvars, typval_T *rettv);

@@ -133,6 +133,83 @@ function! esp#Reboot(bang) abort
   call esp_reboot()
 endfunction
 
+" ------------------------------------------------ :EspSleep and :EspPower --
+
+" :EspSleep[!] [deep] [{seconds}]: sleep now. On a board with a wake button,
+" reader mode: light sleep, the screen as it was, and Vim carries on where it
+" was when the button wakes it. "deep" (or no wake button): the chip stops,
+" and waking is a boot, so unsaved changes would be lost -- refused without !.
+" {seconds}: a timer wakes it as well.
+function! esp#SleepComplete(lead, line, pos) abort
+  return filter(['deep'], 'v:val =~# "^" . a:lead')
+endfunction
+
+function! esp#Sleep(bang, ...) abort
+  let args = copy(a:000)
+  let deep = !empty(args) && args[0] ==# 'deep'
+  if deep
+    call remove(args, 0)
+  endif
+  let secs = empty(args) ? 0 : str2nr(args[0])
+  if len(args) > 1 || (!empty(args) && args[0] !~# '^\d\+$')
+    echoerr 'Usage: :EspSleep[!] [deep] [{seconds}]'
+    return
+  endif
+  if !esp_power().reader && secs == 0
+    let deep = 1                        " nothing but a reset would wake it
+  endif
+  let modified = getbufinfo({'bufmodified': 1})
+  if deep && !a:bang && !empty(modified)
+    echohl ErrorMsg
+    echomsg 'EspSleep: ' . len(modified) . ' buffer(s) with unsaved changes, e.g. "'
+          \ . fnamemodify(modified[0].name, ':~:.') . '": deep sleep loses them (add ! to sleep anyway)'
+    echohl None
+    return
+  endif
+  echo deep ? 'Sleeping (deep)...' : 'Sleeping...'
+  redraw
+  if esp_sleep(deep, secs)
+    echo 'Awake'
+  endif
+endfunction
+
+" :EspPower                   the battery, and when the board sleeps
+" :EspPower idle {min}|off    reader mode after {min} minutes idle, on battery
+" :EspPower deep {min}|off    deep sleep after {min} minutes in reader mode
+function! esp#PowerComplete(lead, line, pos) abort
+  return filter(['idle', 'deep'], 'v:val =~# "^" . a:lead')
+endfunction
+
+function! esp#Power(...) abort
+  if a:0
+    if a:0 != 2 || index(['idle', 'deep'], a:1) < 0 || a:2 !~# '^\(\d\+\|off\)$'
+      echoerr 'Usage: :EspPower [idle|deep {minutes}|off]'
+      return
+    endif
+    call esp_power({a:1 . '_min': a:2 ==# 'off' ? 0 : str2nr(a:2)})
+  endif
+  let p = esp_power()
+  let bat = p.battery_mv < 0 ? 'none measured'
+        \ : printf('%d.%02d V, about %d%%', p.battery_mv / 1000, p.battery_mv % 1000 / 10, p.battery_pct)
+  let rows = [
+        \ ['Power', p.source ==# 'usb' ? 'USB (a computer is connected)'
+        \           : p.source ==# 'battery' ? 'battery' : 'unknown'],
+        \ ['Battery', bat],
+        \ ['Reader mode', !p.reader ? 'no wake button: :EspSleep is a deep sleep'
+        \           : p.idle_min ? printf('after %d min without a key, on battery', p.idle_min)
+        \           : 'only on the wake button or :EspSleep'],
+        \ ['Deep sleep', p.reader && p.deep_min
+        \           ? printf('after %d min in reader mode, if nothing is unsaved', p.deep_min)
+        \           : 'only with :EspSleep' . (p.reader ? ' deep' : '')],
+        \ ['Idle', printf('%d s since the last key', p.idle_s)],
+        \ ['Sleeps', printf('%d reader, %d deep%s', p.sleeps, p.deep_sleeps,
+        \           empty(p.last_wake) ? '' : '; last woken by ' . p.last_wake)],
+        \ ]
+  for [k, v] in rows
+    echo printf('%-12s %s', k, v)
+  endfor
+endfunction
+
 " ------------------------------------------------------------- :EspGpio --
 
 " Words :EspGpio accepts after the pin, and what each does.

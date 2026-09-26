@@ -73,6 +73,11 @@ int esp_ble_kbd_forget(char *err, size_t errlen);
 
 void esp_ble_kbd_status(esp_ble_kbd_status_t *st);
 
+/* Sleep: drop the keyboard's connection and stop reconnecting, so the radio
+ * is quiet; resume reconnects at once. Any task; suspend waits up to 2 s. */
+void esp_ble_kbd_suspend(void);
+void esp_ble_kbd_resume(void);
+
 #ifdef __cplusplus
 }
 #endif

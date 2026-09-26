@@ -59,6 +59,29 @@ esp_err_t esp_display_set_font(int i);
 void esp_display_write(const void *buf, size_t len);
 
 /*
+ * Sleep. The display task finishes what's been written, then:
+ *   light: leaves the screen as it is, with {badge} (e.g. " zZ KEY ", may be
+ *          NULL) inverse in the bottom right corner, and waits for
+ *          esp_display_wake(), which repaints the terminal;
+ *   deep:  draws a sleep screen -- {bitmap} (1 bit per pixel, PBM's layout, 1
+ *          black; monochrome panels only) or {lines} of text, centred in the
+ *          largest font they fit -- and holds the panel's pins through deep
+ *          sleep, for the chip to stop.
+ * Either way a reflective panel goes to its low-power mode, keeping the
+ * picture, and a backlight goes off. Returns once that's done.
+ */
+typedef struct {
+    bool deep;
+    const char *badge;
+    const char *const *lines;
+    int nlines;
+    const uint8_t *bitmap;
+    int width, height;
+} esp_display_sleep_t;
+esp_err_t esp_display_sleep(const esp_display_sleep_t *req);
+void esp_display_wake(void);
+
+/*
  * A touch on the panel, as a mouse in the terminal -- only while the program on
  * it (Vim) has asked for mouse reports, so a stray tap never types anything:
  *   tap                          a click

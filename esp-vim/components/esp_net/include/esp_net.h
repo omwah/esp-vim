@@ -63,6 +63,11 @@ esp_err_t esp_net_init(void);
 
 void esp_net_get_status(esp_net_status_t *status);
 
+/* Sleep: WiFi's radio off; resume turns it on and rejoins the network it was
+ * on. Nothing to do without WiFi, or when it was never started. */
+void esp_net_suspend(void);
+void esp_net_resume(void);
+
 /* WiFi builds only (else -1, "no WiFi"). Scan blocks for about two seconds.
  * Connect stores the network (NVS), to be joined again at every boot, and
  * returns at once; watch the status. A NULL password rejoins the stored

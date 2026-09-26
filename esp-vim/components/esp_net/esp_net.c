@@ -97,10 +97,13 @@ static void wifi_set_configured(bool on)
  * starts, the stored network is joined only if the flag above says so: a
  * forget clears the flag before it erases the network, so the two can't race. */
 static volatile bool s_wifi_want;
+static volatile bool s_wifi_no_rejoin;  /* a resume after a disconnect: stay off */
 
 static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
-    if (id == WIFI_EVENT_STA_START) {
+    if (id == WIFI_EVENT_STA_START && s_wifi_no_rejoin) {
+        s_wifi_no_rejoin = false;
+    } else if (id == WIFI_EVENT_STA_START) {
         wifi_config_t c;
         if (wifi_configured() && esp_wifi_get_config(WIFI_IF_STA, &c) == ESP_OK && c.sta.ssid[0]) {
             s_wifi_want = true;             /* a network was stored: rejoin it */
@@ -131,6 +134,30 @@ static esp_err_t start_wifi(void)
         err = esp_wifi_start();
     s_wifi_started = err == ESP_OK;
     return err;
+}
+
+/* Sleep: the radio off, and back on -- rejoining the stored network, as at
+ * boot, if it was joined (or being joined) before. A driver never started
+ * stays so. */
+static bool s_wifi_suspended, s_wifi_wanted;
+
+void esp_net_suspend(void)
+{
+    if (!s_wifi_started || s_wifi_suspended)
+        return;
+    s_wifi_wanted = s_wifi_want;
+    s_wifi_want = false;                /* no reconnecting as it stops */
+    esp_wifi_stop();
+    s_wifi_suspended = true;
+}
+
+void esp_net_resume(void)
+{
+    if (!s_wifi_suspended)
+        return;
+    s_wifi_suspended = false;
+    s_wifi_no_rejoin = !s_wifi_wanted;
+    esp_wifi_start();
 }
 
 static const char *auth_name(wifi_auth_mode_t m)
@@ -254,6 +281,8 @@ int esp_net_wifi_saved(char *ssid, size_t n, char *err, size_t errlen)
     return 0;
 }
 #else
+void esp_net_suspend(void) {}
+void esp_net_resume(void) {}
 int esp_net_wifi_scan(esp_net_ap_cb cb, void *ctx, char *err, size_t errlen)
 {
     return snprintf(err, errlen, "this build has no WiFi"), -1;

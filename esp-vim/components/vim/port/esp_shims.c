@@ -37,6 +37,7 @@
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
 #include "esp_vim_port.h"
+#include "esp_power.h"
 #include "nvs.h"
 #include <sys/select.h>
 #include <termios.h>
@@ -280,9 +281,13 @@ static void console_output_save(bool on);
 
 ssize_t __wrap_read(int fd, void *buf, size_t len)
 {
-    if (extra_pending(fd))
+    if (extra_pending(fd)) {
+        esp_power_input();              /* a key: not idle */
         return s_extra_read(buf, len);
+    }
     ssize_t n = __real_read(fd, buf, len);
+    if (fd == STDIN_FILENO && n > 0)
+        esp_power_input();
     if (fd == STDIN_FILENO && n > 0 && s_console_off) {
         /* Someone is typing on the serial console: it's in use again. Show
          * them the whole screen, not just what changes from now on. */
@@ -347,9 +352,11 @@ int __wrap_select(int nfds, fd_set *r, fd_set *w, fd_set *e, struct timeval *tv)
         if (!on_vim_task() || !asks_console(nfds, r))
             return __real_select(nfds, r, w, e, tv);
         esp_vim_busy_idle();
+        esp_power_vim_waiting(true, esp_vim__any_modified());   /* sleep may come now */
         int n = (r && FD_ISSET(STDIN_FILENO, r) && s_extra_pending != NULL)
                     ? select_with_extra(nfds, r, w, e, tv)
                     : __real_select(nfds, r, w, e, tv);
+        esp_power_vim_waiting(false, false);
         esp_vim_busy_wait_done();
         return n;
     }

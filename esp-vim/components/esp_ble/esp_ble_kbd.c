@@ -41,6 +41,7 @@ static char s_last[64];
 static bool s_hidh_ready;
 static SemaphoreHandle_t s_wake;        /* the reconnect task: look again now */
 static bool s_task_started;
+static volatile bool s_suspended;       /* asleep: don't reconnect (esp_ble_kbd_suspend) */
 
 /* ------------------------------------------------------------- the flag -- */
 
@@ -188,7 +189,7 @@ static void reconnect_task(void *arg)
 {
     char err[96];
     for (;;) {
-        if (s_dev == NULL && paired_get()) {
+        if (s_dev == NULL && paired_get() && !s_suspended) {
             xSemaphoreTake(esp_ble__lock, portMAX_DELAY);
             if (ready(err, sizeof err) == 0) {
                 ble_addr_t peers[4];
@@ -288,6 +289,28 @@ int esp_ble_kbd_forget(char *err, size_t errlen)
     return rc;
 }
 
+void esp_ble_kbd_suspend(void)
+{
+    s_suspended = true;
+    if (!s_task_started)
+        return;                         /* no keyboard: Bluetooth never started */
+    esp_ble__cancel_connect();          /* a reconnect attempt waiting to connect */
+    xSemaphoreTake(esp_ble__lock, portMAX_DELAY);
+    esp_hidh_dev_t *dev = s_dev;
+    if (dev)
+        esp_hidh_dev_close(dev);
+    xSemaphoreGive(esp_ble__lock);
+    for (int i = 0; i < 40 && s_dev != NULL; i++)
+        vTaskDelay(pdMS_TO_TICKS(50));  /* the close event: at most 2 s */
+}
+
+void esp_ble_kbd_resume(void)
+{
+    s_suspended = false;
+    if (s_wake)
+        xSemaphoreGive(s_wake);         /* reconnect now */
+}
+
 void esp_ble_kbd_status(esp_ble_kbd_status_t *st)
 {
     memset(st, 0, sizeof *st);
@@ -311,6 +334,8 @@ void esp_ble_kbd_status(esp_ble_kbd_status_t *st)
 void esp_ble__config_security(void) {}
 void esp_ble__cancel_connect(void) {}
 void esp_ble_kbd_boot(void) {}
+void esp_ble_kbd_suspend(void) {}
+void esp_ble_kbd_resume(void) {}
 
 int esp_ble_kbd_pair(const char *addr, bool random, char *err, size_t errlen)
 {

@@ -1,0 +1,49 @@
+menu "esp-vim power"
+
+    config ESP_VIM_WAKE_KEY_GPIO
+        int "Wake button GPIO (-1: none)"
+        default -1
+        range -1 48
+        help
+            A button, pulled up and pressed to ground, that wakes the board
+            from sleep -- and, pressed while it's awake, puts it into reader
+            mode. With one, sleep is light sleep: Vim carries on exactly where
+            it was. To wake from deep sleep as well it must be an RTC GPIO
+            (0-21 on the ESP32-S3). The Waveshare ESP32-S3-RLCD-4.2's KEY is 18.
+
+    config ESP_VIM_BAT_ADC_GPIO
+        int "Battery voltage ADC GPIO (-1: none)"
+        default -1
+        range -1 48
+        help
+            Where the battery's voltage can be read, through a divider. With
+            one (and the console on the S3's own USB, which tells when a
+            computer is there), the board knows when it's on battery, and only
+            then sleeps by itself. The RLCD-4.2's is 4.
+
+    config ESP_VIM_BAT_DIVIDER
+        int "Battery divider: battery mV per 1000 mV at the pin"
+        default 3000
+        help
+            The RLCD-4.2 reads the battery through 200k over 100k: 3000.
+
+    config ESP_VIM_SLEEP_IDLE_MIN
+        int "Minutes without a key, on battery, before reader mode (0: never)"
+        default 0
+        help
+            The default; :EspPower idle changes it, kept in NVS.
+
+    config ESP_VIM_SLEEP_DEEP_MIN
+        int "Minutes in reader mode before deep sleep (0: never)"
+        default 60
+        help
+            Only when no buffer has unsaved changes. The default; :EspPower
+            deep changes it, kept in NVS.
+
+    config ESP_VIM_SLEEP_LOW_MV
+        int "Battery mV below which the board goes to deep sleep (0: never)"
+        default 3450
+        help
+            Only on battery, and when no buffer has unsaved changes.
+
+endmenu

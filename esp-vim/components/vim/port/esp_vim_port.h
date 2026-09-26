@@ -53,6 +53,7 @@ void esp_vim_console_output_load(void);
 
 /* Redraw the whole screen at the next update (api/esp_api_sys.c). Vim task only. */
 void esp_vim__redraw_all(void);
+bool esp_vim__any_modified(void);       /* a buffer has unsaved changes */
 
 /*
  * Vim sessions: restarting Vim in place after :q, without rebooting.

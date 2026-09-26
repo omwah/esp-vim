@@ -8,6 +8,7 @@
 #include "esp_vim_api.h"
 #include "esp_vim_port.h"
 #include "esp_display.h"
+#include "esp_power.h"
 
 #include "esp_chip_info.h"
 #include "esp_flash.h"
@@ -180,6 +181,73 @@ void f_esp_reboot(typval_T *argvars UNUSED, typval_T *rettv UNUSED)
 void esp_vim__redraw_all(void)
 {
     redraw_later(UPD_CLEAR);
+}
+
+bool esp_vim__any_modified(void)
+{
+    return anyBufIsChanged();
+}
+
+/*
+ * esp_power([{settings}]) -> Dict: source ("usb", "battery", "unknown"),
+ * battery_mv and battery_pct (-1: none), reader (reader mode available),
+ * idle_min, deep_min, idle_s, sleeps, deep_sleeps, last_wake ("key", "timer",
+ * ""). {settings}: idle_min and/or deep_min to change, kept in NVS.
+ */
+void f_esp_power(typval_T *argvars, typval_T *rettv)
+{
+    if (argvars[0].v_type == VAR_DICT && argvars[0].vval.v_dict != NULL) {
+        dict_T *d = argvars[0].vval.v_dict;
+        int idle = dict_has_key(d, "idle_min") ? (int)dict_get_number(d, "idle_min") : -1;
+        int deep = dict_has_key(d, "deep_min") ? (int)dict_get_number(d, "deep_min") : -1;
+        esp_power_set(idle, deep);
+    }
+    if (rettv_dict_alloc(rettv) == FAIL)
+        return;
+    esp_power_status_t st;
+    esp_power_status(&st);
+    dict_T *d = rettv->vval.v_dict;
+    dict_add_string(d, "source", (char_u *)st.source);
+    dict_add_number(d, "battery_mv", st.battery_mv);
+    dict_add_number(d, "battery_pct", st.battery_pct);
+    dict_add_bool(d, "reader", st.reader);
+    dict_add_number(d, "idle_min", st.idle_min);
+    dict_add_number(d, "deep_min", st.deep_min);
+    dict_add_number(d, "idle_s", st.idle_s);
+    dict_add_number(d, "sleeps", st.sleeps);
+    dict_add_number(d, "deep_sleeps", st.deep_sleeps);
+    dict_add_string(d, "last_wake", (char_u *)st.last_wake);
+}
+
+/*
+ * esp_sleep([{deep} [, {seconds}]]) -> Bool: sleep now. Reader mode (light
+ * sleep: Vim carries on where it was, once the wake button is pressed), or
+ * with {deep} a deep sleep, which doesn't return -- waking is a boot. With
+ * {seconds}, a timer wakes it too. The caller checks for unsaved changes
+ * (:EspSleep does); in reader mode they only keep it from turning into a
+ * deep sleep.
+ */
+void f_esp_sleep(typval_T *argvars, typval_T *rettv)
+{
+    int error = FALSE;
+    bool deep = argvars[0].v_type != VAR_UNKNOWN && tv_get_bool_chk(&argvars[0], &error);
+    int secs = argvars[0].v_type != VAR_UNKNOWN && argvars[1].v_type != VAR_UNKNOWN
+               ? (int)tv_get_number_chk(&argvars[1], &error) : 0;
+    rettv->v_type = VAR_BOOL;
+    rettv->vval.v_number = VVAL_FALSE;
+    if (error)
+        return;
+    out_flush();                        /* the screen shows everything first */
+    esp_err_t e = esp_power_sleep(deep, secs, anyBufIsChanged());
+    if (e == ESP_ERR_NOT_SUPPORTED) {
+        emsg("esp_sleep(): no wake button on this board: nothing would wake it but a reset (deep sleep)");
+        return;
+    }
+    if (e != ESP_OK) {
+        semsg("esp_sleep(): %s", esp_err_to_name(e));
+        return;
+    }
+    rettv->vval.v_number = VVAL_TRUE;
 }
 
 /*

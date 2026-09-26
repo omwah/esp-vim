@@ -25,3 +25,14 @@ CONFIG_ESP_VIM_DISP_ST7305=y
 # The SPI driver's interrupt code in flash rather than internal RAM, as on the
 # ES3C28P: a transfer that ends during a flash write is simply noticed later.
 # CONFIG_SPI_MASTER_ISR_IN_IRAM is not set
+
+# Sleep (esp_power): KEY (GPIO18) wakes the board, and pressed while it's awake
+# puts it into reader mode -- light sleep with the screen as it was. On battery
+# (GPIO4 reads it through 200k over 100k) it goes there by itself after 5
+# minutes without a key, and to deep sleep, with a hippo on the screen, after an
+# hour more if nothing is unsaved.
+CONFIG_ESP_VIM_WAKE_KEY_GPIO=18
+CONFIG_ESP_VIM_BAT_ADC_GPIO=4
+CONFIG_ESP_VIM_BAT_DIVIDER=3000
+CONFIG_ESP_VIM_SLEEP_IDLE_MIN=5
+CONFIG_ESP_VIM_SLEEP_DEEP_MIN=60

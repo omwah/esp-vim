@@ -200,6 +200,36 @@ window at the bottom: "R" refreshes it, "q" closes it.
 		changes, unless you add !.  Unlike |esp-quit| this is a real
 		reset.
 
+:EspSleep[!] [deep] [{seconds}]			*:EspSleep* *esp-sleep*
+		Sleep now.  On a board with a wake button (the RLCD-4.2's
+		KEY) this is reader mode: light sleep, with the screen left
+		as it was and " zZ KEY " in its corner; the button wakes it,
+		and Vim carries on exactly where it was.  Pressing the
+		button while the board is awake does the same.  With "deep",
+		or on a board without a wake button, the chip stops instead:
+		waking is a fresh start, so it refuses while a buffer has
+		unsaved changes, unless you add !.  A reflective screen shows
+		a sleeping hippo meanwhile, or /fat/sleep.pbm if there is one
+		(a binary PBM, at most the screen's size).  The wake button
+		wakes it, or the reset button where there is one.  With
+		{seconds}, a timer wakes it as well.  WiFi and a Bluetooth
+		keyboard are switched off while it sleeps; they reconnect
+		when it wakes.
+
+:EspPower						*:EspPower*
+		The power source (USB when a computer is on the USB port,
+		else battery), the battery's voltage, and when the board
+		sleeps by itself.  On battery, with nothing typed for a
+		while, it goes to reader mode, then after longer to deep
+		sleep if nothing is unsaved; also when the battery runs low.
+		It only ever sleeps while Vim waits for a key.
+
+:EspPower idle {minutes}|off
+		Reader mode after {minutes} without a key, on battery.
+
+:EspPower deep {minutes}|off
+		Deep sleep after {minutes} in reader mode.
+
 NETWORK							*esp-network*
 
 :EspNet							*:EspNet*

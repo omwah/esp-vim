@@ -29,6 +29,7 @@
 #include "esp_kbd.h"
 #include "esp_touch.h"
 #include "esp_pairui.h"
+#include "esp_power.h"
 #include "esp_heap_caps.h"
 #include "driver/uart.h"
 #include "driver/uart_vfs.h"
@@ -411,6 +412,8 @@ void app_main(void)
     esp_web_init();
     esp_ble_kbd_boot();     /* a bonded Bluetooth keyboard reconnects by itself */
     esp_pairui_start();     /* no keyboard: offer to pair one by touch */
+    if (esp_power_init() != ESP_OK)     /* the battery, and sleep */
+        ESP_LOGE(TAG, "power: not available");
 
     /*
      * app_main's task becomes the session supervisor: start a Vim session,

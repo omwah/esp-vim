@@ -130,6 +130,10 @@ static int *s_dirty_lo, *s_dirty_hi;    /* damaged columns [lo, hi) per row */
 static int s_max_rows;                  /* rows those have: the smallest font's */
 static volatile int s_font_req = -1;    /* a font for the display task to switch to */
 static SemaphoreHandle_t s_font_done;   /* ... and it has */
+static const esp_display_sleep_t *volatile s_sleep_req;    /* esp_display_sleep() */
+static SemaphoreHandle_t s_sleep_done;  /* the display task has drawn it, and parked */
+static SemaphoreHandle_t s_resume;      /* esp_display_wake(): carry on */
+static volatile bool s_parked;          /* the display task waits for it */
 
 /* -------------------------------------------------------------- damage -- */
 
@@ -349,6 +353,7 @@ static void paint_damage(void)
 }
 
 static void clear_panel(void);
+static void go_to_sleep(const esp_display_sleep_t *req);
 
 /* Take font i: the grid it gives, and libvterm's screen resized to it. The
  * whole terminal is repainted next time round. */
@@ -385,6 +390,11 @@ static void display_task(void *arg)
             use_font(s_font_req);
             s_font_req = -1;
             xSemaphoreGive(s_font_done);
+        }
+        if (s_sleep_req) {
+            const esp_display_sleep_t *req = s_sleep_req;
+            s_sleep_req = NULL;
+            go_to_sleep(req);           /* returns on esp_display_wake() */
         }
         if (s_overlay)
             continue;                   /* libvterm keeps the screen; painting waits */
@@ -497,6 +507,175 @@ void esp_display_overlay_end(void)
         return;
     s_repaint = true;                   /* the display task repaints the terminal */
     s_overlay = false;
+}
+
+/* ------------------------------------------------------------------- sleep -- */
+
+/* Text in font f at pixel (x, y), up to as many cells as the line buffer holds
+ * at a time. Panel lock held. */
+static void text_at(const esp_display_font_t *f, int x, int y, const char *text, bool inverse)
+{
+#if DISP_MONO
+    uint16_t fg = INK, bg = PAPER;
+#else
+    uint16_t fg = swap565(0xE5, 0xE5, 0xE5), bg = swap565(0x00, 0x00, 0x00);
+#endif
+    if (inverse) {
+        uint16_t t = fg; fg = bg; bg = t;
+    }
+    const int chunk = s_line_px / (f->width * f->height);
+    for (int len = strlen(text); len > 0; ) {
+        int n = len < chunk ? len : chunk, w = n * f->width;
+        for (int i = 0; i < n; i++) {
+            const uint8_t *g = text[i] == ' ' ? NULL : glyph_in(f, (unsigned char)text[i]);
+            uint16_t *px = s_line + i * f->width;
+            for (int r = 0; r < f->height; r++) {
+                unsigned bits = !g ? 0 : f->bytes_per_row == 2 ? (g[2 * r] << 8 | g[2 * r + 1])
+                                                               : g[r] << 8;
+                for (int c = 0; c < f->width; c++)
+                    px[r * w + c] = (bits & (0x8000 >> c)) ? fg : bg;
+            }
+        }
+        draw(x, y, x + w, y + f->height);
+        x += w;
+        text += n;
+        len -= n;
+    }
+}
+
+/* A picture made of text: the largest font it fits in, centred. */
+static void text_screen(const char *const *lines, int n)
+{
+    int width = 0;
+    for (int i = 0; i < n; i++)
+        if ((int)strlen(lines[i]) > width)
+            width = strlen(lines[i]);
+    const esp_display_font_t *f = NULL;
+    for (int i = 0; i < esp_display_font_count; i++) {
+        const esp_display_font_t *c = esp_display_fonts[i];
+        bool fits = CONFIG_ESP_VIM_DISP_WIDTH / c->width >= width
+                    && CONFIG_ESP_VIM_DISP_HEIGHT / c->height >= n;
+        if (fits && (f == NULL || c->height > f->height))
+            f = c;
+        if (f == NULL && i == esp_display_font_count - 1)
+            f = c;                      /* too big for all of them: cut off */
+    }
+    int x0 = (CONFIG_ESP_VIM_DISP_WIDTH - width * f->width) / 2;
+    int y0 = (CONFIG_ESP_VIM_DISP_HEIGHT - n * f->height) / 2;
+    for (int i = 0; i < n; i++)
+        if (y0 + (i + 1) * f->height <= CONFIG_ESP_VIM_DISP_HEIGHT)
+            text_at(f, x0 < 0 ? 0 : x0, y0 < 0 ? 0 : y0 + i * f->height, lines[i], false);
+}
+
+#if DISP_MONO
+/* A 1-bit picture (PBM's layout: rows padded to bytes, 1 black), centred. */
+static void bitmap_screen(const uint8_t *bits, int w, int h)
+{
+    int x0 = (CONFIG_ESP_VIM_DISP_WIDTH - w) / 2, y0 = (CONFIG_ESP_VIM_DISP_HEIGHT - h) / 2;
+    int stride = (w + 7) / 8;
+    for (int y = 0; y < h; y++)
+        for (int x = 0; x < w; x++) {
+            int px = x0 + x, py = y0 + y;
+            if (px >= 0 && py >= 0 && px < CONFIG_ESP_VIM_DISP_WIDTH && py < CONFIG_ESP_VIM_DISP_HEIGHT)
+                fb_set(px, py, !(bits[y * stride + x / 8] & (0x80 >> (x % 8))));
+        }
+    s_fb_dirty = true;
+}
+#endif
+
+/* The panel's pins through deep sleep: a reflective panel keeps its picture
+ * only while its reset line stays high and nothing is clocked in; a backlight
+ * stays off. Released at the next boot (esp_display_init). */
+static const int s_hold_pins[] = {
+#if DISP_MONO
+    CONFIG_ESP_VIM_DISP_RST, CONFIG_ESP_VIM_DISP_CS, CONFIG_ESP_VIM_DISP_DC,
+    CONFIG_ESP_VIM_DISP_SCLK, CONFIG_ESP_VIM_DISP_MOSI,
+#endif
+    CONFIG_ESP_VIM_DISP_BACKLIGHT,
+};
+
+static void hold_pins(bool on)
+{
+    for (size_t i = 0; i < sizeof s_hold_pins / sizeof s_hold_pins[0]; i++) {
+        if (s_hold_pins[i] < 0)
+            continue;
+        if (on)
+            gpio_hold_en(s_hold_pins[i]);
+        else
+            gpio_hold_dis(s_hold_pins[i]);
+    }
+    if (on)
+        gpio_deep_sleep_hold_en();
+    else
+        gpio_deep_sleep_hold_dis();
+}
+
+static void backlight(bool on)
+{
+#if CONFIG_ESP_VIM_DISP_BACKLIGHT >= 0
+    gpio_set_level(CONFIG_ESP_VIM_DISP_BACKLIGHT,
+                   on ? CONFIG_ESP_VIM_DISP_BACKLIGHT_ON_LEVEL : !CONFIG_ESP_VIM_DISP_BACKLIGHT_ON_LEVEL);
+#endif
+}
+
+/* On the display task: finish what Vim wrote, draw the sleep screen, rest the
+ * panel, and park until esp_display_wake() (never, for deep sleep). */
+static void go_to_sleep(const esp_display_sleep_t *req)
+{
+    const bool deep = req->deep;        /* the caller's, gone once it's told */
+    xSemaphoreTake(s_panel_lock, portMAX_DELAY);
+    if (!s_overlay)
+        paint_damage();
+    if (deep) {
+        clear_panel();
+#if DISP_MONO
+        if (req->bitmap)
+            bitmap_screen(req->bitmap, req->width, req->height);
+        else
+#endif
+        if (req->lines)
+            text_screen(req->lines, req->nlines);
+    } else if (req->badge && !s_overlay) {
+        /* In the bottom right corner, over Vim's last cells. */
+        int n = strlen(req->badge);
+        text_at(s_font, X0 + (COLS - n) * FONT_W, Y0 + (ROWS - 1) * FONT_H, req->badge, true);
+    }
+    flush();
+#if DISP_MONO
+    esp_lcd_panel_io_tx_param(s_io, 0x39, NULL, 0);         /* low-power mode: keeps the picture */
+#endif
+    backlight(false);
+    if (deep)
+        hold_pins(true);
+    xSemaphoreGive(s_panel_lock);
+    s_parked = true;
+    xSemaphoreGive(s_sleep_done);
+    if (deep)
+        vTaskSuspend(NULL);             /* the chip is about to stop */
+    xSemaphoreTake(s_resume, portMAX_DELAY);
+    s_parked = false;
+#if DISP_MONO
+    esp_lcd_panel_io_tx_param(s_io, 0x38, NULL, 0);         /* high-power mode */
+#endif
+    backlight(true);
+    s_repaint = true;                   /* the badge goes */
+}
+
+esp_err_t esp_display_sleep(const esp_display_sleep_t *req)
+{
+    if (!s_active)
+        return ESP_ERR_INVALID_STATE;
+    xSemaphoreTake(s_sleep_done, 0);
+    s_sleep_req = req;
+    if (s_parked)
+        xSemaphoreGive(s_resume);       /* asleep already (light): wake to take it */
+    return xSemaphoreTake(s_sleep_done, pdMS_TO_TICKS(3000)) == pdTRUE ? ESP_OK : ESP_ERR_TIMEOUT;
+}
+
+void esp_display_wake(void)
+{
+    if (s_active)
+        xSemaphoreGive(s_resume);
 }
 
 /* ---------------------------------------------------------- touch-as-mouse -- */
@@ -875,6 +1054,8 @@ esp_err_t esp_display_init(void)
     s_write_lock = xSemaphoreCreateMutex();
     s_panel_lock = xSemaphoreCreateMutex();
     s_font_done = xSemaphoreCreateBinary();
+    s_sleep_done = xSemaphoreCreateBinary();
+    s_resume = xSemaphoreCreateBinary();
     s_stream = xStreamBufferCreateWithCaps(STREAM_SIZE, 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     /* SPI sends it by DMA. An RGB panel copies it into the frame buffer, and
      * from internal RAM that copy doesn't also read PSRAM, which the LCD is
@@ -886,7 +1067,8 @@ esp_err_t esp_display_init(void)
 #else
                               MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
 #endif
-    if (!s_flushed || !s_write_lock || !s_panel_lock || !s_font_done || !s_stream || !s_line)
+    if (!s_flushed || !s_write_lock || !s_panel_lock || !s_font_done || !s_sleep_done
+            || !s_resume || !s_stream || !s_line)
         return ESP_ERR_NO_MEM;
 #if DISP_MONO
     s_fb = heap_caps_malloc(FB_SIZE, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
@@ -895,6 +1077,7 @@ esp_err_t esp_display_init(void)
     memset(s_fb, 0xFF, FB_SIZE);        /* white */
 #endif
 
+    hold_pins(false);                   /* held through a deep sleep: let go */
 #if CONFIG_ESP_VIM_DISP_RGB
     esp_err_t e = panel_init_core1();
 #else

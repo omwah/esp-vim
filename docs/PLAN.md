@@ -1483,7 +1483,37 @@ board (github.com/waveshareteam/ESP32-S3-RLCD-4.2).
   (50×21) and Spleen 8×16 (50×18). `:help` is reflowed to 66 columns.
 - **Input:** the USB console, or a BLE keyboard paired with `:EspBtKeyboard`: there
   is no touch panel. Vim's heap is 4.2 MB (no program copy in PSRAM here).
-- **Not yet:** the TF card, the KEY button, the battery gauge and audio.
+- **Not yet:** the TF card (SPI: MOSI 21, SCK 38, MISO 39) and audio.
+
+- **Sleep, 2026-09-26: reader mode and a hippo** (`esp_power`, `:EspSleep`,
+  `:EspPower`). The schematic settles what's possible: **KEY is GPIO18** (10k to
+  3.3 V, pressed to ground), an RTC pin, so it can wake the chip from light and
+  deep sleep; **PWR is not a reset** but a push-button power controller (U3) that
+  switches the whole supply, and there is no reset button at all; the battery is
+  on GPIO4 through 200k over 100k; **VBUS reaches no GPIO**, so "on battery" is
+  "no computer on the USB port" (`usb_serial_jtag_is_connected()`, which sees
+  USB traffic) -- a charger counts as battery.
+  - **Reader mode** is light sleep. RAM and PSRAM are kept, so Vim carries on
+    where it was; the panel goes to its low-power mode (0x39), keeping the
+    picture, with ` zZ KEY ` inverse in its corner. KEY wakes it; pressed while
+    awake, it sleeps. WiFi is stopped and restarted (rejoining the network it was
+    on); a Bluetooth keyboard is disconnected and reconnects by itself.
+  - **Deep sleep** stops the chip; waking (KEY, ext0) is a boot. The panel keeps
+    showing a sleep screen: a snarky hippo in text, or `/fat/sleep.pbm`. Its
+    RST, CS, DC and clock pins are held through deep sleep (`gpio_hold_en`,
+    `gpio_deep_sleep_hold_en`) -- a reset line floating low would blank it --
+    and released at the next boot.
+  - **By itself, on battery only, and only while Vim waits for a key** (the
+    port reports its waits, `esp_power_vim_waiting`): reader mode after 5
+    minutes without a key, deep sleep after 60 more if nothing is unsaved (a
+    timer checks in), and deep sleep when the battery drops below 3.45 V, again
+    only with nothing unsaved. The minutes are `:EspPower idle`/`deep`, in NVS.
+  - The display task does the drawing: `esp_display_sleep()` hands it the
+    request, it finishes what Vim wrote, draws, rests the panel and parks until
+    `esp_display_wake()`. Boards without a wake button get deep sleep only, with
+    the backlight held off; a reset wakes them.
+  - On the S3, light sleep turns off the USB Serial/JTAG pads: a computer sees
+    the port go and come back.
 
 
 ---
