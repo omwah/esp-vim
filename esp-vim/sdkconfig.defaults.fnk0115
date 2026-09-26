@@ -36,11 +36,14 @@ CONFIG_LCD_RGB_RESTART_IN_VSYNC=y
 # for a quarter of the time -- Bluetooth's controller alone, running from
 # flash, made the picture jitter. Espressif's advice for RGB panels on the S3.
 CONFIG_SPIRAM_XIP_FROM_PSRAM=y
-# That also lets the Vim task's 64 KB stack live in PSRAM (ESP_VIM_STACK_IN_PSRAM,
-# on by default then), which pays for two 10-line bounce buffers in internal RAM
-# (32 KB): the LCD streams from them, and an interrupt on core 1 refills them
-# from the frame buffer -- the DMA no longer waits on PSRAM, so drawing, which
-# the CPU does in PSRAM, can't make the picture flicker.
-CONFIG_ESP_VIM_DISP_BOUNCE_LINES=10
+# That also lets the stacks of the tasks that write flash live in PSRAM
+# (ESP_VIM_STACK_IN_PSRAM, on by default then: Vim's 64 KB, the web server's,
+# the keyboard tasks'), which pays for two 5-line bounce buffers in internal
+# RAM (16 KB): the LCD streams from them, and an interrupt on core 1 refills
+# them from the frame buffer -- the DMA no longer waits on PSRAM, so drawing,
+# which the CPU does in PSRAM, can't make the picture flicker. Not 10 lines
+# (32 KB): that took the DMA-capable internal RAM WiFi and TLS need, and the
+# web interface's handshakes then timed out.
+CONFIG_ESP_VIM_DISP_BOUNCE_LINES=5
 # The panel won't take a pixel clock much below Freenove's 13 MHz: at 10 it
 # shows its own test pattern instead.

@@ -1412,15 +1412,23 @@ and TN panels with resistive XPT2046 touch) differ in panel size, timings and to
     jitter.
   - `SPIRAM_XIP_FROM_PSRAM` (the program runs from a copy in PSRAM, about 3.3 MB) took
     the flash off the bus; then each keystroke's redraw still flickered.
-  - The cure is a **bounce buffer**: two 10-line buffers in internal RAM (32 KB) that
-    the LCD streams from, refilled by an interrupt on core 1. That is too much internal
-    RAM on its own (Bluetooth then fails with `ESP_ERR_NO_MEM`). But with the program in
-    PSRAM, flash writes no longer disable the cache (ESP-IDF's
-    `SPI_FLASH_CACHE_NO_DISABLE`), so the Vim task's 64 KB stack can live in PSRAM
-    (`ESP_VIM_STACK_IN_PSRAM`, on by default in that case). That pays for it.
-  - Result: a steady picture while typing and scanning, **70.9 KB of internal RAM
-    free** with Bluetooth up, and Vim's heap at 2.5 MB (half of the PSRAM left).
-    Saving files works from the PSRAM stack.
+  - The cure is a **bounce buffer**: two small buffers in internal RAM that the LCD
+    streams from, refilled by an interrupt on core 1. It costs internal RAM the
+    board doesn't have to spare: with 10 lines (32 KB), Bluetooth failed to start
+    (`ESP_ERR_NO_MEM`). But with the program in PSRAM, flash writes no longer
+    disable the cache (ESP-IDF's `SPI_FLASH_CACHE_NO_DISABLE`). So the tasks whose
+    stacks were internal only because they write flash can use PSRAM
+    (`ESP_VIM_STACK_IN_PSRAM`, on by default in that case): the Vim task (64 KB),
+    the web server (10 KB) and the keyboard tasks. That pays for it.
+  - **5 lines, not 10.** Even with 10 lines affordable in total RAM, they took the
+    DMA-capable internal RAM that WiFi and TLS need. The web server then started,
+    but every handshake timed out (after its task first failed to start at all:
+    `ESP_ERR_HTTPD_TASK`). 5 lines (16 KB) keep the picture steady and leave room.
+  - Result: a steady picture while typing, scanning and serving the web interface,
+    with WiFi, Bluetooth and the web server all up. Internal RAM is 40 KB free once
+    running, with a 31 KB largest block. DMA-capable RAM dips close to zero briefly at
+    boot, so that is the margin to watch. Vim's heap is 2.5 MB (half of the PSRAM
+    left). Saving files works from the PSRAM stack.
 
 
 ---

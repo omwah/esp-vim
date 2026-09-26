@@ -211,9 +211,15 @@ static void start_reconnecting(void)
     s_wake = xSemaphoreCreateBinary();
     /* An internal stack, not PSRAM: the first attempt starts the Bluetooth
      * stack, which reads flash (calibration, stored bonds), and ESP-IDF
-     * refuses flash access from a task with a PSRAM stack. */
+     * refuses flash access from a task with a PSRAM stack -- unless the
+     * program runs from PSRAM (ESP_VIM_STACK_IN_PSRAM). */
+#if CONFIG_ESP_VIM_STACK_IN_PSRAM
+    if (s_wake && xTaskCreatePinnedToCoreWithCaps(reconnect_task, "kbd_reconnect", 4096, NULL, 3,
+                                                  NULL, 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) == pdPASS)
+#else
     if (s_wake && xTaskCreatePinnedToCore(reconnect_task, "kbd_reconnect", 4096, NULL, 3,
                                           NULL, 1) == pdPASS)
+#endif
         s_task_started = true;
 }
 

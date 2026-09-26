@@ -30,6 +30,7 @@
 #include "esp_timer.h"
 #include "esp_touch.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/idf_additions.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
 
@@ -222,9 +223,16 @@ static void pairui_task(void *arg)
 void esp_pairui_start(void)
 {
     s_taps = xQueueCreate(8, sizeof(tap_t));
-    /* An internal stack: pairing may start Bluetooth, which reads flash. */
+    /* An internal stack: pairing may start Bluetooth, which reads flash --
+     * unless the program runs from PSRAM (ESP_VIM_STACK_IN_PSRAM). */
+#if CONFIG_ESP_VIM_STACK_IN_PSRAM
+    if (s_taps)
+        xTaskCreatePinnedToCoreWithCaps(pairui_task, "pairui", 4096, NULL, 3, NULL, 1,
+                                        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+#else
     if (s_taps)
         xTaskCreatePinnedToCore(pairui_task, "pairui", 4096, NULL, 3, NULL, 1);
+#endif
 }
 
 #else   /* no display, touch panel or Bluetooth keyboards */

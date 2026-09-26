@@ -623,9 +623,14 @@ esp_err_t esp_display_init(void)
     s_stream = xStreamBufferCreateWithCaps(STREAM_SIZE, 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     /* SPI sends it by DMA. An RGB panel copies it into the frame buffer, and
      * from internal RAM that copy doesn't also read PSRAM, which the LCD is
-     * streaming the frame buffer out of. */
+     * streaming the frame buffer out of -- unless the LCD streams from bounce
+     * buffers, when PSRAM will do and the internal RAM is better spent. */
     s_line = heap_caps_malloc(CHUNK * FONT_W * FONT_H * sizeof(uint16_t),
+#if CONFIG_ESP_VIM_DISP_RGB && CONFIG_ESP_VIM_DISP_BOUNCE_LINES > 0
+                              MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+#else
                               MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+#endif
     if (!s_flushed || !s_write_lock || !s_panel_lock || !s_stream || !s_line)
         return ESP_ERR_NO_MEM;
 

@@ -850,6 +850,12 @@ int esp_web_start(int port, char *err, size_t errlen)
     conf.httpd.max_open_sockets = 4;
     conf.httpd.max_uri_handlers = sizeof ROUTES / sizeof ROUTES[0];
     conf.httpd.stack_size = 10240;
+#if CONFIG_ESP_VIM_STACK_IN_PSRAM
+    /* Its handlers write files, which a task with a PSRAM stack may do only
+     * when the program runs from PSRAM (ESP_VIM_STACK_IN_PSRAM); then the
+     * stack's 10 KB needn't come from the scarce internal RAM. */
+    conf.httpd.task_caps = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
+#endif
     conf.httpd.lru_purge_enable = true;
     esp_err_t e = httpd_ssl_start(&s_server, &conf);
     /* The server keeps its own copies of the certificate and key. */
