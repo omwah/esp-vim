@@ -697,6 +697,7 @@ This depends on `+eval`, which `FEAT_NORMAL` gives us.
 |---|---|
 | `:EspWifiScan` | scratch buffer: SSID / RSSI / channel / auth, sortable |
 | `:EspWifiConnect {ssid} [pass]` | credentials persisted to NVS |
+| `:EspWifiDisconnect` / `:EspWifiForget` | leave for now (still saved) / erase the network and password |
 | `:EspWifiStatus` | IP, RSSI, uptime; also reports C6 link health |
 | `:EspGpio {pin} {on\|off\|read\|in\|out}` | `-complete` offers valid pins per target |
 | `:EspAdc {channel}` | raw + calibrated mV |

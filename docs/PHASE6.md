@@ -417,7 +417,8 @@ mention it: `--net user,hostfwd=tcp:127.0.0.1:HOST-:443`. `uart_session.Session`
 
 **Result:** `:EspWifiScan`, `:EspWifiConnect {ssid} [{password}]` (asks for the password
 if it isn't given; waits for an address with progress), `:EspWifiDisconnect` and
-`:EspWifiStatus`, with `esp_wifi_scan()`, `esp_wifi_connect()`, `esp_wifi_disconnect()`.
+`:EspWifiStatus`, with `esp_wifi_scan()`, `esp_wifi_connect()`, `esp_wifi_disconnect()`
+(and `:EspWifiForget`, see below).
 `esp_net_status()` gains `ssid` and `rssi`. The network is stored in NVS and rejoined at
 every boot. `esp-vim/test/wifi.py` passes on the S3 against esp-emu's soft access point:
 - a scan finds it, with its security;
@@ -426,6 +427,19 @@ every boot. `esp-vim/test/wifi.py` passes on the S3 against esp-emu's soft acces
 - disconnect forgets the network.
 
 It skips on builds whose network isn't WiFi.
+
+**Later (2026-09-25): disconnect no longer forgets.** Having to type the password again
+after every `:EspWifiDisconnect` was the wrong trade. `:EspWifiDisconnect` now leaves the
+network only until the next connect or boot, and the new `:EspWifiForget` /
+`esp_wifi_forget()` erases it. `:EspWifiConnect` with no arguments, or with only the saved
+network's name, joins it again with the saved password. The password never goes back to
+Vim script: the C side reads it from the driver, and the new `esp_wifi_saved()` returns
+only the name. A boot rejoins only while `esp_net`/`wifi` is set, and forget clears that
+flag before it erases the network, so a driver start can't race the erase. `wifi.py` now
+checks disconnect-keeps, reconnect without a prompt, rejoin at boot, and forget (erased,
+and no WiFi at the next boot). The rejoin goes through a reboot because esp-emu's soft AP
+won't take a station back within one session; that also happens with the password typed
+in full, and happened on the old firmware.
 
 `esp_net` gains a WiFi interface choice, the default where the chip has a radio. The code
 uses only the standard `esp_wifi_*` API, so it will serve the Tab5 unchanged through

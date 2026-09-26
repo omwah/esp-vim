@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-WiFi gate (Phase 6f): scan, connect, use and forget a network, against the
+WiFi gate (Phase 6f): scan, connect, use, leave, rejoin (at boot) and forget a network, against the
 soft access point esp-emu provides (--wifi-ssid / --wifi-password, defaults
 myssid / mypassword). Native on the ESP32-S3; on the tab5 variant through an
 emulated ESP32-C6 co-processor (esp-hosted over SDIO). Skipped on builds without
@@ -68,8 +68,45 @@ def main():
             check(got == "over wifi", "HTTP works over WiFi", f"got {got!r}")
             s.type(":EspWifiDisconnect\r")
             s.quiet(3.0, timeout=60)
-            got = probe("DC", "(esp_net_status().up ? 1 : 0) . ':' . esp_net_status().ssid")
-            check(got == "0:", ":EspWifiDisconnect leaves and forgets the network", f"up:ssid {got!r}")
+            got = probe("DC", "(esp_net_status().up ? 1 : 0) . ':' . esp_wifi_saved()")
+            check(got == f"0:{SSID}", ":EspWifiDisconnect leaves the network but keeps it saved", f"up:saved {got!r}")
+
+            def wait_up(tag):
+                got = ""
+                for _ in range(30):
+                    got = probe(tag, "(esp_net_status().up ? 1 : 0) . ':' . esp_net_status().ssid")
+                    if got.startswith("1:"):
+                        break
+                    time.sleep(1)
+                return got
+
+            # esp-emu's soft AP doesn't take a station back in the same session
+            # (true of a password typed in full too), so rejoining is checked
+            # across a restart: the network, password and all, set again by
+            # :EspWifiConnect alone, must be what the board joins at boot.
+            s.type(":let v:errmsg = '' | EspWifiConnect\r")
+            s.quiet(3.0, timeout=60)
+            asked = b"Password for" in s.buf
+            if asked:
+                s.type("\x1b")
+            got = probe("RJ", "(empty(v:errmsg) ? 'ok' : v:errmsg) . ':' . esp_wifi_saved()")
+            check(got == f"ok:{SSID}" and not asked,
+                  ":EspWifiConnect alone rejoins the saved network without asking", got)
+            s.type(":EspReboot!\r")
+            s.expect("ESPVIM-READY", 120)
+            s.quiet(2.0)
+            got = wait_up("RB")
+            check(got == f"1:{SSID}", "the saved network and password are joined at boot", got)
+
+            s.type(":EspWifiForget\r")
+            s.quiet(3.0, timeout=60)
+            got = probe("FG", "(esp_net_status().up ? 1 : 0) . ':' . esp_net_status().ssid . ':' . esp_wifi_saved()")
+            check(got == "0::", ":EspWifiForget leaves and erases the network", f"up:ssid:saved {got!r}")
+            s.type(":EspReboot!\r")
+            s.expect("ESPVIM-READY", 120)
+            s.quiet(5.0)
+            got = probe("NB", "esp_net_status().mac . ':' . esp_nvs_get('esp_net', 'wifi')")
+            check(got == ":0", "after :EspWifiForget, WiFi doesn't start at boot", f"mac:flag {got!r}")
     except Exception as e:
         check(False, "session completed", f"{type(e).__name__}: {e}")
     finally:

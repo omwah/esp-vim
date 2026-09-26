@@ -394,17 +394,30 @@ function! esp#BtKeyboard(...) abort
   endif
 endfunction
 
-" :EspWifiConnect {ssid} [{password}]: without a password, asks for one
-" (leave it empty for an open network). The network is remembered in NVS.
-function! esp#WifiConnect(ssid, ...) abort
-  if a:0
-    let pw = a:1
+" :EspWifiConnect [{ssid} [{password}]]: the network is saved, password and
+" all, and joined again at every start. With no arguments, or the saved
+" network's name alone, joins it again with its saved password; another network
+" without a password asks for one (leave it empty for an open network).
+function! esp#WifiConnect(...) abort
+  let saved = esp_wifi_saved()
+  if a:0 == 0 || (a:0 == 1 && a:1 ==# saved)
+    if empty(saved)
+      echoerr 'EspWifiConnect: no network is saved; give its name'
+      return
+    endif
+    let ssid = saved
+    let args = [saved]
+  elseif a:0 >= 2
+    let ssid = a:1
+    let args = [a:1, a:2]
   else
+    let ssid = a:1
     call inputsave()
-    let pw = inputsecret('Password for ' . a:ssid . ' (empty if open): ')
+    let pw = inputsecret('Password for ' . ssid . ' (empty if open): ')
     call inputrestore()
+    let args = [ssid, pw]
   endif
-  if !esp_wifi_connect(a:ssid, pw)
+  if !call('esp_wifi_connect', args)
     return
   endif
   " Wait up to 20 s for an address, showing progress; CTRL-C stops waiting.
@@ -416,7 +429,7 @@ function! esp#WifiConnect(ssid, ...) abort
       return
     endif
     redraw
-    echo 'Connecting to ' . a:ssid . repeat('.', i % 4 + 1)
+    echo 'Connecting to ' . ssid . repeat('.', i % 4 + 1)
     sleep 500m
   endfor
   redraw

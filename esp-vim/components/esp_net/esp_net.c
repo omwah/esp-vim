@@ -66,25 +66,9 @@ static esp_err_t start_ethernet(void)
 #endif
 
 #if CONFIG_ESP_VIM_WIFI
-/* Keep reconnecting unless the user disconnected on purpose. */
-static volatile bool s_wifi_want;
-
-static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
-{
-    if (id == WIFI_EVENT_STA_START) {
-        wifi_config_t c;
-        if (esp_wifi_get_config(WIFI_IF_STA, &c) == ESP_OK && c.sta.ssid[0]) {
-            s_wifi_want = true;             /* a network was stored: rejoin it */
-            esp_wifi_connect();
-        }
-    } else if (id == WIFI_EVENT_STA_DISCONNECTED && s_wifi_want) {
-        esp_wifi_connect();
-    }
-}
-
 /*
  * WiFi starts only when it's wanted: at boot if a network is stored (this flag,
- * set by a connect and cleared by a disconnect), otherwise on the first scan or
+ * set by a connect and cleared by a forget), otherwise on the first scan or
  * connect. A started WiFi driver holds tens of KB of internal RAM, which a
  * board that isn't using WiFi needs for other things (Bluetooth, the display).
  */
@@ -106,6 +90,24 @@ static void wifi_set_configured(bool on)
         nvs_set_u8(h, "wifi", on);
         nvs_commit(h);
         nvs_close(h);
+    }
+}
+
+/* Keep reconnecting unless the user disconnected on purpose. When the driver
+ * starts, the stored network is joined only if the flag above says so: a
+ * forget clears the flag before it erases the network, so the two can't race. */
+static volatile bool s_wifi_want;
+
+static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
+{
+    if (id == WIFI_EVENT_STA_START) {
+        wifi_config_t c;
+        if (wifi_configured() && esp_wifi_get_config(WIFI_IF_STA, &c) == ESP_OK && c.sta.ssid[0]) {
+            s_wifi_want = true;             /* a network was stored: rejoin it */
+            esp_wifi_connect();
+        }
+    } else if (id == WIFI_EVENT_STA_DISCONNECTED && s_wifi_want) {
+        esp_wifi_connect();
     }
 }
 
@@ -177,22 +179,37 @@ int esp_net_wifi_scan(esp_net_ap_cb cb, void *ctx, char *err, size_t errlen)
 
 int esp_net_wifi_connect(const char *ssid, const char *password, char *err, size_t errlen)
 {
-    if (ssid == NULL || !*ssid || strlen(ssid) > 32)
+    if (ssid && strlen(ssid) > 32)
         return snprintf(err, errlen, "the network name must be 1 to 32 characters"), -1;
     if (password && *password && (strlen(password) < 8 || strlen(password) > 63))
         return snprintf(err, errlen, "a WPA password is 8 to 63 characters"), -1;
-    wifi_config_t c = {0};
-    memcpy(c.sta.ssid, ssid, strlen(ssid));
-    if (password)
-        memcpy(c.sta.password, password, strlen(password));
-    c.sta.threshold.authmode = password && *password ? WIFI_AUTH_WEP : WIFI_AUTH_OPEN;
     esp_err_t se = start_wifi();
     if (se != ESP_OK)
         return snprintf(err, errlen, "WiFi start: %s", esp_err_to_name(se)), -1;
+    wifi_config_t c = {0};
+    if (password == NULL) {
+        /* No password given: the stored network's, if that is the one asked
+         * for (or none was named). It never leaves this function. */
+        wifi_config_t saved;
+        if (esp_wifi_get_config(WIFI_IF_STA, &saved) != ESP_OK || !saved.sta.ssid[0])
+            return snprintf(err, errlen, "no network is saved"), -1;
+        if (ssid && *ssid && strncmp((const char *)saved.sta.ssid, ssid, sizeof saved.sta.ssid) != 0)
+            return snprintf(err, errlen, "no password is saved for %s", ssid), -1;
+        memcpy(c.sta.ssid, saved.sta.ssid, sizeof c.sta.ssid);
+        memcpy(c.sta.password, saved.sta.password, sizeof c.sta.password);
+        c.sta.threshold.authmode = saved.sta.threshold.authmode;
+    } else {
+        if (ssid == NULL || !*ssid)
+            return snprintf(err, errlen, "the network name must be 1 to 32 characters"), -1;
+        memcpy(c.sta.ssid, ssid, strlen(ssid));
+        memcpy(c.sta.password, password, strlen(password));
+        c.sta.threshold.authmode = *password ? WIFI_AUTH_WEP : WIFI_AUTH_OPEN;
+    }
     wifi_set_configured(true);
     s_wifi_want = false;
     esp_wifi_disconnect();
     esp_err_t e = esp_wifi_set_config(WIFI_IF_STA, &c);      /* stored: WIFI_STORAGE_FLASH */
+    memset(&c, 0, sizeof c);
     if (e == ESP_OK) {
         s_wifi_want = true;
         e = esp_wifi_connect();
@@ -200,15 +217,40 @@ int esp_net_wifi_connect(const char *ssid, const char *password, char *err, size
     return e == ESP_OK ? 0 : (snprintf(err, errlen, "connect: %s", esp_err_to_name(e)), -1);
 }
 
+/* Leave the network until the next connect or restart; it stays stored. */
 int esp_net_wifi_disconnect(char *err, size_t errlen)
 {
-    wifi_set_configured(false);
     if (!s_wifi_started)
         return 0;
     s_wifi_want = false;
+    esp_wifi_disconnect();
+    return 0;
+}
+
+/* Leave the network, erase it and its password, and don't start at boot. */
+int esp_net_wifi_forget(char *err, size_t errlen)
+{
+    wifi_set_configured(false);
+    s_wifi_want = false;
+    esp_err_t e = start_wifi();         /* the stored network lives in the driver */
+    if (e != ESP_OK)
+        return snprintf(err, errlen, "WiFi start: %s", esp_err_to_name(e)), -1;
     wifi_config_t c = {0};
     esp_wifi_disconnect();
-    esp_wifi_set_config(WIFI_IF_STA, &c);                     /* forget it */
+    e = esp_wifi_set_config(WIFI_IF_STA, &c);
+    return e == ESP_OK ? 0 : (snprintf(err, errlen, "forget: %s", esp_err_to_name(e)), -1);
+}
+
+int esp_net_wifi_saved(char *ssid, size_t n, char *err, size_t errlen)
+{
+    esp_err_t e = start_wifi();
+    if (e != ESP_OK)
+        return snprintf(err, errlen, "WiFi start: %s", esp_err_to_name(e)), -1;
+    wifi_config_t c;
+    if (esp_wifi_get_config(WIFI_IF_STA, &c) != ESP_OK)
+        c.sta.ssid[0] = 0;
+    snprintf(ssid, n, "%.*s", (int)sizeof c.sta.ssid, (const char *)c.sta.ssid);
+    memset(&c, 0, sizeof c);
     return 0;
 }
 #else
@@ -221,6 +263,14 @@ int esp_net_wifi_connect(const char *ssid, const char *password, char *err, size
     return snprintf(err, errlen, "this build has no WiFi"), -1;
 }
 int esp_net_wifi_disconnect(char *err, size_t errlen)
+{
+    return snprintf(err, errlen, "this build has no WiFi"), -1;
+}
+int esp_net_wifi_forget(char *err, size_t errlen)
+{
+    return snprintf(err, errlen, "this build has no WiFi"), -1;
+}
+int esp_net_wifi_saved(char *ssid, size_t n, char *err, size_t errlen)
 {
     return snprintf(err, errlen, "this build has no WiFi"), -1;
 }

@@ -38,8 +38,9 @@ command! -bar -nargs=* EspI2cScan call esp#hw#I2cScan(<f-args>)
 command! -bar -nargs=* EspSensors call esp#hw#Sensors(<f-args>)
 command! -bar -nargs=1 EspAdc call esp#hw#Adc(<f-args>)
 command! -bar EspWifiScan call esp#WifiScan()
-command! -nargs=+ EspWifiConnect call esp#WifiConnect(<f-args>)
-command! -bar EspWifiDisconnect call esp_wifi_disconnect() | echo 'WiFi disconnected and forgotten'
+command! -nargs=* EspWifiConnect call esp#WifiConnect(<f-args>)
+command! -bar EspWifiDisconnect call esp_wifi_disconnect() | echo 'WiFi disconnected; still saved, and joined again at the next start'
+command! -bar EspWifiForget call esp_wifi_forget() | echo 'WiFi network and password forgotten'
 command! -bar EspWifiStatus call esp#Net()
 command! -bar -nargs=? EspBleScan call esp#BleScan(<f-args>)
 command! -bar -nargs=? -complete=customlist,esp#ConsoleComplete EspConsole call esp#Console(<f-args>)

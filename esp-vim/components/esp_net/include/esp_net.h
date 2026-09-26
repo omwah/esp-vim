@@ -64,10 +64,17 @@ esp_err_t esp_net_init(void);
 void esp_net_get_status(esp_net_status_t *status);
 
 /* WiFi builds only (else -1, "no WiFi"). Scan blocks for about two seconds.
- * Connect stores the network (NVS) and returns at once; watch the status. */
+ * Connect stores the network (NVS), to be joined again at every boot, and
+ * returns at once; watch the status. A NULL password rejoins the stored
+ * network with its stored password; ssid is then that network's name, or NULL.
+ * Disconnect leaves the network until the next connect or boot; forget also
+ * erases it. Saved gives the stored network's name ("" if none), never its
+ * password. */
 int esp_net_wifi_scan(esp_net_ap_cb cb, void *ctx, char *err, size_t errlen);
 int esp_net_wifi_connect(const char *ssid, const char *password, char *err, size_t errlen);
 int esp_net_wifi_disconnect(char *err, size_t errlen);
+int esp_net_wifi_forget(char *err, size_t errlen);
+int esp_net_wifi_saved(char *ssid, size_t n, char *err, size_t errlen);
 
 /*
  * GET {url} (http or https; certificates checked against ESP-IDF's CA bundle;

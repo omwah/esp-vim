@@ -12,7 +12,7 @@
  #if defined(FEAT_EVAL)
  
  #ifdef VMS
-@@ -2279,6 +2284,117 @@
+@@ -2279,6 +2284,121 @@
  			ret_void,	    f_err_teapot},
      {"escape",		2, 2, FEARG_1,	    arg2_string,
  			ret_string,	    f_escape},
@@ -120,10 +120,14 @@
 +			ret_dict_any,	    f_esp_web_start},
 +    {"esp_web_stop",	0, 0, 0,	    NULL,
 +			ret_void,	    f_esp_web_stop},
-+    {"esp_wifi_connect", 1, 2, FEARG_1,	    arg2_string,
++    {"esp_wifi_connect", 0, 2, FEARG_1,	    arg2_string,
 +			ret_bool,	    f_esp_wifi_connect},
 +    {"esp_wifi_disconnect", 0, 0, 0,	    NULL,
 +			ret_void,	    f_esp_wifi_disconnect},
++    {"esp_wifi_forget",	0, 0, 0,	    NULL,
++			ret_void,	    f_esp_wifi_forget},
++    {"esp_wifi_saved",	0, 0, 0,	    NULL,
++			ret_string,	    f_esp_wifi_saved},
 +    {"esp_wifi_scan",	0, 0, 0,	    NULL,
 +			ret_list_dict_any,  f_esp_wifi_scan},
 +#endif

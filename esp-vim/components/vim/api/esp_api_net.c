@@ -51,15 +51,21 @@ void f_esp_wifi_scan(typval_T *argvars UNUSED, typval_T *rettv)
         semsg("esp_wifi_scan(): %s", err);
 }
 
-/* esp_wifi_connect({ssid} [, {password}]): store the network and start
- * joining it; watch esp_net_status() for the result. */
+/* esp_wifi_connect([{ssid} [, {password}]]): store the network and start
+ * joining it; watch esp_net_status() for the result. Without {password}, the
+ * saved network is joined again with its saved password: {ssid}, if given, must
+ * be that network. An empty {password} is an open network. */
 void f_esp_wifi_connect(typval_T *argvars, typval_T *rettv)
 {
     char_u buf[NUMBUFLEN];
-    char_u *ssid = tv_get_string_buf_chk(&argvars[0], buf);
-    char_u *pw = argvars[1].v_type == VAR_UNKNOWN ? (char_u *)"" : tv_get_string_chk(&argvars[1]);
-    if (ssid == NULL || pw == NULL)
-        return;
+    char_u *ssid = NULL, *pw = NULL;
+    if (argvars[0].v_type != VAR_UNKNOWN) {
+        ssid = tv_get_string_buf_chk(&argvars[0], buf);
+        if (ssid == NULL)
+            return;
+        if (argvars[1].v_type != VAR_UNKNOWN && (pw = tv_get_string_chk(&argvars[1])) == NULL)
+            return;
+    }
     char err[128];
     if (esp_net_wifi_connect((char *)ssid, (char *)pw, err, sizeof err) == 0)
         rettv->vval.v_number = TRUE;
@@ -67,12 +73,33 @@ void f_esp_wifi_connect(typval_T *argvars, typval_T *rettv)
         semsg("esp_wifi_connect(): %s", err);
 }
 
-/* esp_wifi_disconnect(): leave the network and forget it. */
+/* esp_wifi_disconnect(): leave the network until the next connect or restart.
+ * It stays saved. */
 void f_esp_wifi_disconnect(typval_T *argvars UNUSED, typval_T *rettv UNUSED)
 {
     char err[128];
     if (esp_net_wifi_disconnect(err, sizeof err) != 0)
         semsg("esp_wifi_disconnect(): %s", err);
+}
+
+/* esp_wifi_forget(): leave the network and erase it and its password. */
+void f_esp_wifi_forget(typval_T *argvars UNUSED, typval_T *rettv UNUSED)
+{
+    char err[128];
+    if (esp_net_wifi_forget(err, sizeof err) != 0)
+        semsg("esp_wifi_forget(): %s", err);
+}
+
+/* esp_wifi_saved(): the saved network's name, "" if none. Never the password. */
+void f_esp_wifi_saved(typval_T *argvars UNUSED, typval_T *rettv)
+{
+    char ssid[33], err[128];
+    rettv->v_type = VAR_STRING;
+    rettv->vval.v_string = NULL;
+    if (esp_net_wifi_saved(ssid, sizeof ssid, err, sizeof err) != 0)
+        semsg("esp_wifi_saved(): %s", err);
+    else
+        rettv->vval.v_string = vim_strsave((char_u *)ssid);
 }
 
 static bool progress(void *ctx UNUSED, uint64_t bytes UNUSED)

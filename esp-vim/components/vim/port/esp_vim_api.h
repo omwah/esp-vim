@@ -36,6 +36,8 @@ void f_esp_http_get(typval_T *argvars, typval_T *rettv);
 void f_esp_net_status(typval_T *argvars, typval_T *rettv);
 void f_esp_wifi_connect(typval_T *argvars, typval_T *rettv);
 void f_esp_wifi_disconnect(typval_T *argvars, typval_T *rettv);
+void f_esp_wifi_forget(typval_T *argvars, typval_T *rettv);
+void f_esp_wifi_saved(typval_T *argvars, typval_T *rettv);
 void f_esp_wifi_scan(typval_T *argvars, typval_T *rettv);
 
 /* api/esp_api_ssh.c (over components/esp_ssh) */

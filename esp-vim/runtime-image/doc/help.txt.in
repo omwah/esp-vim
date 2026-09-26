@@ -208,14 +208,22 @@ a separate radio chip.  Elsewhere they say the build has no WiFi.
 		WiFi networks in range, strongest first: name, signal,
 		channel and security.
 
-:EspWifiConnect {network} [{password}]			*:EspWifiConnect*
+:EspWifiConnect [{network} [{password}]]		*:EspWifiConnect*
 		Join {network}.  Without {password}, asks for it (leave it
 		empty for an open network).  Waits for an address and shows
-		it; CTRL-C stops waiting.  The network is remembered and
-		joined again at every start.
+		it; CTRL-C stops waiting.  The network and its password are
+		saved and joined again at every start, until
+		|:EspWifiForget|.  With no arguments, or only the saved
+		network's name, joins the saved network again without asking
+		for its password.
 
 :EspWifiDisconnect					*:EspWifiDisconnect*
-		Leave the network and forget it.
+		Leave the network for now.  It stays saved and is joined
+		again at the next start or |:EspWifiConnect|.
+
+:EspWifiForget						*:EspWifiForget*
+		Leave the network and erase it and its password; WiFi no
+		longer starts at boot.
 
 :EspWifiStatus						*:EspWifiStatus*
 		The same as |:EspNet|, including the network's name and
