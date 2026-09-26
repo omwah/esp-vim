@@ -5,6 +5,9 @@
 esp_err_t esp_display_init(void) { return ESP_ERR_NOT_SUPPORTED; }
 bool esp_display_active(void) { return false; }
 void esp_display_size(int *rows, int *cols) { *rows = *cols = 0; }
+bool esp_display_font_info(int i, esp_display_font_info_t *info) { (void)i; (void)info; return false; }
+int esp_display_font(void) { return -1; }
+esp_err_t esp_display_set_font(int i) { (void)i; return ESP_ERR_NOT_SUPPORTED; }
 void esp_display_write(const void *buf, size_t len) { (void)buf; (void)len; }
 void esp_display_touch(int ev, int x, int y, void *ctx) { (void)ev; (void)x; (void)y; (void)ctx; }
 bool esp_display_overlay_begin(int *rows, int *cols) { *rows = *cols = 0; return false; }

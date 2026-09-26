@@ -13,7 +13,8 @@ CONFIG_ESP_VIM_I2C_SDA=19
 CONFIG_ESP_VIM_I2C_SCL=20
 
 # The console on the 5" panel (esp_display; the Kconfig RGB defaults are this
-# board's pins and timings): 100x30 cells in Spleen 8x16. The frame buffer
+# board's pins and timings): 80x24 cells in Terminus 10x20, and :EspFont
+# switches to 11x22 (72x21) or Spleen 8x16 (100x30). The frame buffer
 # (750 KB) is in PSRAM and the LCD peripheral streams it out on its own.
 CONFIG_ESP_VIM_DISPLAY=y
 CONFIG_ESP_VIM_DISP_RGB=y

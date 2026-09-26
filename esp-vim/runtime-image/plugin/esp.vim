@@ -44,4 +44,5 @@ command! -bar EspWifiForget call esp_wifi_forget() | echo 'WiFi network and pass
 command! -bar EspWifiStatus call esp#Net()
 command! -bar -nargs=? EspBleScan call esp#BleScan(<f-args>)
 command! -bar -nargs=? -complete=customlist,esp#ConsoleComplete EspConsole call esp#Console(<f-args>)
+command! -bar -nargs=? -complete=customlist,esp#FontComplete EspFont call esp#Font(<f-args>)
 command! -nargs=* -complete=customlist,esp#BtKeyboardComplete EspBtKeyboard call esp#BtKeyboard(<f-args>)

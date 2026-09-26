@@ -32,6 +32,7 @@
 #include "freertos/stream_buffer.h"
 #include "freertos/task.h"
 #include "freertos/idf_additions.h"
+#include "nvs.h"
 #include "sdkconfig.h"
 #include "vterm.h"
 
@@ -42,21 +43,21 @@
 
 static const char *TAG = "esp_display";
 
-#define FONT        esp_display_font
-#define COLS        (CONFIG_ESP_VIM_DISP_WIDTH / FONT_W)
-#define ROWS        (CONFIG_ESP_VIM_DISP_HEIGHT / FONT_H)
-#if CONFIG_ESP_VIM_DISP_FONT_8X16
-# define FONT_W     8               /* checked against the font at init */
-# define FONT_H     16
-#else
-# define FONT_W     6
-# define FONT_H     12
-#endif
+/* The terminal's font, switched at run time (esp_display_set_font), and the
+ * grid it gives, centred: 53 cells of 6 px leave 320 - 318 = 2 px. Set by the
+ * display task (and init, before it starts). */
+static const esp_display_font_t *s_font;
+static int s_font_index;
+static int s_cols, s_rows, s_x0, s_y0;
+#define FONT_W      (s_font->width)
+#define FONT_H      (s_font->height)
+#define COLS        s_cols
+#define ROWS        s_rows
+#define X0          s_x0
+#define Y0          s_y0
 #define STREAM_SIZE (8 * 1024)
-#define CHUNK       16              /* cells per SPI transfer: 2.3 KB of line buffer */
-/* The grid, centred: 53 cells of 6 px leave 320 - 318 = 2 px. */
-#define X0          ((CONFIG_ESP_VIM_DISP_WIDTH - COLS * FONT_W) / 2)
-#define Y0          ((CONFIG_ESP_VIM_DISP_HEIGHT - ROWS * FONT_H) / 2)
+#define CHUNK       16              /* cells per SPI transfer: 2.3 KB of line buffer at 6x12 */
+#define NVS_NS      "esp_display"
 
 /* Kconfig bools as 0/1. */
 #ifdef CONFIG_ESP_VIM_DISP_INVERT
@@ -98,6 +99,7 @@ static SemaphoreHandle_t s_flushed;     /* the line buffer's transfer is done */
 static SemaphoreHandle_t s_write_lock;  /* one writer at a time */
 static StreamBufferHandle_t s_stream;
 static uint16_t *s_line;                /* CHUNK cells, RGB565, DMA-capable */
+static int s_line_px;                   /* its size in pixels: for the largest font */
 static bool s_active;
 
 static VTerm *s_vt;
@@ -108,7 +110,10 @@ static volatile int s_mouse;            /* the terminal's mouse mode: VTERM_PROP
 static SemaphoreHandle_t s_panel_lock;  /* one drawer at a time: terminal or overlay */
 static volatile bool s_overlay;         /* the overlay has the panel */
 static volatile bool s_repaint;         /* repaint the whole terminal (after the overlay) */
-static int s_dirty_lo[ROWS], s_dirty_hi[ROWS];  /* damaged columns [lo, hi) per row */
+static int *s_dirty_lo, *s_dirty_hi;    /* damaged columns [lo, hi) per row */
+static int s_max_rows;                  /* rows those have: the smallest font's */
+static volatile int s_font_req = -1;    /* a font for the display task to switch to */
+static SemaphoreHandle_t s_font_done;   /* ... and it has */
 
 /* -------------------------------------------------------------- damage -- */
 
@@ -173,7 +178,7 @@ static const uint8_t *glyph_in(const esp_display_font_t *f, uint32_t cp)
 
 static const uint8_t *glyph(uint32_t cp)
 {
-    return glyph_in(&FONT, cp);
+    return glyph_in(s_font, cp);
 }
 
 /* RGB565, in the panel's byte order. */
@@ -223,11 +228,12 @@ static void paint_cells(int row, int c0, int c1)
         const uint8_t *g = (ch == 0 || ch == (uint32_t)-1 || cell.attrs.conceal) ? NULL : glyph(ch);
         uint16_t *px = s_line + (col - c0) * FONT_W;
         for (int y = 0; y < FONT_H; y++) {
-            uint8_t bits = g ? g[y] : 0;
+            unsigned bits = !g ? 0 : s_font->bytes_per_row == 2 ? (g[2 * y] << 8 | g[2 * y + 1])
+                                                                : g[y] << 8;
             if (cell.attrs.underline && y == FONT_H - 1)
-                bits = 0xFF;
+                bits = 0xFFFF;
             for (int x = 0; x < FONT_W; x++)
-                px[y * w + x] = (bits & (0x80 >> x)) ? fg : bg;
+                px[y * w + x] = (bits & (0x8000 >> x)) ? fg : bg;
         }
     }
     draw(X0 + c0 * FONT_W, Y0 + row * FONT_H, X0 + c1 * FONT_W, Y0 + (row + 1) * FONT_H);
@@ -252,6 +258,26 @@ static void paint_damage(void)
 
 static void clear_panel(void);
 
+/* Take font i: the grid it gives, and libvterm's screen resized to it. The
+ * whole terminal is repainted next time round. */
+static void use_font(int i)
+{
+    s_font = esp_display_fonts[i];
+    s_font_index = i;
+    s_cols = CONFIG_ESP_VIM_DISP_WIDTH / FONT_W;
+    s_rows = CONFIG_ESP_VIM_DISP_HEIGHT / FONT_H;
+    s_x0 = (CONFIG_ESP_VIM_DISP_WIDTH - s_cols * FONT_W) / 2;
+    s_y0 = (CONFIG_ESP_VIM_DISP_HEIGHT - s_rows * FONT_H) / 2;
+    for (int row = 0; row < s_max_rows; row++) {
+        s_dirty_lo[row] = s_cols;
+        s_dirty_hi[row] = 0;
+    }
+    if (s_vt) {
+        vterm_set_size(s_vt, s_rows, s_cols);
+        s_repaint = true;
+    }
+}
+
 static void display_task(void *arg)
 {
     static char buf[512];
@@ -263,6 +289,11 @@ static void display_task(void *arg)
         /* Take whatever else is already waiting, so a burst is painted once. */
         while ((n = xStreamBufferReceive(s_stream, buf, sizeof buf, 0)) > 0)
             vterm_input_write(s_vt, buf, n);
+        if (s_font_req >= 0) {
+            use_font(s_font_req);
+            s_font_req = -1;
+            xSemaphoreGive(s_font_done);
+        }
         if (s_overlay)
             continue;                   /* libvterm keeps the screen; painting waits */
         xSemaphoreTake(s_panel_lock, portMAX_DELAY);
@@ -291,7 +322,7 @@ static void display_task(void *arg)
 #define OV_ROWS     (CONFIG_ESP_VIM_DISP_HEIGHT / OV_H)
 #define OV_X0       ((CONFIG_ESP_VIM_DISP_WIDTH - OV_COLS * OV_W) / 2)
 #define OV_Y0       ((CONFIG_ESP_VIM_DISP_HEIGHT - OV_ROWS * OV_H) / 2)
-#define OV_CHUNK    (CHUNK * FONT_W * FONT_H / (OV_W * OV_H))    /* cells per transfer */
+#define OV_CHUNK    (s_line_px / (OV_W * OV_H))     /* cells per transfer */
 
 static uint16_t swap565(uint8_t r, uint8_t g, uint8_t b)
 {
@@ -542,7 +573,7 @@ static esp_err_t panel_init(void)
         .miso_io_num = -1,
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
-        .max_transfer_sz = CHUNK * FONT_W * FONT_H * sizeof(uint16_t),
+        .max_transfer_sz = s_line_px * sizeof(uint16_t),
     };
     esp_err_t e = spi_bus_initialize(SPI3_HOST, &bus, SPI_DMA_CH_AUTO);
     if (e != ESP_OK)
@@ -589,8 +620,8 @@ static esp_err_t panel_init(void)
  * previous firmware left there. */
 static void clear_panel(void)
 {
-    const int lines = CHUNK * FONT_W * FONT_H / CONFIG_ESP_VIM_DISP_WIDTH;
-    memset(s_line, 0, CHUNK * FONT_W * FONT_H * sizeof(uint16_t));
+    const int lines = s_line_px / CONFIG_ESP_VIM_DISP_WIDTH;
+    memset(s_line, 0, s_line_px * sizeof(uint16_t));
     for (int y = 0; y < CONFIG_ESP_VIM_DISP_HEIGHT; y += lines) {
         int y1 = y + lines < CONFIG_ESP_VIM_DISP_HEIGHT ? y + lines : CONFIG_ESP_VIM_DISP_HEIGHT;
         draw(0, y, CONFIG_ESP_VIM_DISP_WIDTH, y1);
@@ -607,12 +638,47 @@ static void backlight_on(void)
     gpio_set_level(CONFIG_ESP_VIM_DISP_BACKLIGHT, CONFIG_ESP_VIM_DISP_BACKLIGHT_ON_LEVEL);
 }
 
+/* The font chosen with esp_display_set_font() last time, else the first. */
+static int saved_font(void)
+{
+    nvs_handle_t h;
+    char name[32];
+    size_t len = sizeof name;
+    int found = 0;
+    if (nvs_open(NVS_NS, NVS_READONLY, &h) == ESP_OK) {
+        if (nvs_get_str(h, "font", name, &len) == ESP_OK)
+            for (int i = 0; i < esp_display_font_count; i++)
+                if (strcmp(esp_display_fonts[i]->name, name) == 0)
+                    found = i;
+        nvs_close(h);
+    }
+    return found;
+}
+
 esp_err_t esp_display_init(void)
 {
-    if (FONT.width != FONT_W || FONT.height != FONT_H) {
-        ESP_LOGE(TAG, "font is %dx%d, expected %dx%d", FONT.width, FONT.height, FONT_W, FONT_H);
-        return ESP_ERR_INVALID_SIZE;
+    /* The line buffer holds CHUNK cells of the largest font, and at least a
+     * panel line and an overlay cell (clear_panel, overlay_cells); the damage
+     * lists as many rows as the smallest gives. */
+    int max_px = 0, min_h = CONFIG_ESP_VIM_DISP_HEIGHT;
+    for (int i = 0; i < esp_display_font_count; i++) {
+        const esp_display_font_t *f = esp_display_fonts[i];
+        if (f->width * f->height > max_px)
+            max_px = f->width * f->height;
+        if (f->height < min_h)
+            min_h = f->height;
     }
+    s_line_px = CHUNK * max_px;
+    if (s_line_px < CONFIG_ESP_VIM_DISP_WIDTH)
+        s_line_px = CONFIG_ESP_VIM_DISP_WIDTH;
+    if (s_line_px < OV_W * OV_H)
+        s_line_px = OV_W * OV_H;
+    s_max_rows = CONFIG_ESP_VIM_DISP_HEIGHT / min_h;
+    s_dirty_lo = calloc(s_max_rows, sizeof(int));
+    s_dirty_hi = calloc(s_max_rows, sizeof(int));
+    if (!s_dirty_lo || !s_dirty_hi)
+        return ESP_ERR_NO_MEM;
+    use_font(saved_font());
     if (BIG.width != OV_W || BIG.height != OV_H || BIG.bytes_per_row != 2) {
         ESP_LOGE(TAG, "overlay font is %dx%d, expected %dx%d", BIG.width, BIG.height, OV_W, OV_H);
         return ESP_ERR_INVALID_SIZE;
@@ -620,18 +686,19 @@ esp_err_t esp_display_init(void)
     s_flushed = xSemaphoreCreateBinary();
     s_write_lock = xSemaphoreCreateMutex();
     s_panel_lock = xSemaphoreCreateMutex();
+    s_font_done = xSemaphoreCreateBinary();
     s_stream = xStreamBufferCreateWithCaps(STREAM_SIZE, 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     /* SPI sends it by DMA. An RGB panel copies it into the frame buffer, and
      * from internal RAM that copy doesn't also read PSRAM, which the LCD is
      * streaming the frame buffer out of -- unless the LCD streams from bounce
      * buffers, when PSRAM will do and the internal RAM is better spent. */
-    s_line = heap_caps_malloc(CHUNK * FONT_W * FONT_H * sizeof(uint16_t),
+    s_line = heap_caps_malloc(s_line_px * sizeof(uint16_t),
 #if CONFIG_ESP_VIM_DISP_RGB && CONFIG_ESP_VIM_DISP_BOUNCE_LINES > 0
                               MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 #else
                               MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
 #endif
-    if (!s_flushed || !s_write_lock || !s_panel_lock || !s_stream || !s_line)
+    if (!s_flushed || !s_write_lock || !s_panel_lock || !s_font_done || !s_stream || !s_line)
         return ESP_ERR_NO_MEM;
 
 #if CONFIG_ESP_VIM_DISP_RGB
@@ -669,8 +736,8 @@ esp_err_t esp_display_init(void)
                                         MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS)
         return ESP_ERR_NO_MEM;
     s_active = true;
-    ESP_LOGI(TAG, "%dx%d cells on a %dx%d panel", COLS, ROWS,
-             CONFIG_ESP_VIM_DISP_WIDTH, CONFIG_ESP_VIM_DISP_HEIGHT);
+    ESP_LOGI(TAG, "%dx%d cells on a %dx%d panel, in %s", COLS, ROWS,
+             CONFIG_ESP_VIM_DISP_WIDTH, CONFIG_ESP_VIM_DISP_HEIGHT, s_font->name);
     return ESP_OK;
 }
 
@@ -683,6 +750,46 @@ void esp_display_size(int *rows, int *cols)
 {
     *rows = ROWS;
     *cols = COLS;
+}
+
+bool esp_display_font_info(int i, esp_display_font_info_t *info)
+{
+    if (!s_active || i < 0 || i >= esp_display_font_count)
+        return false;
+    const esp_display_font_t *f = esp_display_fonts[i];
+    info->name = f->name;
+    info->width = f->width;
+    info->height = f->height;
+    info->rows = CONFIG_ESP_VIM_DISP_HEIGHT / f->height;
+    info->cols = CONFIG_ESP_VIM_DISP_WIDTH / f->width;
+    return true;
+}
+
+int esp_display_font(void)
+{
+    return s_active ? s_font_index : -1;
+}
+
+esp_err_t esp_display_set_font(int i)
+{
+    if (!s_active)
+        return ESP_ERR_INVALID_STATE;
+    if (i < 0 || i >= esp_display_font_count)
+        return ESP_ERR_INVALID_ARG;
+    if (i != s_font_index) {
+        /* libvterm is the display task's: it switches, within 100 ms. */
+        xSemaphoreTake(s_font_done, 0);
+        s_font_req = i;
+        if (xSemaphoreTake(s_font_done, pdMS_TO_TICKS(2000)) != pdTRUE)
+            return ESP_ERR_TIMEOUT;
+    }
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS, NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_str(h, "font", esp_display_fonts[i]->name);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+    return ESP_OK;
 }
 
 void esp_display_write(const void *buf, size_t len)

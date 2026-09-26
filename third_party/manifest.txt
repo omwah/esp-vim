@@ -47,5 +47,19 @@ url:      https://github.com/fcambus/spleen/releases/download/2.2.0/spleen-2.2.0
 origin:   upstream download via scripts/add-dep.sh
 patches:  -
 notes:    Frederic Cambus's bitmap font, BSD-2-Clause. The display console
-          (components/esp_display) uses spleen-6x12.bdf, converted to a C
-          table at build time by scripts/bdf2c.py.
+          (components/esp_display) uses its BDF files (6x12, 8x16, and 12x24 /
+          16x32 for the overlay), converted to C tables at build time by
+          scripts/bdf2c.py.
+
+name:     terminus
+version:  4.49.1
+file:     terminus-font-4.49.1.tar.gz
+sha256:   d961c1b781627bf417f9b340693d64fc219e0113ad3a3af1a3424c7aa373ef79
+prefix:   terminus-font-4.49.1
+url:      https://downloads.sourceforge.net/project/terminus-font/terminus-font-4.49/terminus-font-4.49.1.tar.gz
+origin:   upstream download via scripts/add-dep.sh
+patches:  -
+notes:    Dimitar Zhekov's Terminus Font, SIL OFL 1.1 (OFL.TXT in the archive).
+          The display console uses ter-u20n.bdf and ter-u22n.bdf (10x20 and
+          11x22), converted to C tables at build time by scripts/bdf2c.py: the
+          sizes Spleen lacks between 8x16 and 12x24.

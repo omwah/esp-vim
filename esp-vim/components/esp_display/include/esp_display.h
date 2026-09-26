@@ -29,6 +29,29 @@ bool esp_display_active(void);
 /* The terminal's size in character cells. */
 void esp_display_size(int *rows, int *cols);
 
+/*
+ * The terminal's fonts (Kconfig ESP_VIM_DISP_FONTS), numbered from 0: font i's
+ * name ("terminus-10x20"), cell size in pixels and the grid it gives. False
+ * for a number out of range, or without a display.
+ */
+typedef struct {
+    const char *name;
+    int width, height;
+    int rows, cols;
+} esp_display_font_info_t;
+bool esp_display_font_info(int i, esp_display_font_info_t *info);
+
+/* The font in use, a number for esp_display_font_info(); -1 without a display. */
+int esp_display_font(void);
+
+/*
+ * Switch the terminal to font i, and keep the choice (in NVS) for the next
+ * start. Returns once the terminal has its new grid, blank: tell the program
+ * on it (Vim) the new esp_display_size(), and it redraws. Not from the
+ * display task.
+ */
+esp_err_t esp_display_set_font(int i);
+
 /* Console output to show. Blocks only while the display falls behind. */
 void esp_display_write(const void *buf, size_t len);
 

@@ -204,8 +204,10 @@ void f_esp_console_output(typval_T *argvars, typval_T *rettv)
     rettv->vval.v_number = esp_vim_console_output() ? VVAL_TRUE : VVAL_FALSE;
 }
 
-/* esp_display() -> Dict: active (a display shows the console), rows, cols.
- * The system vimrc uses it to set 'background' and colours for the panel. */
+/* esp_display() -> Dict: active (a display shows the console), rows, cols,
+ * font (the name of the one in use) and fonts, a List of Dicts: name, width,
+ * height, rows, cols. The system vimrc uses it to set 'background' and colours
+ * for the panel. */
 void f_esp_display(typval_T *argvars UNUSED, typval_T *rettv)
 {
     if (rettv_dict_alloc(rettv) == FAIL)
@@ -217,4 +219,64 @@ void f_esp_display(typval_T *argvars UNUSED, typval_T *rettv)
     dict_add_bool(rettv->vval.v_dict, "active", on);
     dict_add_number(rettv->vval.v_dict, "rows", rows);
     dict_add_number(rettv->vval.v_dict, "cols", cols);
+    esp_display_font_info_t f;
+    dict_add_string(rettv->vval.v_dict, "font",
+                    (char_u *)(esp_display_font_info(esp_display_font(), &f) ? f.name : ""));
+    list_T *fonts = list_alloc();
+    if (fonts == NULL)
+        return;
+    for (int i = 0; esp_display_font_info(i, &f); i++) {
+        dict_T *d = dict_alloc();
+        if (d == NULL)
+            break;
+        dict_add_string(d, "name", (char_u *)f.name);
+        dict_add_number(d, "width", f.width);
+        dict_add_number(d, "height", f.height);
+        dict_add_number(d, "rows", f.rows);
+        dict_add_number(d, "cols", f.cols);
+        list_append_dict(fonts, d);
+    }
+    dict_add_list(rettv->vval.v_dict, "fonts", fonts);
+}
+
+/*
+ * esp_display_font([{name}]) -> String: the display's font, '' without one.
+ * With {name}: switch to it (one of esp_display().fonts), keep it for the next
+ * start, and resize Vim to its grid. There is no SIGWINCH: $LINES and $COLUMNS
+ * are where mch_get_shellsize() finds the size, as at startup.
+ */
+void f_esp_display_font(typval_T *argvars, typval_T *rettv)
+{
+    esp_display_font_info_t f;
+    rettv->v_type = VAR_STRING;
+    rettv->vval.v_string = NULL;
+    if (argvars[0].v_type != VAR_UNKNOWN) {
+        char_u *name = tv_get_string_chk(&argvars[0]);
+        if (name == NULL)
+            return;
+        if (!esp_display_active()) {
+            emsg("esp_display_font(): no display");
+            return;
+        }
+        int i = 0;
+        while (esp_display_font_info(i, &f) && STRCMP(f.name, name) != 0)
+            i++;
+        if (!esp_display_font_info(i, &f)) {
+            semsg("esp_display_font(): no font \"%s\"", name);
+            return;
+        }
+        esp_err_t e = esp_display_set_font(i);
+        if (e != ESP_OK) {
+            semsg("esp_display_font(): %s", esp_err_to_name(e));
+            return;
+        }
+        char v[8];
+        snprintf(v, sizeof v, "%d", f.rows);
+        setenv("LINES", v, 1);
+        snprintf(v, sizeof v, "%d", f.cols);
+        setenv("COLUMNS", v, 1);
+        shell_resized();
+    }
+    if (esp_display_font_info(esp_display_font(), &f))
+        rettv->vval.v_string = vim_strsave((char_u *)f.name);
 }

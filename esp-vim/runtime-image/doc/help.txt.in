@@ -182,6 +182,17 @@ window at the bottom: "R" refreshes it, "q" closes it.
 		CTRL-L.  Without an argument, shows the setting.  Boards
 		without a screen can't turn it off.
 
+:EspFont [{name}]					*:EspFont*
+		On boards with a screen, its font.  Without an argument,
+		lists the fonts built in, each with the grid it gives, and
+		marks the one in use with ">".  With a {name} (or just its
+		size, like "10x20", when that is unique), switches to it:
+		Vim takes the new number of lines and columns at once, and
+		the choice is kept across restarts.  On the Freenove
+		FNK0115, terminus-10x20 gives 80x24, terminus-11x22 72x21
+		and spleen-8x16 100x30.  From a script:
+		esp_display_font() and esp_display().fonts.
+
 :EspReboot[!]						*:EspReboot*
 		Restart the chip.  Refuses while any buffer has unsaved
 		changes, unless you add !.  Unlike |esp-quit| this is a real

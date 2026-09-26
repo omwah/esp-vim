@@ -1439,6 +1439,15 @@ and TN panels with resistive XPT2046 touch) differ in panel size, timings and to
     running, with a 31 KB largest block. DMA-capable RAM dips close to zero briefly at
     boot, so that is the margin to watch. Vim's heap is 2.5 MB (half of the PSRAM
     left). Saving files works from the PSRAM stack.
+- **Done 2026-09-26: fonts switchable at run time, bigger by default.** 100×30 in
+  8×16 was small on a 5" panel. Spleen has nothing between 8×16 and 12×24 (66×20,
+  too narrow), so Terminus (SIL OFL 1.1, vendored as an LFS archive) supplies
+  **10×20, 80×24 cells**, the default, and 11×22 (72×21). Spleen 8×16 stays.
+  Kconfig `ESP_VIM_DISP_FONTS` lists the fonts built in, and `:EspFont {name}` /
+  `esp_display_font()` switch between them. The display task resizes libvterm, and
+  Vim takes the new size through `$LINES`/`$COLUMNS` and `shell_resized()`, as
+  there is no SIGWINCH. The choice is kept in NVS. The three tables cost 62 KB of
+  Vim's heap budget (2.49 MB), because the program runs from a copy in PSRAM.
 
 
 ---

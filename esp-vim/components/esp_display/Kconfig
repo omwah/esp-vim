@@ -21,15 +21,19 @@ menu "esp-vim display"
         depends on SOC_LCD_RGB_SUPPORTED && SPIRAM
     endchoice
 
-    choice ESP_VIM_DISP_FONT
-        prompt "Font"
-        default ESP_VIM_DISP_FONT_8X16 if ESP_VIM_DISP_RGB
-        default ESP_VIM_DISP_FONT_6X12
-    config ESP_VIM_DISP_FONT_6X12
-        bool "Spleen 6x12"
-    config ESP_VIM_DISP_FONT_8X16
-        bool "Spleen 8x16"
-    endchoice
+    config ESP_VIM_DISP_FONTS
+        string "Fonts"
+        default "terminus-10x20 terminus-11x22 spleen-8x16" if ESP_VIM_DISP_RGB
+        default "spleen-6x12"
+        help
+            The terminal's fonts, separated by spaces; :EspFont switches
+            between them, and the choice is kept in NVS. The first is the
+            default. Each is spleen-WxH (5x8, 6x12, 8x16, 12x24, 16x32) or
+            terminus-WxH / terminus-bold-WxH (6x12, 8x14, 8x16, 10x18, 10x20,
+            11x22, 12x24, 14x28, 16x32). On the 800x480 panel, 10x20 is 80x24
+            cells, 11x22 72x21 and 8x16 100x30. Each font's glyphs take
+            flash: about 20 KB for Spleen 8x16, 60 KB for Terminus 10x20 --
+            and as much PSRAM, where the program runs from a copy there.
 
     choice ESP_VIM_DISP_OVERLAY_FONT
         prompt "Overlay font (the Bluetooth pairing screen)"

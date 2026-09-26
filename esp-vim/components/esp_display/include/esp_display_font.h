@@ -1,10 +1,11 @@
-/* The console font, generated at build time by scripts/bdf2c.py. */
+/* The console fonts, generated at build time by scripts/bdf2c.py. */
 
 #pragma once
 
 #include <stdint.h>
 
 typedef struct {
+    const char *name;               /* e.g. "terminus-10x20", as :EspFont shows it */
     uint8_t width, height;          /* cell size in pixels; width <= 16 */
     uint8_t bytes_per_row;          /* 1 (width <= 8) or 2, big-endian */
     uint16_t count;
@@ -12,5 +13,8 @@ typedef struct {
     const uint8_t *bitmaps;         /* count * height * bytes_per_row, MSB leftmost */
 } esp_display_font_t;
 
-extern const esp_display_font_t esp_display_font;       /* the terminal's, 6x12 */
+/* The terminal's, as Kconfig ESP_VIM_DISP_FONTS lists them: the first is the
+ * default. */
+extern const esp_display_font_t *const esp_display_fonts[];
+extern const int esp_display_font_count;
 extern const esp_display_font_t esp_display_font_big;   /* the overlay's, 12x24 */

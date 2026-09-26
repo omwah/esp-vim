@@ -67,8 +67,8 @@ printf '  sha256 %s\n' "$SHA"
 # Derive the archive's top-level directory rather than trusting a guess.
 if [ -z "$PREFIX" ]; then
     case "$FILE" in
-        *.zip) PREFIX="$(unzip -Z1 "$DEST" | head -1 | cut -d/ -f1)" ;;
-        *)     PREFIX="$(tar tf "$DEST" | head -1 | cut -d/ -f1)" ;;
+        *.zip) PREFIX="$(unzip -Z1 "$DEST" | sed -n 1p | cut -d/ -f1)" ;;
+        *)     PREFIX="$(tar tf "$DEST" | sed -n 1p | cut -d/ -f1)" ;;
     esac
     printf '  detected prefix: %s\n' "$PREFIX"
 fi

@@ -327,6 +327,42 @@ function! esp#Console(...) abort
         \ : 'off (the screen only; type a key on the serial console to turn it back on)')
 endfunction
 
+" ------------------------------------------------------------------ :EspFont --
+
+" :EspFont [{name}]: the display's font. Without a name, lists them; a name
+" may be shortened to its size ("10x20") when only one font has that size.
+function! esp#FontComplete(lead, line, pos) abort
+  return filter(map(copy(esp_display().fonts), 'v:val.name'), 'v:val =~# "^" . a:lead')
+endfunction
+
+function! esp#Font(...) abort
+  let d = esp_display()
+  if !d.active
+    echoerr 'EspFont: no display'
+    return
+  endif
+  if a:0
+    let names = map(copy(d.fonts), 'v:val.name')
+    let name = a:1
+    if index(names, name) < 0
+      let short = filter(copy(names), 'v:val =~# "-" . escape(name, ".") . "$"')
+      if len(short) != 1
+        echoerr 'EspFont: no font "' . name . '"; there are ' . join(names, ', ')
+        return
+      endif
+      let name = short[0]
+    endif
+    call esp_display_font(name)
+    let d = esp_display()
+    echo printf('Font %s: %dx%d', d.font, d.cols, d.rows)
+    return
+  endif
+  for f in d.fonts
+    echo printf('%s %-16s %3dx%-3d  %dx%d px', f.name ==# d.font ? '>' : ' ',
+          \ f.name, f.cols, f.rows, f.width, f.height)
+  endfor
+endfunction
+
 " ------------------------------------------------------------ :EspBtKeyboard --
 
 " :EspBtKeyboard                  status of the Bluetooth keyboard
