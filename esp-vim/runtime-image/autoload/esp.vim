@@ -59,6 +59,50 @@ function! s:Row(fmt, ...) abort
   return substitute(call('printf', [a:fmt] + a:000), '\s\+$', '', '')
 endfunction
 
+" The width a view has: its window's, when it is already open, else the
+" screen's (s:Show opens it the full width).
+function! s:ViewWidth(name) abort
+  for w in range(1, winnr('$'))
+    if getbufvar(winbufnr(w), 'esp_view', '') ==# a:name
+      return winwidth(w)
+    endif
+  endfor
+  return &columns
+endfunction
+
+" A table for view {name}: each column as wide as its widest cell, 'l'eft or
+" 'r'ight aligned as {align} says, with as much space between them as the
+" window has room for -- 3 spaces, 2, or 1; past that, only the last column
+" runs over the edge. {rows}: lists of cells (strings or numbers); [] for an
+" empty line.
+function! s:Table(name, rows, align) abort
+  let n = len(a:align)
+  let widths = repeat([0], n)
+  for r in a:rows
+    for i in range(min([n, len(r)]))
+      let widths[i] = max([widths[i], strwidth(r[i])])
+    endfor
+  endfor
+  let total = 0
+  for w in widths
+    let total += w
+  endfor
+  let room = s:ViewWidth(a:name)
+  let gap = total + 3 * (n - 1) <= room ? 3 : total + 2 * (n - 1) <= room ? 2 : 1
+  let lines = []
+  for r in a:rows
+    let cells = []
+    for i in range(n)
+      let c = i < len(r) ? string(r[i]) : ''
+      let c = i < len(r) && type(r[i]) == v:t_string ? r[i] : c
+      let pad = repeat(' ', widths[i] - strwidth(c))
+      call add(cells, a:align[i] ==# 'r' ? pad . c : c . pad)
+    endfor
+    call add(lines, substitute(join(cells, repeat(' ', gap)), '\s\+$', '', ''))
+  endfor
+  return lines
+endfunction
+
 " ------------------------------------------------------------- :EspInfo --
 
 function! esp#Info() abort
@@ -87,20 +131,17 @@ endfunction
 
 function! esp#Heap() abort
   let h = esp_heap()
-  let lines = ['Memory   (R refresh, q close)',
-        \ s:Row('%-10s %10s %10s %10s %10s', 'Heap', 'free', 'largest', 'lowest', 'total')]
+  let rows = [['Heap', 'free', 'largest', 'lowest', 'total']]
   for name in ['internal', 'psram', 'dma']
     let x = h[name]
     if x.total
-      call add(lines, s:Row('%-10s %10s %10s %10s %10s', name,
-            \ s:Size(x.free), s:Size(x.largest), s:Size(x.min_free), s:Size(x.total)))
+      call add(rows, [name, s:Size(x.free), s:Size(x.largest), s:Size(x.min_free), s:Size(x.total)])
     endif
   endfor
-  call extend(lines, ['',
-        \ s:Row('%-10s %10s %10s %10s', 'Vim', 'in use', 'peak', 'budget'),
-        \ s:Row('%-10s %10s %10s %10s', '', s:Size(h.vim.used), s:Size(h.vim.peak),
-        \        h.vim.budget ? s:Size(h.vim.budget) : 'none')])
-  call s:Show('Heap', lines, 2, function('esp#Heap'))
+  call extend(rows, [[], ['Vim', 'in use', 'peak', 'budget'],
+        \ ['', s:Size(h.vim.used), s:Size(h.vim.peak), h.vim.budget ? s:Size(h.vim.budget) : 'none']])
+  call s:Show('Heap', ['Memory   (R refresh, q close)'] + s:Table('Heap', rows, 'lrrrr'),
+        \ 2, function('esp#Heap'))
 endfunction
 
 " ------------------------------------------------------------ :EspTasks --
@@ -108,13 +149,12 @@ endfunction
 function! esp#Tasks() abort
   let tasks = sort(esp_tasks(), {a, b -> a.priority != b.priority
         \ ? b.priority - a.priority : a.name < b.name ? -1 : a.name > b.name})
-  let lines = ['FreeRTOS tasks: ' . len(tasks) . '   (R refresh, q close)',
-        \ s:Row('%-16s %-10s %5s %5s %12s', 'Name', 'State', 'Prio', 'Core', 'Stack free')]
+  let rows = [['Name', 'State', 'Prio', 'Core', 'Stack free']]
   for t in tasks
-    call add(lines, s:Row('%-16s %-10s %5d %5s %12s', t.name, t.state, t.priority,
-          \ t.core < 0 ? 'any' : t.core, s:Size(t.stack_free)))
+    call add(rows, [t.name, t.state, t.priority, t.core < 0 ? 'any' : t.core, s:Size(t.stack_free)])
   endfor
-  call s:Show('Tasks', lines, 2, function('esp#Tasks'))
+  call s:Show('Tasks', ['FreeRTOS tasks: ' . len(tasks) . '   (R refresh, q close)']
+        \ + s:Table('Tasks', rows, 'llrrr'), 2, function('esp#Tasks'))
 endfunction
 
 " ----------------------------------------------------------- :EspReboot --
@@ -297,15 +337,15 @@ endfunction
 
 function! s:NvsList(ns) abort
   let entries = empty(a:ns) ? esp_nvs_list() : esp_nvs_list(a:ns)
-  let lines = ['NVS' . (empty(a:ns) ? '' : ', namespace ' . a:ns) . ': ' . len(entries)
-        \ . ' entries   (R refresh, q close)',
-        \ s:Row('%-15s %-15s %-6s %s', 'Namespace', 'Key', 'Type', 'Value')]
+  let rows = [['Namespace', 'Key', 'Type', 'Value']]
   for e in sort(entries, {a, b -> a.namespace . "\n" . a.key < b.namespace . "\n" . b.key ? -1 : 1})
     let value = has_key(e, 'value') ? (type(e.value) == v:t_string ? string(e.value) : e.value)
           \ : has_key(e, 'size') ? '<' . e.size . ' bytes>' : '?'
-    call add(lines, s:Row('%-15s %-15s %-6s %s', e.namespace, e.key, e.type, value))
+    call add(rows, [e.namespace, e.key, e.type, value])
   endfor
-  call s:Show('NVS', lines, 2, function('s:NvsList', [a:ns]))
+  call s:Show('NVS', ['NVS' . (empty(a:ns) ? '' : ', namespace ' . a:ns) . ': ' . len(entries)
+        \ . ' entries   (R refresh, q close)'] + s:Table('NVS', rows, 'llll'),
+        \ 2, function('s:NvsList', [a:ns]))
 endfunction
 
 function! esp#NvsComplete(lead, line, pos) abort
@@ -372,12 +412,12 @@ function! esp#WifiScan() abort
   echo 'Scanning...'
   redraw
   let aps = sort(esp_wifi_scan(), {a, b -> b.rssi - a.rssi})
-  let lines = ['WiFi networks: ' . len(aps) . '   (R rescan, q close)',
-        \ s:Row('%-32s %6s %4s  %s', 'Network', 'Signal', 'Chan', 'Security')]
+  let rows = [['Network', 'Signal', 'Chan', 'Security']]
   for a in aps
-    call add(lines, s:Row('%-32s %4d dB %4d  %s', empty(a.ssid) ? '(hidden)' : a.ssid, a.rssi, a.channel, a.auth))
+    call add(rows, [empty(a.ssid) ? '(hidden)' : a.ssid, a.rssi . ' dB', a.channel, a.auth])
   endfor
-  call s:Show('WifiScan', lines, 2, function('esp#WifiScan'))
+  call s:Show('WifiScan', ['WiFi networks: ' . len(aps) . '   (R rescan, q close)']
+        \ + s:Table('WifiScan', rows, 'lrrl'), 2, function('esp#WifiScan'))
 endfunction
 
 " ----------------------------------------------------------------- :EspBle* --
@@ -388,13 +428,13 @@ function! esp#BleScan(...) abort
   echo 'Scanning for Bluetooth devices (' . secs . ' s)...'
   redraw
   let devs = sort(esp_ble_scan(secs), {a, b -> b.rssi - a.rssi})
-  let lines = ['Bluetooth LE devices: ' . len(devs) . '   (R rescan, q close)',
-        \ s:Row('%-24s %-17s %-6s %6s  %s', 'Name', 'Address', 'Type', 'Signal', '')]
+  let rows = [['Name', 'Address', 'Type', 'Signal', '']]
   for d in devs
-    call add(lines, s:Row('%-24s %-17s %-6s %4d dB  %s', empty(d.name) ? '(no name)' : d.name,
-          \ d.addr, d.addr_type, d.rssi, d.connectable ? 'connectable' : ''))
+    call add(rows, [empty(d.name) ? '(no name)' : d.name, d.addr, d.addr_type, d.rssi . ' dB',
+          \ d.connectable ? 'connectable' : ''])
   endfor
-  call s:Show('BleScan', lines, 2, function('esp#BleScan', [secs]))
+  call s:Show('BleScan', ['Bluetooth LE devices: ' . len(devs) . '   (R rescan, q close)']
+        \ + s:Table('BleScan', rows, 'lllrl'), 2, function('esp#BleScan', [secs]))
 endfunction
 
 " ----------------------------------------------------------------- :EspConsole --
@@ -510,13 +550,15 @@ function! esp#BtKeyboard(...) abort
     echo 'Put the keyboard in pairing mode. Scanning (' . secs . ' s)...'
     redraw
     let s:kbd_found = sort(filter(esp_ble_scan(secs), 'v:val.hid'), {a, b -> b.rssi - a.rssi})
-    let lines = ['Keyboards in range: ' . len(s:kbd_found) . '   (:EspBtKeyboard pair {n}, q close)']
+    let rows = []
     let n = 1
     for d in s:kbd_found
-      call add(lines, s:Row('%2d  %-24s %-17s %4d dB', n, empty(d.name) ? '(no name)' : d.name, d.addr, d.rssi))
+      call add(rows, [n, empty(d.name) ? '(no name)' : d.name, d.addr, d.rssi . ' dB'])
       let n += 1
     endfor
-    call s:Show('BtKeyboardScan', lines, 1, function('esp#BtKeyboard', ['scan', secs]))
+    call s:Show('BtKeyboardScan', ['Keyboards in range: ' . len(s:kbd_found)
+          \ . '   (:EspBtKeyboard pair {n}, q close)'] + s:Table('BtKeyboardScan', rows, 'rllr'),
+          \ 1, function('esp#BtKeyboard', ['scan', secs]))
   elseif what ==# 'pair'
     if a:0 < 2
       echoerr 'Usage: :EspBtKeyboard pair {n|addr}'
