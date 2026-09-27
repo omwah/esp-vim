@@ -231,9 +231,15 @@ static bool on_color_done(esp_lcd_panel_io_handle_t io, esp_lcd_panel_io_event_d
 #define NATIVE_W    300
 #define NATIVE_H    400
 #define FB_SIZE     (NATIVE_W * NATIVE_H / 8)
+/* The frame buffer lives in PSRAM: 15 KB of internal RAM is too much on the
+ * S3, where WiFi needs about 32 KB of it to start. It goes out a piece at a
+ * time through a small internal buffer the SPI DMA can read -- 20 of the
+ * panel's rows of bytes, 1.5 KB. */
+#define FB_PIECE    (20 * NATIVE_W / 4)
 
 static esp_lcd_panel_io_handle_t s_io;
-static uint8_t *s_fb;                   /* DMA-capable */
+static uint8_t *s_fb;                   /* PSRAM */
+static uint8_t *s_piece;                /* internal, DMA-capable */
 static bool s_fb_dirty;
 
 static inline void fb_set(int x, int y, bool white)
@@ -258,7 +264,9 @@ static inline void fb_set(int x, int y, bool white)
     *b = white ? *b | mask : *b & ~mask;
 }
 
-/* Send the frame buffer, if anything was drawn into it. 15 KB: 12 ms at 10 MHz. */
+/* Send the frame buffer, if anything was drawn into it. 15 KB: 12 ms at 10
+ * MHz. The first piece follows the memory-write command; the rest carry on
+ * from where it left off, as data with no command of their own. */
 static void flush(void)
 {
     if (!s_fb_dirty)
@@ -266,8 +274,12 @@ static void flush(void)
     s_fb_dirty = false;
     esp_lcd_panel_io_tx_param(s_io, 0x2A, (uint8_t[]){ 0x12, 0x2A }, 2);  /* columns */
     esp_lcd_panel_io_tx_param(s_io, 0x2B, (uint8_t[]){ 0x00, 0xC7 }, 2);  /* rows */
-    esp_lcd_panel_io_tx_color(s_io, 0x2C, s_fb, FB_SIZE);
-    xSemaphoreTake(s_flushed, portMAX_DELAY);
+    for (int off = 0; off < FB_SIZE; off += FB_PIECE) {
+        int n = FB_SIZE - off < FB_PIECE ? FB_SIZE - off : FB_PIECE;
+        memcpy(s_piece, s_fb + off, n);
+        esp_lcd_panel_io_tx_color(s_io, off == 0 ? 0x2C : -1, s_piece, n);
+        xSemaphoreTake(s_flushed, portMAX_DELAY);
+    }
 }
 
 /* Draw from the line buffer into the frame buffer; flush() sends it. */
@@ -939,7 +951,7 @@ static esp_err_t panel_init(void)
         .miso_io_num = -1,
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
-        .max_transfer_sz = FB_SIZE,
+        .max_transfer_sz = FB_PIECE,
     };
     esp_err_t e = spi_bus_initialize(SPI3_HOST, &bus, SPI_DMA_CH_AUTO);
     if (e != ESP_OK)
@@ -1130,8 +1142,9 @@ esp_err_t esp_display_init(void)
             || !s_resume || !s_stream || !s_line)
         return ESP_ERR_NO_MEM;
 #if DISP_MONO
-    s_fb = heap_caps_malloc(FB_SIZE, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
-    if (!s_fb)
+    s_fb = heap_caps_malloc(FB_SIZE, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    s_piece = heap_caps_malloc(FB_PIECE, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
+    if (!s_fb || !s_piece)
         return ESP_ERR_NO_MEM;
     memset(s_fb, 0xFF, FB_SIZE);        /* white */
 #endif

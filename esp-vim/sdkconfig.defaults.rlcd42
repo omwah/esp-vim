@@ -36,3 +36,11 @@ CONFIG_ESP_VIM_BAT_ADC_GPIO=4
 CONFIG_ESP_VIM_BAT_DIVIDER=3000
 CONFIG_ESP_VIM_SLEEP_IDLE_MIN=5
 CONFIG_ESP_VIM_SLEEP_DEEP_MIN=60
+
+# The program runs from a copy in PSRAM, as on the FNK0115 (about 3.3 MB of it;
+# Vim's heap, half of what PSRAM is left, comes to about 2.5 MB). That lets the
+# stacks of the tasks that write flash live in PSRAM (ESP_VIM_STACK_IN_PSRAM,
+# on by default then: Vim's 64 KB, the web server's, the keyboard tasks'). In
+# internal RAM, with a Bluetooth keyboard connected, they left too little for
+# WiFi to start (ESP_ERR_NO_MEM: 4.6 KB free, 12 bytes at the lowest).
+CONFIG_SPIRAM_XIP_FROM_PSRAM=y

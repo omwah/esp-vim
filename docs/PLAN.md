@@ -1482,7 +1482,16 @@ board (github.com/waveshareteam/ESP32-S3-RLCD-4.2).
 - **Fonts:** Spleen 6×12, **66×25** (the default), 5×8 (80×37), Terminus 8×14
   (50×21) and Spleen 8×16 (50×18). `:help` is reflowed to 66 columns.
 - **Input:** the USB console, or a BLE keyboard paired with `:EspBtKeyboard`: there
-  is no touch panel. Vim's heap is 4.2 MB (no program copy in PSRAM here).
+  is no touch panel.
+- **Internal RAM, fixed 2026-09-26.** With a BLE keyboard connected,
+  `:EspWifiConnect` failed with ESP_ERR_NO_MEM: 4.6 KB of internal RAM free, 12
+  bytes at the lowest. Vim's 64 KB stack, the 15 KB frame buffer, the power task
+  and the Bluetooth stack left nothing for WiFi's ~32 KB of static buffers. Now
+  the program runs from a copy in PSRAM, as on the FNK0115, so the stacks of the
+  tasks that write flash live in PSRAM (`ESP_VIM_STACK_IN_PSRAM`); and the frame
+  buffer is in PSRAM too, sent to the panel in ten 1.5 KB pieces through an
+  internal DMA buffer (the ST7305 carries on writing across them). 88.7 KB free
+  after boot, 40.7 KB with WiFi started. Vim's heap is 2.5 MB, as on the FNK0115.
 - **Not yet:** the TF card (SPI: MOSI 21, SCK 38, MISO 39) and audio.
 
 - **Sleep, 2026-09-26: reader mode and a hippo** (`esp_power`, `:EspSleep`,
