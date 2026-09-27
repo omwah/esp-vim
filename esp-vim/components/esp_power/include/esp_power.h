@@ -35,6 +35,7 @@ esp_err_t esp_power_init(void);
 
 typedef struct {
     const char *source;         /* "usb", "battery" or "unknown" */
+    bool battery;               /* the board has a battery input */
     int battery_mv;             /* -1: no battery measured */
     int battery_pct;            /* rough, from the voltage; -1 as above */
     bool reader;                /* reader mode available (a wake button) */

@@ -15,6 +15,9 @@ command! -bar EspTasks call esp#Tasks()
 command! -bar -bang EspReboot call esp#Reboot(<bang>0)
 command! -bar -bang -nargs=* -complete=customlist,esp#SleepComplete EspSleep call esp#Sleep(<bang>0, <f-args>)
 command! -bar -nargs=* -complete=customlist,esp#PowerComplete EspPower call esp#Power(<f-args>)
+if esp_power().battery
+  command! -bar EspBattery call esp#Battery()
+endif
 command! -bar -nargs=+ -complete=customlist,esp#GpioComplete EspGpio call esp#Gpio(<f-args>)
 command! -bar -bang -nargs=* -complete=customlist,esp#NvsComplete EspNvs call esp#Nvs(<bang>0, <f-args>)
 command! -bar -nargs=* -complete=dir EspFiles call espfiles#Open(<f-args>)

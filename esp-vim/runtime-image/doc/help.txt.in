@@ -217,6 +217,13 @@ window at the bottom: "R" refreshes it, "q" closes it.
 		keyboard are switched off while it sleeps; they reconnect
 		when it wakes.
 
+:EspBattery						*:EspBattery*
+		On boards with a battery (the RLCD-4.2): its charge, roughly,
+		from its voltage; the voltage; and whether USB is connected.
+		"Connected" means a computer on the USB port -- a plain
+		charger can't be seen, and shows as "not detected".  With no
+		battery fitted the reading is the charger's, about 4.1 V.
+
 :EspPower						*:EspPower*
 		The power source (USB when a computer is on the USB port,
 		else battery), the battery's voltage, and when the board

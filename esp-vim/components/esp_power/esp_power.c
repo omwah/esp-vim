@@ -472,7 +472,10 @@ void esp_power_vim_waiting(bool waiting, bool unsaved)
 
 void esp_power_status(esp_power_status_t *st)
 {
+    if (BAT >= 0 && esp_timer_get_time() - s_mv_at > 2000000)
+        measure();                      /* asked for: a fresh reading */
     memset(st, 0, sizeof *st);
+    st->battery = BAT >= 0;
     st->source = source();
     st->battery_mv = s_mv;
     st->battery_pct = percent(s_mv);

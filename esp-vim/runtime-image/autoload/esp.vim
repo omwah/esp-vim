@@ -172,6 +172,22 @@ function! esp#Sleep(bang, ...) abort
   call esp_sleep(deep, secs)
 endfunction
 
+" :EspBattery: charge, voltage, and whether a computer is on the USB port.
+function! esp#Battery() abort
+  let p = esp_power()
+  let lines = ['Battery   (R refresh, q close)']
+  if p.battery_mv < 0
+    call add(lines, s:Row('%-8s %s', 'Battery', 'no reading'))
+  else
+    call extend(lines, [
+          \ s:Row('%-8s %d%%', 'Charge', p.battery_pct),
+          \ s:Row('%-8s %d.%02d V', 'Voltage', p.battery_mv / 1000, p.battery_mv % 1000 / 10)])
+  endif
+  call add(lines, s:Row('%-8s %s', 'USB', p.source ==# 'usb'
+        \ ? 'connected to a computer' : 'not detected (a charger can''t be seen)'))
+  call s:Show('Battery', lines, 0, function('esp#Battery'))
+endfunction
+
 " :EspPower                   the battery, and when the board sleeps
 " :EspPower idle {min}|off    reader mode after {min} minutes idle, on battery
 " :EspPower deep {min}|off    deep sleep after {min} minutes in reader mode
@@ -190,23 +206,21 @@ function! esp#Power(...) abort
   let p = esp_power()
   let bat = p.battery_mv < 0 ? 'none measured'
         \ : printf('%d.%02d V, about %d%%', p.battery_mv / 1000, p.battery_mv % 1000 / 10, p.battery_pct)
-  let rows = [
-        \ ['Power', p.source ==# 'usb' ? 'USB (a computer is connected)'
-        \           : p.source ==# 'battery' ? 'battery' : 'unknown'],
-        \ ['Battery', bat],
-        \ ['Reader mode', !p.reader ? 'no wake button: :EspSleep is a deep sleep'
+  let lines = ['Power   (R refresh, q close)',
+        \ s:Row('%-8s %s', 'Source', p.source ==# 'usb' ? 'USB (a computer is connected)'
+        \           : p.source ==# 'battery' ? 'battery' : 'unknown'),
+        \ s:Row('%-8s %s', 'Battery', bat),
+        \ s:Row('%-8s %s', 'Reader', !p.reader ? 'no wake button: :EspSleep is a deep sleep'
         \           : p.idle_min ? printf('after %d min without a key, on battery', p.idle_min)
-        \           : 'only on the wake button or :EspSleep'],
-        \ ['Deep sleep', p.reader && p.deep_min
+        \           : 'only on the wake button or :EspSleep'),
+        \ s:Row('%-8s %s', 'Deep', p.reader && p.deep_min
         \           ? printf('after %d min in reader mode, if nothing is unsaved', p.deep_min)
-        \           : 'only with :EspSleep' . (p.reader ? ' deep' : '')],
-        \ ['Idle', printf('%d s since the last key', p.idle_s)],
-        \ ['Sleeps', printf('%d reader, %d deep%s', p.sleeps, p.deep_sleeps,
-        \           empty(p.last_wake) ? '' : '; last woken by ' . p.last_wake)],
+        \           : 'only with :EspSleep' . (p.reader ? ' deep' : '')),
+        \ s:Row('%-8s %s', 'Idle', printf('%d s since the last key', p.idle_s)),
+        \ s:Row('%-8s %s', 'Sleeps', printf('%d reader, %d deep%s', p.sleeps, p.deep_sleeps,
+        \           empty(p.last_wake) ? '' : '; last woken by ' . p.last_wake)),
         \ ]
-  for [k, v] in rows
-    echo printf('%-12s %s', k, v)
-  endfor
+  call s:Show('Power', lines, 0, function('esp#Power'))
 endfunction
 
 " ------------------------------------------------------------- :EspGpio --

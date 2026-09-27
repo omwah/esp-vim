@@ -190,7 +190,8 @@ bool esp_vim__any_modified(void)
 
 /*
  * esp_power([{settings}]) -> Dict: source ("usb", "battery", "unknown"),
- * battery_mv and battery_pct (-1: none), reader (reader mode available),
+ * battery (the board has a battery input), battery_mv and battery_pct (-1:
+ * none; measured afresh when the last reading is over 2 s old), reader (reader mode available),
  * idle_min, deep_min, idle_s, sleeps, deep_sleeps, last_wake ("key", "timer",
  * ""). {settings}: idle_min and/or deep_min to change, kept in NVS.
  */
@@ -208,6 +209,7 @@ void f_esp_power(typval_T *argvars, typval_T *rettv)
     esp_power_status(&st);
     dict_T *d = rettv->vval.v_dict;
     dict_add_string(d, "source", (char_u *)st.source);
+    dict_add_bool(d, "battery", st.battery);
     dict_add_number(d, "battery_mv", st.battery_mv);
     dict_add_number(d, "battery_pct", st.battery_pct);
     dict_add_bool(d, "reader", st.reader);
