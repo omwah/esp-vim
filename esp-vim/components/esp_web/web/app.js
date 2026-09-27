@@ -106,8 +106,19 @@ async function list(dir) {
   cwd = r.path;
   $("cwd").textContent = cwd;
   $("space").textContent = r.total ? size(r.free) + " free of " + size(r.total) + (r.readonly ? " (read-only)" : "") : "";
+  $("updir").textContent = cwd;
+  $("uploadrow").hidden = cwd === "/" || !!r.readonly;
   const tb = $("entries");
   tb.replaceChildren();
+  if (cwd !== "/") {                    // the way up, as a row like the folders
+    const a = el("a", { className: "dir" }, "../");
+    a.addEventListener("click", () => list(cwd.replace(/\/[^/]*$/, "") || "/"));
+    const name = el("td");
+    name.append(a);
+    const tr = el("tr");
+    tr.append(name, el("td"), el("td"), el("td"));
+    tb.append(tr);
+  }
   const rows = r.entries.sort((a, b) => (b.dir - a.dir) || a.name.localeCompare(b.name));
   for (const e of rows) {
     const tr = el("tr");
@@ -134,10 +145,6 @@ async function list(dir) {
   }
 }
 
-$("up").addEventListener("click", () => {
-  if (cwd !== "/") list(cwd.replace(/\/[^/]*$/, "") || "/");
-});
-
 $("mkdir").addEventListener("click", async () => {
   const name = prompt("New folder name");
   if (!name) return;
@@ -158,10 +165,28 @@ async function remove(path, name, dir) {
   catch (e) { $("fileerr").textContent = e.message; }
 }
 
-async function upload(files) {
+// Files to upload: chosen or dropped, then sent with the Upload button.
+let picked = [];
+
+function pick(files) {
+  picked = Array.from(files);
+  const total = picked.reduce((n, f) => n + f.size, 0);
+  $("picked").textContent = picked.length
+    ? picked.length + (picked.length === 1 ? " file, " : " files, ") + size(total)
+    : "nothing chosen";
+  $("upload").disabled = picked.length === 0;
+}
+
+async function upload() {
+  const files = picked, dir = cwd;
+  if (!files.length) return;
   $("fileerr").textContent = "";
+  $("upload").disabled = true;
+  $("files").disabled = true;
+  let i = 0;
   for (const f of files) {
-    const path = join(cwd, f.name);
+    $("picked").textContent = "Uploading " + (++i) + " of " + files.length + ": " + f.name;
+    const path = join(dir, f.name);
     try { await api("PUT", "/api/file?path=" + q(path), f, true); }
     catch (e) {
       if (/exists/.test(e.message) && confirm(f.name + " exists. Replace it?")) {
@@ -170,14 +195,17 @@ async function upload(files) {
       } else { $("fileerr").textContent = e.message; }
     }
   }
+  $("files").disabled = false;
+  pick(picked === files ? [] : picked);   // keep what was chosen meanwhile
   await list(cwd);
 }
 
-$("files").addEventListener("change", (ev) => { upload(ev.target.files); ev.target.value = ""; });
+$("files").addEventListener("change", (ev) => { pick(ev.target.files); ev.target.value = ""; });
+$("upload").addEventListener("click", upload);
 const drop = $("drop");
 drop.addEventListener("dragover", (ev) => { ev.preventDefault(); drop.classList.add("over"); });
 drop.addEventListener("dragleave", () => drop.classList.remove("over"));
-drop.addEventListener("drop", (ev) => { ev.preventDefault(); drop.classList.remove("over"); upload(ev.dataTransfer.files); });
+drop.addEventListener("drop", (ev) => { ev.preventDefault(); drop.classList.remove("over"); pick(ev.dataTransfer.files); });
 
 // ------------------------------------------------------------- settings --
 

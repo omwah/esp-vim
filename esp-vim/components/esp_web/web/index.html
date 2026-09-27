@@ -22,6 +22,9 @@
   button, input, select { font:inherit; color:inherit; }
   button { background:transparent; border:1px solid var(--line); border-radius:6px; padding:4px 10px; cursor:pointer; }
   button.primary { background:var(--acc); border-color:var(--acc); color:#fff; }
+  button:disabled { opacity:.45; cursor:default; }
+  label.btn { border:1px solid var(--line); border-radius:6px; padding:4px 10px; cursor:pointer; }
+  .upload { margin-top:10px; padding-top:10px; border-top:1px solid var(--line); }
   input[type=text], input[type=password], input[type=number], select {
     background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:5px 8px; }
   .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
@@ -66,19 +69,20 @@
     <section class="card" id="drop">
       <div class="row" style="justify-content:space-between">
         <h2 style="margin:0">Files <span class="path" id="cwd"></span></h2>
-        <span class="mute" id="space"></span>
-      </div>
-      <div class="row" style="margin:10px 0">
-        <button id="up">Up</button>
-        <button id="mkdir">New folder</button>
-        <label class="row"><input type="file" id="files" multiple> </label>
-        <span class="mute">or drop files here</span>
+        <div class="row"><span class="mute" id="space"></span><button id="mkdir">New folder</button></div>
       </div>
       <p class="err" id="fileerr"></p>
       <div class="scroll"><table>
         <thead><tr><th>Name</th><th class="num">Size</th><th class="num">Modified</th><th></th></tr></thead>
         <tbody id="entries"></tbody>
       </table></div>
+      <div class="row upload" id="uploadrow">
+        <span>Upload to <span class="path" id="updir"></span>:</span>
+        <label class="btn"><input type="file" id="files" multiple hidden>Choose files</label>
+        <span class="mute" id="picked">nothing chosen</span>
+        <button class="primary" id="upload" disabled>Upload</button>
+        <span class="mute">or drop files here</span>
+      </div>
     </section>
 
     <section class="card">
