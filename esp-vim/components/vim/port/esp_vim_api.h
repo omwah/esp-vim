@@ -21,6 +21,7 @@ void f_esp_bt_keyboard_pair(typval_T *argvars, typval_T *rettv);
 /* api/esp_api_sys.c: the serial console's output */
 void f_esp_console_output(typval_T *argvars, typval_T *rettv);
 void f_esp_display(typval_T *argvars, typval_T *rettv);
+void f_esp_display_flip(typval_T *argvars, typval_T *rettv);
 void f_esp_display_font(typval_T *argvars, typval_T *rettv);
 void f_esp_power(typval_T *argvars, typval_T *rettv);
 void f_esp_sleep(typval_T *argvars, typval_T *rettv);

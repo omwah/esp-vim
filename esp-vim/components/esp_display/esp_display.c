@@ -129,6 +129,8 @@ static volatile bool s_repaint;         /* repaint the whole terminal (after the
 static int *s_dirty_lo, *s_dirty_hi;    /* damaged columns [lo, hi) per row */
 static int s_max_rows;                  /* rows those have: the smallest font's */
 static volatile int s_font_req = -1;    /* a font for the display task to switch to */
+static volatile bool s_flip;            /* upside down (esp_display_set_flip); the display task's */
+static volatile int s_flip_req = -1;    /* ... to change to, 0 or 1 */
 static SemaphoreHandle_t s_font_done;   /* ... and it has */
 static const esp_display_sleep_t *volatile s_sleep_req;    /* esp_display_sleep() */
 static SemaphoreHandle_t s_sleep_done;  /* the display task has drawn it, and parked */
@@ -242,6 +244,10 @@ static inline void fb_set(int x, int y, bool white)
 #if CONFIG_ESP_VIM_DISP_MIRROR_Y
     y = CONFIG_ESP_VIM_DISP_HEIGHT - 1 - y;
 #endif
+    if (s_flip) {
+        x = CONFIG_ESP_VIM_DISP_WIDTH - 1 - x;
+        y = CONFIG_ESP_VIM_DISP_HEIGHT - 1 - y;
+    }
     int px = x, py = y;
     if (CONFIG_ESP_VIM_DISP_WIDTH > CONFIG_ESP_VIM_DISP_HEIGHT) {
         px = NATIVE_W - 1 - y;
@@ -355,6 +361,18 @@ static void paint_damage(void)
 static void clear_panel(void);
 static void go_to_sleep(const esp_display_sleep_t *req);
 
+/* Turn the picture over, or back: a monochrome panel's pixels are placed by
+ * fb_set(), which looks at s_flip; the others mirror both ways on top of the
+ * board's own settings. Whatever is drawn from now on is the right way up;
+ * the caller repaints. */
+static void apply_flip(bool on)
+{
+    s_flip = on;
+#if !DISP_MONO
+    esp_lcd_panel_mirror(s_panel, DISP_MIRROR_X ^ on, DISP_MIRROR_Y ^ on);
+#endif
+}
+
 /* Take font i: the grid it gives, and libvterm's screen resized to it. The
  * whole terminal is repainted next time round. */
 static void use_font(int i)
@@ -386,6 +404,13 @@ static void display_task(void *arg)
         /* Take whatever else is already waiting, so a burst is painted once. */
         while ((n = xStreamBufferReceive(s_stream, buf, sizeof buf, 0)) > 0)
             vterm_input_write(s_vt, buf, n);
+        if (s_flip_req >= 0) {
+            xSemaphoreTake(s_panel_lock, portMAX_DELAY);
+            apply_flip(s_flip_req);
+            s_flip_req = -1;
+            s_repaint = true;           /* all of it, the new way up */
+            xSemaphoreGive(s_panel_lock);
+        }
         if (s_font_req >= 0) {
             use_font(s_font_req);
             s_font_req = -1;
@@ -495,8 +520,18 @@ void esp_display_overlay_clear(void)
     xSemaphoreGive(s_panel_lock);
 }
 
+/* A touch, in the panel's coordinates, where it is on the picture. */
+static void unflip(int *x, int *y)
+{
+    if (s_flip) {
+        *x = CONFIG_ESP_VIM_DISP_WIDTH - 1 - *x;
+        *y = CONFIG_ESP_VIM_DISP_HEIGHT - 1 - *y;
+    }
+}
+
 void esp_display_overlay_cell_at(int x, int y, int *row, int *col)
 {
+    unflip(&x, &y);
     *row = (y - OV_Y0) / OV_H;
     *col = (x - OV_X0) / OV_W;
 }
@@ -723,6 +758,7 @@ void esp_display_touch(int ev, int x, int y, void *ctx)
         return;
     }
     int row, col;
+    unflip(&x, &y);
     cell_at(x, y, &row, &col);
     int64_t now = esp_timer_get_time();
     switch (ev) {
@@ -1016,6 +1052,18 @@ static void backlight_on(void)
 #endif
 }
 
+/* Upside down, as esp_display_set_flip() left it. */
+static bool saved_flip(void)
+{
+    nvs_handle_t h;
+    uint8_t on = 0;
+    if (nvs_open(NVS_NS, NVS_READONLY, &h) == ESP_OK) {
+        nvs_get_u8(h, "flip", &on);
+        nvs_close(h);
+    }
+    return on;
+}
+
 /* The font chosen with esp_display_set_font() last time, else the first. */
 static int saved_font(void)
 {
@@ -1099,6 +1147,7 @@ esp_err_t esp_display_init(void)
         return e;
     }
 
+    apply_flip(saved_flip());
     clear_panel();
     keep_pins_in_light_sleep();
 
@@ -1145,6 +1194,25 @@ void esp_display_size(int *rows, int *cols)
 {
     *rows = ROWS;
     *cols = COLS;
+}
+
+bool esp_display_flip(void)
+{
+    return s_active && s_flip;
+}
+
+esp_err_t esp_display_set_flip(bool on)
+{
+    if (!s_active)
+        return ESP_ERR_INVALID_STATE;
+    s_flip_req = on;                    /* the display task turns it, within 100 ms */
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS, NVS_READWRITE, &h) == ESP_OK) {
+        nvs_set_u8(h, "flip", on);
+        nvs_commit(h);
+        nvs_close(h);
+    }
+    return ESP_OK;
 }
 
 bool esp_display_font_info(int i, esp_display_font_info_t *info)

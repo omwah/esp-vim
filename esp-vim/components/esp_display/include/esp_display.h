@@ -32,6 +32,11 @@ bool esp_display_mono(void);
 /* The terminal's size in character cells. */
 void esp_display_size(int *rows, int *cols);
 
+/* Upside down: the picture turned 180 degrees, touch with it. Kept (in NVS)
+ * for the next start; the grid stays the same size. False without a display. */
+bool esp_display_flip(void);
+esp_err_t esp_display_set_flip(bool on);
+
 /*
  * The terminal's fonts (Kconfig ESP_VIM_DISP_FONTS), numbered from 0: font i's
  * name ("terminus-10x20"), cell size in pixels and the grid it gives. False

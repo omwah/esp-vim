@@ -1514,6 +1514,11 @@ board (github.com/waveshareteam/ESP32-S3-RLCD-4.2).
     the backlight held off; a reset wakes them.
   - On the S3, light sleep turns off the USB Serial/JTAG pads: a computer sees
     the port go and come back.
+- **`:EspFlip`, 2026-09-26:** the picture upside down, kept in NVS, for a board
+  that stands the other way up. The ST7305's pixel mapping turns it; the ILI9341
+  and RGB panels mirror both ways on top of their board settings
+  (`esp_lcd_panel_mirror`; the RGB driver does it as it copies into the frame
+  buffer). Touch coordinates turn with it.
 
 
 ---

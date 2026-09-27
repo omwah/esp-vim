@@ -182,6 +182,12 @@ window at the bottom: "R" refreshes it, "q" closes it.
 		CTRL-L.  Without an argument, shows the setting.  Boards
 		without a screen can't turn it off.
 
+:EspFlip [on|off]					*:EspFlip*
+		On boards with a screen, turn the picture upside down, or
+		back -- without an argument, over from however it is now.
+		Touch turns with it.  Kept across restarts.  From a script:
+		esp_display_flip() and esp_display().flip.
+
 :EspFont [{size}]					*:EspFont*
 		On boards with a screen, its font, named for the screen size
 		it gives in columns and lines.  Without an argument, lists

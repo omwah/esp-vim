@@ -8,6 +8,8 @@ bool esp_display_mono(void) { return false; }
 void esp_display_size(int *rows, int *cols) { *rows = *cols = 0; }
 bool esp_display_font_info(int i, esp_display_font_info_t *info) { (void)i; (void)info; return false; }
 int esp_display_font(void) { return -1; }
+bool esp_display_flip(void) { return false; }
+esp_err_t esp_display_set_flip(bool on) { (void)on; return ESP_ERR_NOT_SUPPORTED; }
 esp_err_t esp_display_set_font(int i) { (void)i; return ESP_ERR_NOT_SUPPORTED; }
 esp_err_t esp_display_sleep(const esp_display_sleep_t *req) { (void)req; return ESP_ERR_NOT_SUPPORTED; }
 void esp_display_wake(void) {}

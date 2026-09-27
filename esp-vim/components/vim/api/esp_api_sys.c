@@ -282,7 +282,7 @@ static void screen_size(const esp_display_font_info_t *f, char *buf, size_t len)
 }
 
 /* esp_display() -> Dict: active (a display shows the console), mono (it's
- * black and white), rows, cols, font (the name of the one in use, "terminus-10x20") and fonts, a List of
+ * black and white), flip (upside down), rows, cols, font (the name of the one in use, "terminus-10x20") and fonts, a List of
  * Dicts: size (the screen size it gives, "80x24"), font, width, height (its
  * cell in pixels), rows, cols. The system vimrc uses it to set 'background' and
  * colours for the panel. */
@@ -296,6 +296,7 @@ void f_esp_display(typval_T *argvars UNUSED, typval_T *rettv)
         esp_display_size(&rows, &cols);
     dict_add_bool(rettv->vval.v_dict, "active", on);
     dict_add_bool(rettv->vval.v_dict, "mono", esp_display_mono());
+    dict_add_bool(rettv->vval.v_dict, "flip", esp_display_flip());
     dict_add_number(rettv->vval.v_dict, "rows", rows);
     dict_add_number(rettv->vval.v_dict, "cols", cols);
     esp_display_font_info_t f;
@@ -319,6 +320,27 @@ void f_esp_display(typval_T *argvars UNUSED, typval_T *rettv)
         list_append_dict(fonts, d);
     }
     dict_add_list(rettv->vval.v_dict, "fonts", fonts);
+}
+
+/*
+ * esp_display_flip([{on}]) -> Bool: whether the display is upside down. With
+ * {on}: turn it so, repainted at once and kept for the next start.
+ */
+void f_esp_display_flip(typval_T *argvars, typval_T *rettv)
+{
+    bool on = esp_display_flip();
+    if (argvars[0].v_type != VAR_UNKNOWN) {
+        int error = FALSE;
+        on = tv_get_bool_chk(&argvars[0], &error) != 0;
+        if (error)
+            return;
+        if (esp_display_set_flip(on) != ESP_OK) {
+            emsg("esp_display_flip(): no display");
+            return;
+        }
+    }
+    rettv->v_type = VAR_BOOL;
+    rettv->vval.v_number = on ? VVAL_TRUE : VVAL_FALSE;
 }
 
 /*

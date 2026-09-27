@@ -417,6 +417,23 @@ function! esp#Console(...) abort
         \ : 'off (the screen only; type a key on the serial console to turn it back on)')
 endfunction
 
+" ------------------------------------------------------------------ :EspFlip --
+
+" :EspFlip [on|off]: the display upside down, or back; without an argument,
+" turn it over. Kept for the next start.
+function! esp#Flip(...) abort
+  if !esp_display().active
+    echoerr 'EspFlip: no display'
+    return
+  endif
+  if a:0 && a:1 !=# 'on' && a:1 !=# 'off'
+    echoerr 'Usage: :EspFlip [on|off]'
+    return
+  endif
+  let on = esp_display_flip(a:0 ? a:1 ==# 'on' : !esp_display_flip())
+  echo 'Display ' . (on ? 'upside down' : 'the right way up')
+endfunction
+
 " ------------------------------------------------------------------ :EspFont --
 
 " :EspFont [{size}]: the display's font, named for the screen size it gives
