@@ -1,0 +1,28 @@
+menu "esp-vim time"
+
+    choice ESP_VIM_RTC
+        prompt "RTC chip"
+        default ESP_VIM_RTC_NONE
+        help
+            A battery-backed clock that keeps the time while the board is
+            off. On the I2C bus of :EspI2cScan (ESP_VIM_I2C_SDA/SCL).
+    config ESP_VIM_RTC_NONE
+        bool "None"
+    config ESP_VIM_RTC_PCF85063
+        bool "PCF85063 (0x51; the Waveshare ESP32-S3-RLCD-4.2's)"
+    endchoice
+
+    config ESP_VIM_NTP_SERVER
+        string "NTP server"
+        default "pool.ntp.org"
+        help
+            The default; :EspTime server changes it, kept in NVS.
+
+    config ESP_VIM_TZ
+        string "Time zone"
+        default "UTC"
+        help
+            A name (US/Pacific, Europe/Paris, ...) or a POSIX TZ string
+            (PST8PDT,M3.2.0,M11.1.0). The default; :EspTime tz changes it.
+
+endmenu

@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "driver/gpio.h"
 #include "driver/rtc_io.h"
@@ -47,6 +48,12 @@ static const char *TAG = "esp_power";
 #define US_PER_MIN  (60 * 1000000LL)
 
 static SemaphoreHandle_t s_sleep_lock;  /* one sleep at a time */
+/* Sleep is always entered on the power task: its stack is in internal RAM,
+ * which deep sleep with held pins requires (and a task whose stack is in PSRAM
+ * -- Vim's, where the program runs from PSRAM -- can't provide). Others ask. */
+static TaskHandle_t s_power_task;
+static struct { volatile bool pending; bool deep; int wake_s; bool unsaved; } s_req;
+static SemaphoreHandle_t s_req_done;
 static int s_idle_min, s_deep_min;
 static volatile int s_mv = -1;          /* the battery, last measured */
 static int64_t s_mv_at;
@@ -266,8 +273,8 @@ static void deep_sleep(int wake_s)
     int mv = measure();
 
     /* The screen stays on a reflective panel: say goodnight on it. */
-    static char pad[2][96];
-    const char *lines[HIPPO_LINES + 5];
+    static char pad[3][96];
+    const char *lines[HIPPO_LINES + 6];
     int n = 0, width = 0;
     for (size_t i = 0; i < HIPPO_LINES; i++) {
         lines[n++] = s_hippo[i];
@@ -282,9 +289,19 @@ static void deep_sleep(int wake_s)
     if (mv > 0)
         snprintf(foot + strlen(foot), sizeof foot - strlen(foot), "   Battery %d.%02d V",
                  mv / 1000, mv % 1000 / 10);
-    const char *centre[] = { quip, foot };
+    /* When it went to sleep, if the clock has been set (esp_time). */
+    char since[64] = "";
+    time_t now = time(NULL);
+    if (now >= 1735689600) {
+        struct tm lt;
+        localtime_r(&now, &lt);
+        strftime(since, sizeof since, "Asleep since %H:%M, %a %d %b", &lt);
+    }
+    const char *centre[] = { quip, since, foot };
     lines[n++] = "";
-    for (int i = 0; i < 2; i++) {       /* centred under the hippo */
+    for (int i = 0; i < 3; i++) {       /* centred under the hippo */
+        if (i == 1 && !since[0])
+            continue;
         int len = strlen(centre[i]), left = width > len ? (width - len) / 2 : 0;
         if (left + len >= (int)sizeof pad[i])
             left = len = 0;
@@ -387,9 +404,19 @@ esp_err_t esp_power_sleep(bool deep, int wake_s, bool unsaved)
         return ESP_ERR_NOT_SUPPORTED;   /* nothing would wake it but a reset */
     if (xSemaphoreTake(s_sleep_lock, 0) != pdTRUE)
         return ESP_ERR_INVALID_STATE;
-    if (deep)
-        deep_sleep(wake_s);
-    reader_sleep(wake_s, unsaved);
+    if (xTaskGetCurrentTaskHandle() == s_power_task) {
+        if (deep)
+            deep_sleep(wake_s);
+        reader_sleep(wake_s, unsaved);
+    } else {
+        xSemaphoreTake(s_req_done, 0);
+        s_req.deep = deep;
+        s_req.wake_s = wake_s;
+        s_req.unsaved = unsaved;
+        s_req.pending = true;
+        xTaskNotifyGive(s_power_task);
+        xSemaphoreTake(s_req_done, portMAX_DELAY);  /* woken (deep: never) */
+    }
     xSemaphoreGive(s_sleep_lock);
     return ESP_OK;
 }
@@ -404,7 +431,19 @@ static void power_task(void *arg)
 #endif
     bool want = false;                  /* pressed: sleep once Vim waits */
     for (;;) {
-        vTaskDelay(pdMS_TO_TICKS(POLL_MS));
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(POLL_MS));   /* or at once, for a request */
+        if (s_req.pending) {            /* esp_power_sleep() from another task, lock held */
+            s_req.pending = false;
+            if (s_req.deep)
+                deep_sleep(s_req.wake_s);
+            reader_sleep(s_req.wake_s, s_req.unsaved);
+            xSemaphoreGive(s_req_done);
+#if KEY >= 0
+            armed = false;              /* the wake press is let go first */
+            down = 0;
+#endif
+            continue;
+        }
         int64_t now = esp_timer_get_time();
 #if KEY >= 0
         if (s_key_used) {               /* woke by it: wait for it to be let go */
@@ -535,10 +574,13 @@ esp_err_t esp_power_init(void)
         return ESP_ERR_NO_MEM;
     s_last_input = esp_timer_get_time();
     measure();
-    if (KEY < 0 && BAT < 0)
-        return ESP_OK;                  /* nothing to watch: :EspSleep only */
-    /* An internal stack: sleep touches flash (NVS for the radios, the PBM). */
-    if (xTaskCreatePinnedToCore(power_task, "power", 4096, NULL, 2, NULL, 1) != pdPASS)
+    s_req_done = xSemaphoreCreateBinary();
+    if (s_req_done == NULL)
+        return ESP_ERR_NO_MEM;
+    /* An internal stack: sleep touches flash (NVS for the radios, the PBM),
+     * and deep sleep with held pins must start from one. Every board has the
+     * task, even with no button or battery to watch: :EspSleep runs here. */
+    if (xTaskCreatePinnedToCore(power_task, "power", 6144, NULL, 2, &s_power_task, 1) != pdPASS)
         return ESP_ERR_NO_MEM;
     return ESP_OK;
 }

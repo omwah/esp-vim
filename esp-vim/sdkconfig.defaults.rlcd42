@@ -44,3 +44,8 @@ CONFIG_ESP_VIM_SLEEP_DEEP_MIN=60
 # internal RAM, with a Bluetooth keyboard connected, they left too little for
 # WiFi to start (ESP_ERR_NO_MEM: 4.6 KB free, 12 bytes at the lowest).
 CONFIG_SPIRAM_XIP_FROM_PSRAM=y
+
+# The date and time (esp_time): the board's PCF85063 RTC chip (0x51, on the
+# 13/14 bus) keeps them while it's off -- given a cell on its RTC battery
+# header, or the 18650 -- and NTP sets it whenever there's a network.
+CONFIG_ESP_VIM_RTC_PCF85063=y

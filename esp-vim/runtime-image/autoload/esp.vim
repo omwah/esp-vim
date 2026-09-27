@@ -385,6 +385,64 @@ function! esp#Net() abort
   call s:Show('Net', lines, 0, function('esp#Net'))
 endfunction
 
+" --------------------------------------------------------------- :EspTime --
+
+" :EspTime                          the date and time, and where they come from
+" :EspTime set {YYYY-MM-DD} {HH:MM[:SS]}   set it by hand (local time)
+" :EspTime tz [{zone}]              the time zone: a name, or a POSIX TZ string
+" :EspTime ntp on|off               set it from the network by itself, or not
+" :EspTime server {host}            the NTP server
+" :EspTime sync                     ask the NTP server now
+function! esp#TimeComplete(lead, line, pos) abort
+  let words = split(a:line[: a:pos - 1], '\s\+', 1)
+  if len(words) <= 2
+    return filter(['set', 'tz', 'ntp', 'server', 'sync'], 'v:val =~# "^" . a:lead')
+  elseif words[1] ==# 'tz'
+    return filter(copy(esp_time().zones), 'v:val =~? "^" . a:lead')
+  elseif words[1] ==# 'ntp'
+    return filter(['on', 'off'], 'v:val =~# "^" . a:lead')
+  endif
+  return []
+endfunction
+
+function! esp#Time(...) abort
+  let what = a:0 ? a:1 : ''
+  if what ==# 'set' && a:0 >= 3
+    call esp_time({'set': a:2 . ' ' . a:3})
+  elseif what ==# 'tz' && a:0 == 2
+    call esp_time({'tz': a:2})
+  elseif what ==# 'tz' && a:0 == 1
+    echo 'Time zones: ' . join(esp_time().zones, ', ') . "\nor a POSIX TZ string, like PST8PDT,M3.2.0,M11.1.0"
+    return
+  elseif what ==# 'ntp' && a:0 == 2 && (a:2 ==# 'on' || a:2 ==# 'off')
+    call esp_time({'ntp': a:2 ==# 'on'})
+  elseif what ==# 'server' && a:0 == 2
+    call esp_time({'server': a:2})
+  elseif what ==# 'sync' && a:0 == 1
+    echo 'Asking ' . esp_time().server . '...'
+    redraw
+    call esp_time({'sync': 10})
+  elseif what !=# ''
+    echoerr 'Usage: :EspTime [set {YYYY-MM-DD} {HH:MM} | tz [{zone}] | ntp on|off | server {host} | sync]'
+    return
+  endif
+  let t = esp_time()
+  let src = {'rtc': 'the RTC chip', 'ntp': 'NTP', 'manual': 'set by hand'}
+  let lines = ['Time   (R refresh, q close)',
+        \ s:Row('%-8s %s', 'Now', t.valid ? strftime('%a %Y-%m-%d %H:%M:%S', t.now) . ' ' . t.zone
+        \           : 'not set (' . t.local . ')'),
+        \ s:Row('%-8s %s', 'Zone', t.tz . (t.tz ==# t.tz_posix ? '' : ' (' . t.tz_posix . ')')),
+        \ s:Row('%-8s %s', 'Source', !t.valid ? '-' : get(src, t.source, 'kept through a restart')
+        \           . (t.synced ? ', last synced ' . strftime('%Y-%m-%d %H:%M', t.synced) : '')),
+        \ s:Row('%-8s %s', 'NTP', (t.ntp ? 'on, ' : 'off, ') . t.server),
+        \ s:Row('%-8s %s', 'RTC', empty(t.rtc) ? 'none on this board'
+        \           : !t.rtc_ok ? t.rtc . ', not answering'
+        \           : t.rtc_time < 0 ? t.rtc . ', time lost (never set, or no power while off)'
+        \           : t.rtc . ', reads ' . strftime('%Y-%m-%d %H:%M:%S', t.rtc_time)),
+        \ ]
+  call s:Show('Time', lines, 0, function('esp#Time'))
+endfunction
+
 " :EspGet[!] {url} [{file}]: download; the file defaults to the URL's last
 " path component in the current directory.
 function! esp#Get(bang, url, ...) abort

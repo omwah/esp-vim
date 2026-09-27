@@ -48,6 +48,7 @@ async function showApp() {
   $("login").hidden = true; $("app").hidden = false; $("logout").hidden = false;
   await list(cwd);
   await loadSettings();
+  await loadTime();
   await status();
   if (!statusTimer) statusTimer = setInterval(status, 1000);
 }
@@ -93,6 +94,7 @@ async function status() {
     add("Characters", s.chars);
     add("Type", s.filetype || "-");
     add("Mode", s.mode || "-");
+    $("clock").textContent = s.time || "";
   } catch (e) { /* shown on the next successful poll */ }
 }
 
@@ -245,5 +247,39 @@ $("save").addEventListener("click", async () => {
   try { await api("POST", "/api/settings", body); $("saved").textContent = "Saved; Vim applies them within a second."; }
   catch (e) { $("seterr").textContent = e.message; }
 });
+
+// ---------------------------------------------------------------- time --
+
+async function loadTime(t) {
+  if (!t) t = await api("GET", "/api/time");
+  $("ntp").checked = t.ntp;
+  $("ntpserver").value = t.server;
+  $("tz").value = t.tz;
+  const src = { rtc: "from the RTC chip", ntp: "from NTP", manual: "set by hand" };
+  $("clocksrc").textContent = !t.valid ? "not set" : (src[t.source] || "")
+    + (t.synced ? ", last synced " + new Date(t.synced * 1000).toLocaleString() : "");
+  const zl = $("zones");
+  zl.replaceChildren();
+  for (const z of t.zones) zl.append(el("option", { value: z }));
+}
+
+async function timePost(body, done) {
+  $("timeerr").textContent = ""; $("timesaved").textContent = "";
+  try { await loadTime(await api("POST", "/api/time", body)); $("timesaved").textContent = done; }
+  catch (e) { $("timeerr").textContent = e.message; }
+}
+
+$("timesave").addEventListener("click", () =>
+  timePost({ ntp: $("ntp").checked, server: $("ntpserver").value, tz: $("tz").value }, "Saved."));
+$("timesync").addEventListener("click", () => {
+  $("timesaved").textContent = "Asking " + $("ntpserver").value + "...";
+  timePost({ sync: true }, "Synced.");
+});
+// By hand: the field is taken as local time where the device is (its zone).
+$("timeset").addEventListener("click", () => {
+  if ($("settime").value) timePost({ set: $("settime").value }, "Set.");
+});
+$("timebrowser").addEventListener("click", () =>
+  timePost({ set: Math.round(Date.now() / 1000) }, "Set from this computer's clock."));
 
 start().catch((e) => { $("loginerr").textContent = e.message; showLogin(); });

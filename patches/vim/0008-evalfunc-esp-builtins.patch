@@ -12,7 +12,7 @@
  #if defined(FEAT_EVAL)
  
  #ifdef VMS
-@@ -2279,6 +2284,129 @@
+@@ -2279,6 +2284,131 @@
  			ret_void,	    f_err_teapot},
      {"escape",		2, 2, FEARG_1,	    arg2_string,
  			ret_string,	    f_escape},
@@ -116,6 +116,8 @@
 +			ret_bool,	    f_esp_ssh_trust},
 +    {"esp_tasks",	0, 0, 0,	    NULL,
 +			ret_list_dict_any,  f_esp_tasks},
++    {"esp_time",	0, 1, FEARG_1,	    arg1_dict_any,
++			ret_dict_any,	    f_esp_time},
 +    {"esp_web_info",	0, 0, 0,	    NULL,
 +			ret_dict_any,	    f_esp_web_info},
 +    {"esp_web_passwd",	1, 1, FEARG_1,	    arg1_string,

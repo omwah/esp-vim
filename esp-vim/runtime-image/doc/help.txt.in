@@ -248,6 +248,32 @@ window at the bottom: "R" refreshes it, "q" closes it.
 
 NETWORK							*esp-network*
 
+:EspTime						*:EspTime*
+		The date and time, the time zone, and where the time came
+		from: the board's RTC chip (the RLCD-4.2 has one), NTP, or
+		set by hand.  NTP sets it by itself whenever there is a
+		network, and writes it to the RTC chip, which keeps it while
+		the board is off.  Vim's strftime() and file times on /fat
+		use it.  The web interface's settings can change all of this
+		too.
+
+:EspTime set {YYYY-MM-DD} {HH:MM[:SS]}
+		Set the clock by hand, in local time.
+
+:EspTime tz [{zone}]
+		The time zone: a name like "US/Pacific" or "Europe/Paris"
+		(CTRL-D lists them), or any POSIX TZ string, like
+		"PST8PDT,M3.2.0,M11.1.0".  Without {zone}, list the names.
+
+:EspTime ntp on|off
+		Whether NTP sets the clock by itself (on by default).
+
+:EspTime server {host}
+		The NTP server; pool.ntp.org by default.
+
+:EspTime sync
+		Ask the NTP server now, whether NTP is on or not.
+
 :EspNet							*:EspNet*
 		The network interface: whether it is up, its address,
 		gateway, DNS server and MAC address.

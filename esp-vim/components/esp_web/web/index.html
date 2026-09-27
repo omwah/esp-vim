@@ -25,7 +25,7 @@
   button:disabled { opacity:.45; cursor:default; }
   label.btn { border:1px solid var(--line); border-radius:6px; padding:4px 10px; cursor:pointer; }
   .upload { margin-top:10px; padding-top:10px; border-top:1px solid var(--line); }
-  input[type=text], input[type=password], input[type=number], select {
+  input[type=text], input[type=password], input[type=number], input[type=datetime-local], select {
     background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:5px 8px; }
   .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
   .path { font-family: ui-monospace, Menlo, Consolas, monospace; word-break:break-all; }
@@ -90,6 +90,29 @@
       <form id="settings" class="settings"></form>
       <div class="row" style="margin-top:10px"><button class="primary" id="save">Save</button><span class="mute" id="saved"></span></div>
       <p class="err" id="seterr"></p>
+    </section>
+
+    <section class="card">
+      <h2>Date and time</h2>
+      <div class="row"><b id="clock"></b><span class="mute" id="clocksrc"></span></div>
+      <div class="settings" style="margin-top:10px">
+        <label><input type="checkbox" id="ntp"> Set automatically (NTP)</label>
+        <label>Server <input type="text" id="ntpserver"></label>
+        <label>Time zone <input type="text" id="tz" list="zones"></label>
+      </div>
+      <datalist id="zones"></datalist>
+      <div class="row" style="margin-top:10px">
+        <button class="primary" id="timesave">Save</button>
+        <button id="timesync">Sync now</button>
+        <span class="mute" id="timesaved"></span>
+      </div>
+      <div class="row upload">
+        <span>Set by hand:</span>
+        <input type="datetime-local" id="settime" step="1">
+        <button id="timeset">Set</button>
+        <button id="timebrowser">Use this computer's clock</button>
+      </div>
+      <p class="err" id="timeerr"></p>
     </section>
   </div>
 </main>

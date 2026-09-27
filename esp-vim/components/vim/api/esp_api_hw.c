@@ -7,6 +7,7 @@
  */
 
 #include "vim.h"
+#include "esp_time.h"
 #include "esp_vim_api.h"
 #include "esp_touch.h"
 
@@ -140,6 +141,7 @@ static bool i2c_scan(int sda, int scl, i2c_found_cb cb, void *ctx, const char *f
     }
     if (!pin_ok(sda, fn) || !pin_ok(scl, fn))
         return false;
+    esp_time_bus_lock();                /* the RTC chip may share these pins */
     i2c_master_bus_config_t cfg = {
         .i2c_port = -1,                         /* any free controller */
         .sda_io_num = sda,
@@ -151,6 +153,7 @@ static bool i2c_scan(int sda, int scl, i2c_found_cb cb, void *ctx, const char *f
     i2c_master_bus_handle_t bus;
     esp_err_t e = i2c_new_master_bus(&cfg, &bus);
     if (e != ESP_OK) {
+        esp_time_bus_unlock();
         semsg("%s(): cannot use SDA %d / SCL %d: %s", fn, sda, scl, esp_err_to_name(e));
         return false;
     }
@@ -164,6 +167,7 @@ static bool i2c_scan(int sda, int scl, i2c_found_cb cb, void *ctx, const char *f
         }
     }
     i2c_del_master_bus(bus);
+    esp_time_bus_unlock();
     return true;
 }
 

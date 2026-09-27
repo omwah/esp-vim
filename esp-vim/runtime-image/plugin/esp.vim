@@ -22,6 +22,7 @@ command! -bar -nargs=+ -complete=customlist,esp#GpioComplete EspGpio call esp#Gp
 command! -bar -bang -nargs=* -complete=customlist,esp#NvsComplete EspNvs call esp#Nvs(<bang>0, <f-args>)
 command! -bar -nargs=* -complete=dir EspFiles call espfiles#Open(<f-args>)
 command! -bar EspNet call esp#Net()
+command! -bar -nargs=* -complete=customlist,esp#TimeComplete EspTime call esp#Time(<f-args>)
 command! -bar -bang -nargs=+ EspGet call esp#Get(<bang>0, <f-args>)
 command! -bar -bang EspSshKeygen call esp#ssh#Keygen(<bang>0)
 command! -bar -nargs=? EspWebStart call esp#web#Start(<f-args>)

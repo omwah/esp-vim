@@ -9,6 +9,7 @@
 #include "esp_vim_port.h"
 #include "esp_display.h"
 #include "esp_power.h"
+#include "esp_time.h"
 
 #include "esp_chip_info.h"
 #include "esp_flash.h"
@@ -394,5 +395,76 @@ void f_esp_display_font(typval_T *argvars, typval_T *rettv)
     if (esp_display_font_info(esp_display_font(), &f)) {
         screen_size(&f, size, sizeof size);
         rettv->vval.v_string = vim_strsave((char_u *)size);
+    }
+}
+
+/*
+ * esp_time([{settings}]) -> Dict: valid (the clock has been set), now (seconds
+ * since 1970), local ("2026-09-26 19:40:12"), zone (its abbreviation), tz (as
+ * given), tz_posix, source ("rtc", "ntp", "manual", ""), synced (the last NTP
+ * sync, 0: none), ntp, server, rtc (the RTC chip, "" for none), rtc_ok,
+ * rtc_time (the chip's time now, -1: lost), zones
+ * (the names tz takes). {settings}, applied in this order and kept in NVS:
+ * tz, server, ntp (Bool), set (local "YYYY-MM-DD HH:MM[:SS]", or seconds since
+ * 1970), sync (seconds to wait for an NTP answer).
+ */
+void f_esp_time(typval_T *argvars, typval_T *rettv)
+{
+    char err[160];
+    if (argvars[0].v_type == VAR_DICT && argvars[0].vval.v_dict != NULL) {
+        dict_T *d = argvars[0].vval.v_dict;
+        esp_time_status_t cur;
+        esp_time_status(&cur);
+        int rc = 0;
+        if (dict_has_key(d, "tz"))
+            rc = esp_time_set_tz((char *)dict_get_string(d, "tz", FALSE), err, sizeof err);
+        if (rc == 0 && (dict_has_key(d, "ntp") || dict_has_key(d, "server")))
+            rc = esp_time_set_ntp(dict_has_key(d, "ntp") ? dict_get_bool(d, "ntp", cur.ntp) : cur.ntp,
+                                  dict_has_key(d, "server") ? (char *)dict_get_string(d, "server", FALSE) : NULL,
+                                  err, sizeof err);
+        if (rc == 0 && dict_has_key(d, "set")) {
+            dictitem_T *di = dict_find(d, (char_u *)"set", -1);
+            rc = di->di_tv.v_type == VAR_NUMBER
+                ? esp_time_set((time_t)di->di_tv.vval.v_number, err, sizeof err)
+                : esp_time_set_local((const char *)tv_get_string(&di->di_tv), err, sizeof err);
+        }
+        if (rc == 0 && dict_has_key(d, "sync")) {
+            varnumber_T secs = dict_get_number(d, "sync");
+            rc = esp_time_sync(secs > 0 ? (int)secs : 10, err, sizeof err);
+        }
+        if (rc != 0) {
+            semsg("esp_time(): %s", err);
+            return;
+        }
+    }
+    if (rettv_dict_alloc(rettv) == FAIL)
+        return;
+    esp_time_status_t st;
+    esp_time_status(&st);
+    dict_T *d = rettv->vval.v_dict;
+    time_t now = time(NULL);
+    struct tm lt;
+    localtime_r(&now, &lt);
+    char buf[40], zone[16];
+    strftime(buf, sizeof buf, "%Y-%m-%d %H:%M:%S", &lt);
+    strftime(zone, sizeof zone, "%Z", &lt);
+    dict_add_bool(d, "valid", st.valid);
+    dict_add_number(d, "now", (varnumber_T)now);
+    dict_add_string(d, "local", (char_u *)buf);
+    dict_add_string(d, "zone", (char_u *)zone);
+    dict_add_string(d, "tz", (char_u *)st.tz);
+    dict_add_string(d, "tz_posix", (char_u *)st.tz_posix);
+    dict_add_string(d, "source", (char_u *)st.source);
+    dict_add_number(d, "synced", (varnumber_T)st.synced);
+    dict_add_bool(d, "ntp", st.ntp);
+    dict_add_string(d, "server", (char_u *)st.server);
+    dict_add_string(d, "rtc", (char_u *)st.rtc);
+    dict_add_bool(d, "rtc_ok", st.rtc_ok);
+    dict_add_number(d, "rtc_time", (varnumber_T)st.rtc_time);
+    list_T *zones = list_alloc();
+    if (zones != NULL) {
+        for (const char *const *z = esp_time_zones(); *z; z++)
+            list_append_string(zones, (char_u *)*z, -1);
+        dict_add_list(d, "zones", zones);
     }
 }

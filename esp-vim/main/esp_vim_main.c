@@ -30,6 +30,7 @@
 #include "esp_touch.h"
 #include "esp_pairui.h"
 #include "esp_power.h"
+#include "esp_time.h"
 #include "esp_heap_caps.h"
 #include "driver/uart.h"
 #include "driver/uart_vfs.h"
@@ -394,6 +395,8 @@ void app_main(void)
      */
     nvs_init();
     esp_net_init();
+    if (esp_time_init() != ESP_OK)      /* the RTC chip, NTP, the time zone */
+        ESP_LOGE(TAG, "time: not available");
     console_init();
     esp_kbd_init();                     /* keyboards and touch feed console input */
 #if CONFIG_ESP_VIM_DISPLAY

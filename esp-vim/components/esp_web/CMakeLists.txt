@@ -6,4 +6,5 @@ idf_component_register(
     INCLUDE_DIRS "include"
     EMBED_TXTFILES "web/index.html" "web/app.js"
     REQUIRES esp_https_server esp_http_server mbedtls nvs_flash json esp_fs esp_timer esp_hw_support
+             esp_time
 )

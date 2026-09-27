@@ -1523,6 +1523,18 @@ board (github.com/waveshareteam/ESP32-S3-RLCD-4.2).
     the backlight held off; a reset wakes them.
   - On the S3, light sleep turns off the USB Serial/JTAG pads: a computer sees
     the port go and come back.
+- **Date and time, 2026-09-26** (`esp_time`, `:EspTime`, the web page's "Date and
+  time" card). Nothing set the clock before: every power-up began in 1970, and file
+  times on `/fat` with it. Now the system time -- which the chip keeps through deep
+  sleep and resets, not through a loss of power -- comes from the RLCD's PCF85063
+  RTC (read at boot, written whenever the time is set; its OS flag says when it
+  lost power), from NTP (ESP-IDF's SNTP, on by default, off with `:EspTime ntp
+  off` or the web page), or by hand. Time zones by name (a table of about 45 mapped
+  to POSIX strings: newlib has no tz database) or any POSIX TZ string. The RTC
+  shares the I2C bus of `:EspI2cScan`, so both take a lock to build a bus on it.
+  The hippo screen says when the board went to sleep. Tested: NTP, zones, setting
+  by hand and file times in the P4 emulator; on the RLCD, NTP setting the clock
+  within seconds of WiFi and writing the chip, which then read the same time.
 - **`:EspFlip`, 2026-09-26:** the picture upside down, kept in NVS, for a board
   that stands the other way up. The ST7305's pixel mapping turns it; the ILI9341
   and RGB panels mirror both ways on top of their board settings

@@ -14,6 +14,7 @@
 
 #include "cJSON.h"
 #include "esp_fs.h"
+#include "esp_time.h"
 #include "esp_https_server.h"
 #include "esp_log.h"
 #include "esp_random.h"
@@ -774,6 +775,76 @@ bool esp_web_settings_changed(void)
     return c;
 }
 
+/* ---------------------------------------------------------------- time -- */
+
+/* The date and time: the web server's task sets them straight through
+ * esp_time, which is made for it -- nothing of Vim's is involved. */
+static cJSON *time_json(void)
+{
+    esp_time_status_t st;
+    esp_time_status(&st);
+    cJSON *j = cJSON_CreateObject();
+    time_t now = time(NULL);
+    struct tm lt;
+    localtime_r(&now, &lt);
+    char buf[40];
+    strftime(buf, sizeof buf, "%Y-%m-%d %H:%M:%S %Z", &lt);
+    cJSON_AddBoolToObject(j, "valid", st.valid);
+    cJSON_AddNumberToObject(j, "now", (double)now);
+    cJSON_AddStringToObject(j, "local", buf);
+    cJSON_AddStringToObject(j, "tz", st.tz);
+    cJSON_AddStringToObject(j, "source", st.source);
+    cJSON_AddNumberToObject(j, "synced", (double)st.synced);
+    cJSON_AddBoolToObject(j, "ntp", st.ntp);
+    cJSON_AddStringToObject(j, "server", st.server);
+    cJSON_AddStringToObject(j, "rtc", st.rtc);
+    cJSON *z = cJSON_AddArrayToObject(j, "zones");
+    for (const char *const *n = esp_time_zones(); *n; n++)
+        cJSON_AddItemToArray(z, cJSON_CreateString(*n));
+    return j;
+}
+
+/* POST {tz, ntp, server, set (seconds since 1970, or a local time in the
+ * device's zone), sync (true)}: any of them. */
+static esp_err_t h_time(httpd_req_t *req)
+{
+    if (require_session(req) != ESP_OK)
+        return ESP_OK;
+    if (req->method == HTTP_GET)
+        return send_json(req, "200 OK", time_json());
+    char *body = read_body(req, 512);
+    cJSON *j = body ? cJSON_Parse(body) : NULL;
+    free(body);
+    if (j == NULL)
+        return send_error(req, "400 Bad Request", "expected a JSON object");
+    char err[160] = "";
+    int rc = 0;
+    const cJSON *v;
+    if ((v = cJSON_GetObjectItem(j, "tz")))
+        rc = cJSON_IsString(v) ? esp_time_set_tz(v->valuestring, err, sizeof err)
+                               : (snprintf(err, sizeof err, "tz must be a string"), -1);
+    const cJSON *ntp = cJSON_GetObjectItem(j, "ntp"), *server = cJSON_GetObjectItem(j, "server");
+    if (rc == 0 && (ntp || server)) {
+        esp_time_status_t st;
+        esp_time_status(&st);
+        if ((ntp && !cJSON_IsBool(ntp)) || (server && !cJSON_IsString(server)))
+            rc = (snprintf(err, sizeof err, "ntp must be true or false, server a string"), -1);
+        else
+            rc = esp_time_set_ntp(ntp ? cJSON_IsTrue(ntp) : st.ntp,
+                                  server ? server->valuestring : NULL, err, sizeof err);
+    }
+    if (rc == 0 && (v = cJSON_GetObjectItem(j, "set")))
+        rc = cJSON_IsNumber(v) ? esp_time_set((time_t)v->valuedouble, err, sizeof err)
+           : cJSON_IsString(v) ? esp_time_set_local(v->valuestring, err, sizeof err)
+           : (snprintf(err, sizeof err, "set: seconds since 1970, or a local time"), -1);
+    if (rc == 0 && (v = cJSON_GetObjectItem(j, "sync")) && cJSON_IsTrue(v))
+        rc = esp_time_sync(10, err, sizeof err);
+    cJSON_Delete(j);
+    if (rc != 0)
+        return send_error(req, "400 Bad Request", err);
+    return send_json(req, "200 OK", time_json());
+}
+
 /* -------------------------------------------------------------- status -- */
 
 void esp_web_publish(const esp_web_status_t *st)
@@ -804,6 +875,12 @@ static esp_err_t h_status(httpd_req_t *req)
     cJSON_AddNumberToObject(j, "bytes", st.bytes);
     cJSON_AddBoolToObject(j, "modified", st.modified);
     cJSON_AddNumberToObject(j, "buffers", st.buffers);
+    time_t now = time(NULL);            /* the page's clock, in the device's zone */
+    struct tm lt;
+    localtime_r(&now, &lt);
+    char clock[40];
+    strftime(clock, sizeof clock, "%a %Y-%m-%d %H:%M:%S %Z", &lt);
+    cJSON_AddStringToObject(j, "time", clock);
     return send_json(req, "200 OK", j);
 }
 
@@ -824,6 +901,8 @@ static const httpd_uri_t ROUTES[] = {
     { .uri = "/api/settings", .method = HTTP_GET,  .handler = h_settings },
     { .uri = "/api/settings", .method = HTTP_POST, .handler = h_settings },
     { .uri = "/api/status",   .method = HTTP_GET,  .handler = h_status },
+    { .uri = "/api/time",     .method = HTTP_GET,  .handler = h_time },
+    { .uri = "/api/time",     .method = HTTP_POST, .handler = h_time },
 };
 
 int esp_web_start(int port, char *err, size_t errlen)
