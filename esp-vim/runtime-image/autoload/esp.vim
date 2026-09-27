@@ -419,8 +419,9 @@ endfunction
 
 " ------------------------------------------------------------------ :EspFlip --
 
-" :EspFlip [on|off]: the display upside down, or back; without an argument,
-" turn it over. Kept for the next start.
+" :EspFlip [on|off]: the display turned 180 degrees, or back; without an
+" argument, turn it over. Which way is up depends on how the board stands, so
+" it only says that it flipped. Kept for the next start.
 function! esp#Flip(...) abort
   if !esp_display().active
     echoerr 'EspFlip: no display'
@@ -430,8 +431,8 @@ function! esp#Flip(...) abort
     echoerr 'Usage: :EspFlip [on|off]'
     return
   endif
-  let on = esp_display_flip(a:0 ? a:1 ==# 'on' : !esp_display_flip())
-  echo 'Display ' . (on ? 'upside down' : 'the right way up')
+  call esp_display_flip(a:0 ? a:1 ==# 'on' : !esp_display_flip())
+  echo 'Display has flipped'
 endfunction
 
 " ------------------------------------------------------------------ :EspFont --

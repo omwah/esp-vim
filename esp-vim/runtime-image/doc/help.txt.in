@@ -183,9 +183,11 @@ window at the bottom: "R" refreshes it, "q" closes it.
 		without a screen can't turn it off.
 
 :EspFlip [on|off]					*:EspFlip*
-		On boards with a screen, turn the picture upside down, or
-		back -- without an argument, over from however it is now.
-		Touch turns with it.  Kept across restarts.  From a script:
+		On boards with a screen, turn the picture over by 180
+		degrees -- "on" turned, "off" as built, and without an
+		argument, over from however it is now: which way is up
+		depends on how the board stands.  Touch turns with it.
+		Kept across restarts.  From a script:
 		esp_display_flip() and esp_display().flip.
 
 :EspFont [{size}]					*:EspFont*
