@@ -1495,7 +1495,7 @@ board (github.com/waveshareteam/ESP32-S3-RLCD-4.2).
   USB traffic) -- a charger counts as battery.
   - **Reader mode** is light sleep. RAM and PSRAM are kept, so Vim carries on
     where it was; the panel goes to its low-power mode (0x39), keeping the
-    picture, with ` zZ KEY ` inverse in its corner. KEY wakes it; pressed while
+    picture, with ` Zzzz KEY ` inverse in its corner. KEY wakes it; pressed while
     awake, it sleeps. WiFi is stopped and restarted (rejoining the network it was
     on); a Bluetooth keyboard is disconnected and reconnects by itself.
   - **Deep sleep** stops the chip; waking (KEY, ext0) is a boot. The panel keeps

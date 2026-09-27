@@ -166,11 +166,10 @@ function! esp#Sleep(bang, ...) abort
     echohl None
     return
   endif
-  echo deep ? 'Sleeping (deep)...' : 'Sleeping...'
+  " Quietly, as when the button starts it: the badge (or the hippo) says so.
+  echo ''
   redraw
-  if esp_sleep(deep, secs)
-    echo 'Awake'
-  endif
+  call esp_sleep(deep, secs)
 endfunction
 
 " :EspPower                   the battery, and when the board sleeps

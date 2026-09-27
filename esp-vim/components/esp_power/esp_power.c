@@ -55,7 +55,8 @@ static volatile bool s_waiting, s_unsaved;      /* Vim's, esp_power_vim_waiting(
 static volatile int64_t s_last_input;
 static int64_t s_busy_since;
 
-static unsigned s_sleeps;
+static unsigned s_sleeps, s_presses;
+static volatile bool s_key_used;        /* the press that woke it: not one to sleep */
 static RTC_DATA_ATTR unsigned s_deep_sleeps;    /* kept through deep sleep */
 static const char *s_last_wake = "";
 
@@ -236,6 +237,19 @@ bad:
     return NULL;
 }
 
+#if KEY >= 0
+/* The button as a plain input, kept so through light sleep's GPIO isolation. */
+static void key_as_gpio(void)
+{
+    if (rtc_gpio_is_valid_gpio(KEY))
+        rtc_gpio_deinit(KEY);
+    gpio_config_t g = { .pin_bit_mask = 1ULL << KEY, .mode = GPIO_MODE_INPUT,
+                        .pull_up_en = GPIO_PULLUP_ENABLE };
+    gpio_config(&g);
+    gpio_sleep_sel_dis(KEY);
+}
+#endif
+
 static void wait_key_released(void)
 {
 #if KEY >= 0
@@ -308,7 +322,7 @@ static void reader_sleep(int wake_s, bool unsaved)
 {
     esp_ble_kbd_suspend();
     esp_net_suspend();
-    esp_display_sleep_t screen = { .badge = KEY >= 0 ? " zZ KEY " : " zZ " };
+    esp_display_sleep_t screen = { .badge = KEY >= 0 ? " Zzzz KEY " : " Zzzz " };
     esp_display_sleep(&screen);
     wait_key_released();
 
@@ -317,8 +331,12 @@ static void reader_sleep(int wake_s, bool unsaved)
     for (;;) {
         esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
 #if KEY >= 0
+        /* Two ways to hear it: the GPIO wake, and the RTC domain's (ext1),
+         * which doesn't depend on the digital pad's sleep configuration. */
         gpio_wakeup_enable(KEY, GPIO_INTR_LOW_LEVEL);
         esp_sleep_enable_gpio_wakeup();
+        if (rtc_gpio_is_valid_gpio(KEY))
+            esp_sleep_enable_ext1_wakeup_io(1ULL << KEY, ESP_EXT1_WAKEUP_ANY_LOW);
 #endif
         int64_t asleep = esp_timer_get_time() - start, t = 0;
         if (wake_s > 0)
@@ -330,9 +348,10 @@ static void reader_sleep(int wake_s, bool unsaved)
         if (t > 0)
             esp_sleep_enable_timer_wakeup(t < 1000000 ? 1000000 : t);
         esp_light_sleep_start();
+        s_key_used = true;              /* before the watcher can see it held */
 
         uint32_t causes = esp_sleep_get_wakeup_causes();
-        if (causes & BIT(ESP_SLEEP_WAKEUP_GPIO)) {
+        if (causes & (BIT(ESP_SLEEP_WAKEUP_GPIO) | BIT(ESP_SLEEP_WAKEUP_EXT1))) {
             s_last_wake = "key";
             break;
         }
@@ -349,6 +368,7 @@ static void reader_sleep(int wake_s, bool unsaved)
     }
 #if KEY >= 0
     gpio_wakeup_disable(KEY);
+    key_as_gpio();                      /* ext1 left it an RTC pin */
 #endif
     esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
     esp_display_wake();
@@ -386,6 +406,13 @@ static void power_task(void *arg)
     for (;;) {
         vTaskDelay(pdMS_TO_TICKS(POLL_MS));
         int64_t now = esp_timer_get_time();
+#if KEY >= 0
+        if (s_key_used) {               /* woke by it: wait for it to be let go */
+            s_key_used = false;
+            armed = false;
+            want = false;
+        }
+#endif
         if (BAT >= 0 && now - s_mv_at >= BAT_EVERY_US)
             measure();
 #if KEY >= 0
@@ -393,6 +420,7 @@ static void power_task(void *arg)
             if (++down == 2 && armed) { /* 100 ms down: a press */
                 want = true;
                 armed = false;
+                s_presses++;
             }
         } else {
             down = 0;
@@ -453,6 +481,7 @@ void esp_power_status(esp_power_status_t *st)
     st->deep_min = s_deep_min;
     st->idle_s = (int)((esp_timer_get_time() - s_last_input) / 1000000);
     st->sleeps = s_sleeps;
+    st->presses = s_presses;
     st->deep_sleeps = s_deep_sleeps;
     st->last_wake = s_last_wake;
 }
@@ -496,11 +525,7 @@ esp_err_t esp_power_init(void)
     else if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER)
         s_last_wake = "timer";
 #if KEY >= 0
-    if (rtc_gpio_is_valid_gpio(KEY))
-        rtc_gpio_deinit(KEY);           /* a deep sleep's wake source: a GPIO again */
-    gpio_config_t g = { .pin_bit_mask = 1ULL << KEY, .mode = GPIO_MODE_INPUT,
-                        .pull_up_en = GPIO_PULLUP_ENABLE };
-    gpio_config(&g);
+    key_as_gpio();                      /* after a deep sleep's wake: a GPIO again */
 #endif
     s_sleep_lock = xSemaphoreCreateMutex();
     if (s_sleep_lock == NULL)

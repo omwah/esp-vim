@@ -215,6 +215,7 @@ void f_esp_power(typval_T *argvars, typval_T *rettv)
     dict_add_number(d, "deep_min", st.deep_min);
     dict_add_number(d, "idle_s", st.idle_s);
     dict_add_number(d, "sleeps", st.sleeps);
+    dict_add_number(d, "presses", st.presses);
     dict_add_number(d, "deep_sleeps", st.deep_sleeps);
     dict_add_string(d, "last_wake", (char_u *)st.last_wake);
 }

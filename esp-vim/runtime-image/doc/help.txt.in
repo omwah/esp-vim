@@ -203,9 +203,10 @@ window at the bottom: "R" refreshes it, "q" closes it.
 :EspSleep[!] [deep] [{seconds}]			*:EspSleep* *esp-sleep*
 		Sleep now.  On a board with a wake button (the RLCD-4.2's
 		KEY) this is reader mode: light sleep, with the screen left
-		as it was and " zZ KEY " in its corner; the button wakes it,
-		and Vim carries on exactly where it was.  Pressing the
-		button while the board is awake does the same.  With "deep",
+		as it was and " Zzzz KEY " in its corner; the button
+		wakes it, and Vim carries on exactly where it was.
+		Pressing the button while the board is awake does the
+		same.  With "deep",
 		or on a board without a wake button, the chip stops instead:
 		waking is a fresh start, so it refuses while a buffer has
 		unsaved changes, unless you add !.  A reflective screen shows

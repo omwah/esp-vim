@@ -42,6 +42,7 @@ typedef struct {
     int deep_min;               /* minutes in reader mode before deep sleep, 0: never */
     int idle_s;                 /* seconds since the last key */
     unsigned sleeps;            /* reader-mode sleeps since boot */
+    unsigned presses;           /* wake button presses seen while awake */
     unsigned deep_sleeps;       /* deep sleeps, kept across them */
     const char *last_wake;      /* "key", "timer", "" */
 } esp_power_status_t;

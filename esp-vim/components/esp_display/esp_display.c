@@ -610,6 +610,17 @@ static void hold_pins(bool on)
         gpio_deep_sleep_hold_dis();
 }
 
+/* ESP-IDF isolates every GPIO in light sleep (ESP_SLEEP_GPIO_RESET_WORKAROUND:
+ * no input or output, floating) unless told not to. The panel's reset line
+ * would float low and the ST7305 lose its picture and set-up; a backlight
+ * would flicker on. Keep these as they are through it. */
+static void keep_pins_in_light_sleep(void)
+{
+    for (size_t i = 0; i < sizeof s_hold_pins / sizeof s_hold_pins[0]; i++)
+        if (s_hold_pins[i] >= 0)
+            gpio_sleep_sel_dis(s_hold_pins[i]);
+}
+
 static void backlight(bool on)
 {
 #if CONFIG_ESP_VIM_DISP_BACKLIGHT >= 0
@@ -1089,6 +1100,7 @@ esp_err_t esp_display_init(void)
     }
 
     clear_panel();
+    keep_pins_in_light_sleep();
 
     s_vt = vterm_new_with_allocator(ROWS, COLS, &s_alloc, NULL);
     if (s_vt == NULL)

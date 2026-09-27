@@ -60,7 +60,7 @@ void esp_display_write(const void *buf, size_t len);
 
 /*
  * Sleep. The display task finishes what's been written, then:
- *   light: leaves the screen as it is, with {badge} (e.g. " zZ KEY ", may be
+ *   light: leaves the screen as it is, with {badge} (e.g. " Zzzz KEY ", may be
  *          NULL) inverse in the bottom right corner, and waits for
  *          esp_display_wake(), which repaints the terminal;
  *   deep:  draws a sleep screen -- {bitmap} (1 bit per pixel, PBM's layout, 1
