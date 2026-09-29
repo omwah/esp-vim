@@ -88,6 +88,8 @@ vim-test = { cmd = 'bash -c ". scripts/env.sh >/dev/null && esp-vim/test/roundtr
 
 vim-test-s3 = { cmd = 'bash -c ". scripts/env.sh >/dev/null && export ESPVIM_TARGET=esp32s3 && esp-vim/test/roundtrip.sh && python esp-vim/test/interactive.py && python esp-vim/test/web.py && python esp-vim/test/hw.py&& python esp-vim/test/wifi.py && python esp-vim/test/ble.py && python esp-vim/test/py.py"', depends-on = ["vim-build-s3"], description = "The same emulator gate on the ESP32-S3 variant" }
 
+kbd-test = { cmd = "mkdir -p build-deps/host && cc -std=c11 -Wall -Wextra -Werror -O1 -g -fsanitize=address,undefined -I esp-vim/components/esp_kbd/include esp-vim/components/esp_kbd/esp_kbd_hid.c esp-vim/test/kbd/test_kbd.c -o build-deps/host/test_kbd && build-deps/host/test_kbd", description = "Host test of keyboard report decoding and key bytes (components/esp_kbd/esp_kbd_hid.c), with the system C compiler" }
+
 vim-test-py = { cmd = 'bash -c ". scripts/env.sh >/dev/null && python esp-vim/test/py.py"', depends-on = ["vim-build"], description = "Python gate (Phase 7) on ESP32-P4: MicroPython in Vim -- :EspPy, :EspPyRun, the vim and esp modules, CTRL-C, limits" }
 
 vim-test-git = { cmd = 'bash -c ". scripts/env.sh >/dev/null && python esp-vim/test/git.py"', depends-on = ["vim-build"], description = "Git gate (Phase 8) on ESP32-P4: the esp_git_*() builtins and :EspGit* commands against a host over HTTP, git:// and SSH" }

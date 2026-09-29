@@ -736,3 +736,35 @@ open belong to the session's task, and `esp_vim_session_begin()` closes them wit
 That is why a new session starts a new interpreter without running the old one's
 finalisers: it doesn't call `mp_deinit()`, which would close those descriptors a second
 time.
+
+## 2026-09-29 — Keyboards: reports from the report map, one connection, bonds remembered
+
+**The report map, not the boot layout.** The boot layout (a modifier byte and six key
+codes) is what a keyboard must offer a BIOS, not what it sends a host in report mode.
+Many send an N-key rollover bitmap as well, one bit per key: the test keyboard's report
+2, 20 bytes. Hard-coding that one layout would fix one keyboard. Every keyboard
+describes its reports in its HID report map, which ESP-IDF's HID host already fetches,
+so `esp_kbd_hid.c` parses it. It keeps only page-7 (Keyboard/Keypad) input fields, and
+their bit positions per report ID. The decoder, and the mapping from keys to terminal
+bytes, are pure C, built and tested on the host (`pixi run kbd-test`). The emulator can't
+be a keyboard, and the real one isn't always at hand.
+
+**xterm's modifier forms.** With a modifier held, the special keys send what xterm
+sends: `CSI 1;{m}X` and `CSI {n};{m}~`, where m = 1 + Shift + 2·Alt + 4·Ctrl. Vim's
+builtin xterm termcap already decodes these, so `<C-Right>` and `<S-F5>` mappings work
+with no termcap change. Alt with a character stays Escape-then-character, as in a
+terminal.
+
+**One keyboard connected, several bonded.** Each BLE connection costs the S3 internal
+RAM, and with the display and WiFi that RAM is short (31 KB free with one keyboard). So up
+to four keyboards are bonded, but one is connected at a time. The HID host waits up to
+30 s for each connection attempt, and it has no way to wait for several at once, so the
+order of attempts matters: the last keyboard used is tried first. Names are kept in NVS
+beside the bonds, because the list is only useful with names, and a keyboard's name is
+only known while it is connected.
+
+**The "Paired" notice waits for Vim.** A pairing on the touch screen happens on the
+overlay's task, and nothing may call into Vim from there. The Bluetooth side leaves one
+message, and Vim takes it at `SafeState`: the first moment it is idle, typically the
+first key typed on the new keyboard. That needs no timer, and so no periodic wake-ups.
+It costs one C call that returns at once when nothing is waiting.

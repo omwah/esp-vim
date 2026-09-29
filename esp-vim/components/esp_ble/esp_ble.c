@@ -99,6 +99,11 @@ int esp_ble__start(char *err, size_t errlen)
     return 0;
 }
 
+bool esp_ble__running(void)
+{
+    return s_synced_once;
+}
+
 uint8_t esp_ble__own_addr_type(void)
 {
     return s_own_addr_type;

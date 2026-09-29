@@ -598,7 +598,7 @@ endfunction
 let s:kbd_found = []
 
 function! esp#BtKeyboardComplete(lead, line, pos) abort
-  return filter(['scan', 'pair', 'forget'], 'v:val =~# "^" . a:lead')
+  return filter(['scan', 'pair', 'list', 'forget'], 'v:val =~# "^" . a:lead')
 endfunction
 
 function! esp#BtKeyboard(...) abort
@@ -613,10 +613,28 @@ function! esp#BtKeyboard(...) abort
         call add(lines, s:Row('%-10s %d%%', 'Battery', k.battery))
       endif
     endif
+    if !empty(k.layout)
+      call add(lines, s:Row('%-10s %s', 'Reports', k.layout))
+    endif
     if !empty(k.last_report)
       call add(lines, s:Row('%-10s %s', 'Last key', k.last_report))
     endif
+    for b in esp_bt_keyboard_list()
+      call add(lines, s:Row('%-10s %s  %s%s', 'Paired', empty(b.name) ? '(no name)' : b.name, b.addr,
+            \ b.connected ? '  (connected)' : b.last ? '  (last used)' : ''))
+    endfor
     call s:Show('BtKeyboard', lines, 1, function('esp#BtKeyboard'))
+  elseif what ==# 'list'
+    let rows = []
+    let n = 1
+    for b in esp_bt_keyboard_list()
+      call add(rows, [n, empty(b.name) ? '(no name)' : b.name, b.addr,
+            \ b.connected ? 'connected' : b.last ? 'last used' : ''])
+      let n += 1
+    endfor
+    call s:Show('BtKeyboardList', ['Paired keyboards: ' . len(rows)
+          \ . '   (:EspBtKeyboard forget {n}, q close)'] + s:Table('BtKeyboardList', rows, 'rlll'),
+          \ 1, function('esp#BtKeyboard', ['list']))
   elseif what ==# 'scan'
     let secs = a:0 > 1 ? str2nr(a:2) : 8
     echo 'Put the keyboard in pairing mode. Scanning (' . secs . ' s)...'
@@ -647,14 +665,29 @@ function! esp#BtKeyboard(...) abort
     redraw
     if esp_bt_keyboard_pair(addr, type)
       redraw
-      echo 'Paired. Type on the keyboard; it reconnects by itself from now on.'
+      let notice = esp_bt_keyboard_notice()     " taken here, not repeated when idle
+      echo (empty(notice) ? 'Paired' : notice) . '. Type on the keyboard; it reconnects by itself from now on.'
     endif
   elseif what ==# 'forget'
-    if esp_bt_keyboard_forget()
-      echo 'Bluetooth keyboard forgotten'
+    if a:0 < 2
+      if esp_bt_keyboard_forget()
+        echo 'Every Bluetooth keyboard forgotten'
+      endif
+      return
+    endif
+    let bonds = esp_bt_keyboard_list()
+    let arg = a:2
+    if arg =~# '^\d\+$' && str2nr(arg) >= 1 && str2nr(arg) <= len(bonds)
+      let b = bonds[str2nr(arg) - 1]
+      let [addr, name] = [b.addr, empty(b.name) ? b.addr : b.name]
+    else
+      let [addr, name] = [arg, arg]
+    endif
+    if esp_bt_keyboard_forget(addr)
+      echo 'Forgot ' . name
     endif
   else
-    echoerr 'Usage: :EspBtKeyboard [scan [{seconds}] | pair {n|addr} | forget]'
+    echoerr 'Usage: :EspBtKeyboard [scan [{seconds}] | pair {n|addr} | list | forget [{n|addr}]]'
   endif
 endfunction
 

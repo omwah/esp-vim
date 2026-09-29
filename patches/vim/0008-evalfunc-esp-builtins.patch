@@ -12,7 +12,7 @@
  #if defined(FEAT_EVAL)
  
  #ifdef VMS
-@@ -2279,6 +2284,175 @@
+@@ -2279,6 +2284,179 @@
  			ret_void,	    f_err_teapot},
      {"escape",		2, 2, FEARG_1,	    arg2_string,
  			ret_string,	    f_escape},
@@ -26,8 +26,12 @@
 +			ret_list_dict_any,  f_esp_ble_scan},
 +    {"esp_bt_keyboard",	0, 0, 0,	    NULL,
 +			ret_dict_any,	    f_esp_bt_keyboard},
-+    {"esp_bt_keyboard_forget", 0, 0, 0,	    NULL,
++    {"esp_bt_keyboard_forget", 0, 1, FEARG_1,  arg1_string,
 +			ret_bool,	    f_esp_bt_keyboard_forget},
++    {"esp_bt_keyboard_list", 0, 0, 0,	    NULL,
++			ret_list_dict_any,  f_esp_bt_keyboard_list},
++    {"esp_bt_keyboard_notice", 0, 0, 0,	    NULL,
++			ret_string,	    f_esp_bt_keyboard_notice},
 +    {"esp_bt_keyboard_pair", 1, 2, FEARG_1,  arg2_string,
 +			ret_bool,	    f_esp_bt_keyboard_pair},
 +    {"esp_console_output", 0, 1, FEARG_1,  arg1_bool,

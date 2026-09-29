@@ -91,6 +91,29 @@ def main():
             s.quiet(1.0)
             got = probe("ER", "string(esp_ble_scan(0))")
             check(got == "[]", "a scan time out of range is refused", got)
+
+            # Keyboards (Phase 11), as far as the emulator goes: nothing is
+            # bonded, and the calls on bonds answer cleanly. (Pairing needs a
+            # real keyboard: the peer is no HID device.)
+            got = probe("KB", "string(esp_bt_keyboard_list()) . ':' . esp_bt_keyboard().bonds"
+                              " . ':' . esp_bt_keyboard_notice()")
+            check(got == "[]:0:", "no keyboards bonded, and no notice", got)
+            s.type(":let v:errmsg = '' | silent! call esp_bt_keyboard_forget('00:11:22:33:44:55')\r")
+            s.quiet(1.0)
+            got = probe("KF", "v:errmsg")
+            check("not a paired keyboard" in got, "forgetting a keyboard that isn't paired is refused", got)
+            s.type(":let v:errmsg = '' | silent! call esp_bt_keyboard_forget('nonsense')\r")
+            s.quiet(1.0)
+            got = probe("KN", "v:errmsg")
+            check("not an address" in got, "and so is something that isn't an address", got)
+            s.type(":EspBtKeyboard list\r")
+            try:
+                s.expect(rb"Paired keyboards: 0", 30)
+                check(True, ":EspBtKeyboard list shows none")
+            except TimeoutError as e:
+                check(False, ":EspBtKeyboard list shows none", str(e)[-200:])
+            s.type("q")
+            s.quiet(1.0)
     except Exception as e:
         check(False, "session completed", f"{type(e).__name__}: {e}")
     finally:

@@ -5,9 +5,10 @@
  *
  *    Bluetooth keyboard                  <- title
  *   Scanning...                          <- status
- *    My Keyboard          -60            <- up to six keyboards in range;
- *    ...                                    tap one to select it
- *   Tap your keyboard, then Pair.        <- hint
+ *    My Keyboard          -60            <- up to six keyboards: those in
+ *   *Old Keyboard         away              range, and the paired ones ("*");
+ *    ...                                    tap one to select it, hold a
+ *   Tap your keyboard, then Pair.        <- paired one to forget it
  *   [ Not now ]         [  Pair  ]       <- buttons
  *
  * Everything runs on the overlay's own task: it polls the keyboard status,
@@ -44,12 +45,14 @@
 #define ROW_HINT        8
 #define ROW_BUTTONS     9
 #define TAP_SLOP        16
+#define HOLD_US         (800 * 1000)        /* a touch this long is a hold */
 
-typedef struct { int x, y; } tap_t;
+typedef struct { int x, y; bool hold; } tap_t;
 
 static QueueHandle_t s_taps;
 static int s_rows, s_cols;
 static esp_ble_dev_t s_kbd[MAX_KBD];
+static bool s_bonded[MAX_KBD], s_away[MAX_KBD];     /* paired; paired but not seen */
 static int s_nkbd, s_sel = -1;
 
 /* ------------------------------------------------------------------ touch -- */
@@ -58,10 +61,11 @@ static int s_nkbd, s_sel = -1;
 static void on_touch(esp_touch_event_t ev, int x, int y, void *ctx)
 {
     static int x0, y0;
+    static int64_t t0;
     if (ev == ESP_TOUCH_DOWN) {
-        x0 = x, y0 = y;
+        x0 = x, y0 = y, t0 = esp_timer_get_time();
     } else if (ev == ESP_TOUCH_UP && abs(x - x0) < TAP_SLOP && abs(y - y0) < TAP_SLOP) {
-        tap_t t = { x0, y0 };
+        tap_t t = { x0, y0, esp_timer_get_time() - t0 >= HOLD_US };
         xQueueSend(s_taps, &t, 0);
     }
 }
@@ -91,15 +95,20 @@ static void status(const char *text)
 
 static void draw_list(void)
 {
+    bool any_bonded = false;
     for (int i = 0; i < MAX_KBD; i++) {
-        char buf[64] = "";
-        if (i < s_nkbd)
-            snprintf(buf, sizeof buf, " %-18.18s %4d", s_kbd[i].name[0] ? s_kbd[i].name
-                                                                : s_kbd[i].addr, s_kbd[i].rssi);
+        char buf[64] = "", rssi[8];
+        if (i < s_nkbd) {
+            snprintf(rssi, sizeof rssi, "%4d", s_kbd[i].rssi);
+            snprintf(buf, sizeof buf, "%c%-18.18s %s", s_bonded[i] ? '*' : ' ',
+                     s_kbd[i].name[0] ? s_kbd[i].name : s_kbd[i].addr, s_away[i] ? "away" : rssi);
+            any_bonded |= s_bonded[i];
+        }
         line(ROW_LIST + i, buf, i == s_sel);
     }
-    line(ROW_HINT, s_nkbd ? "Tap your keyboard, then Pair."
-                          : "Put your keyboard in pairing mode.", false);
+    line(ROW_HINT, !s_nkbd ? "Put your keyboard in pairing mode."
+                   : any_bonded ? "Tap+Pair; hold * forgets."
+                   : "Tap your keyboard, then Pair.", false);
     char buttons[64];
     snprintf(buttons, sizeof buttons, "%-*s%s", s_cols - 10, "[ Not now ]",
              s_sel >= 0 ? "[  Pair  ]" : "");
@@ -120,8 +129,33 @@ static bool found(void *ctx, const esp_ble_dev_t *d)
 {
     if (!d->hid || s_nkbd == MAX_KBD)
         return true;
+    s_bonded[s_nkbd] = s_away[s_nkbd] = false;
     s_kbd[s_nkbd++] = *d;
     return true;
+}
+
+/* Mark the paired keyboards among those found, and list the others, away. */
+static void add_bonds(void)
+{
+    esp_ble_bond_t b[4];
+    int n = esp_ble_kbd_bonds(b, 4);
+    for (int j = 0; j < n; j++) {
+        int i = 0;
+        while (i < s_nkbd && strcmp(s_kbd[i].addr, b[j].addr) != 0)
+            i++;
+        if (i == s_nkbd) {
+            if (s_nkbd == MAX_KBD)
+                continue;
+            memset(&s_kbd[i], 0, sizeof s_kbd[i]);
+            memcpy(s_kbd[i].addr, b[j].addr, sizeof s_kbd[i].addr);
+            s_kbd[i].addr_type = b[j].random ? "random" : "public";
+            s_away[i] = true;
+            s_nkbd++;
+        }
+        s_bonded[i] = true;
+        if (b[j].name[0] && !s_kbd[i].name[0])
+            snprintf(s_kbd[i].name, sizeof s_kbd[i].name, "%s", b[j].name);
+    }
 }
 
 static void scan(void)
@@ -140,6 +174,7 @@ static void scan(void)
         for (int j = i; j > 0 && s_kbd[j].rssi > s_kbd[j - 1].rssi; j--) {
             esp_ble_dev_t t = s_kbd[j]; s_kbd[j] = s_kbd[j - 1]; s_kbd[j - 1] = t;
         }
+    add_bonds();                        /* after the sort: the away ones go last */
     s_sel = -1;
     for (int i = 0; i < s_nkbd; i++)
         if (was[0] && strcmp(s_kbd[i].addr, was) == 0)
@@ -156,7 +191,23 @@ static int tap(tap_t t)
 {
     int row, col;
     esp_display_overlay_cell_at(t.x, t.y, &row, &col);
-    if (row >= ROW_LIST && row < ROW_LIST + s_nkbd) {
+    if (row >= ROW_LIST && row < ROW_LIST + s_nkbd && t.hold && s_bonded[row - ROW_LIST]) {
+        char err[96], msg[64];
+        esp_ble_dev_t k = s_kbd[row - ROW_LIST];
+        if (esp_ble_kbd_forget_one(k.addr, err, sizeof err) == 0) {
+            snprintf(msg, sizeof msg, "Forgot %s.", k.name[0] ? k.name : k.addr);
+            status(msg);
+            int i = row - ROW_LIST;         /* off the list */
+            memmove(&s_kbd[i], &s_kbd[i + 1], (s_nkbd - i - 1) * sizeof s_kbd[0]);
+            memmove(&s_bonded[i], &s_bonded[i + 1], (s_nkbd - i - 1) * sizeof s_bonded[0]);
+            memmove(&s_away[i], &s_away[i + 1], (s_nkbd - i - 1) * sizeof s_away[0]);
+            s_nkbd--;
+            s_sel = -1;
+            draw_list();
+        } else {
+            status(err);
+        }
+    } else if (row >= ROW_LIST && row < ROW_LIST + s_nkbd) {
         s_sel = row - ROW_LIST;
         draw_list();
     } else if (row == ROW_BUTTONS && col < 12) {
@@ -166,8 +217,10 @@ static int tap(tap_t t)
         esp_ble_dev_t k = s_kbd[s_sel];
         snprintf(msg, sizeof msg, "Pairing %s...", k.name[0] ? k.name : k.addr);
         status(msg);
-        if (esp_ble_kbd_pair(k.addr, strcmp(k.addr_type, "random") == 0, err, sizeof err) == 0) {
-            status("Paired.");
+        if (esp_ble_kbd_pair(k.addr, k.addr_type && strcmp(k.addr_type, "random") == 0,
+                             err, sizeof err) == 0) {
+            snprintf(msg, sizeof msg, "Paired: %s", k.name[0] ? k.name : k.addr);
+            status(msg);
         } else {
             status(err);
         }

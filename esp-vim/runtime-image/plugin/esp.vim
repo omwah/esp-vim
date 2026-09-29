@@ -75,3 +75,10 @@ command! -bar -nargs=? -complete=customlist,esp#ConsoleComplete EspConsole call 
 command! -bar -nargs=? -complete=customlist,esp#FontComplete EspFont call esp#Font(<f-args>)
 command! -bar -nargs=? -complete=customlist,esp#ConsoleComplete EspFlip call esp#Flip(<f-args>)
 command! -nargs=* -complete=customlist,esp#BtKeyboardComplete EspBtKeyboard call esp#BtKeyboard(<f-args>)
+" A keyboard paired on the touch screen says so, when Vim is next idle.
+" (esp_bt_keyboard_notice() is "" at once when there is nothing to say.)
+augroup esp_bt_keyboard
+  autocmd!
+  autocmd SafeState * let s:kbd_notice = esp_bt_keyboard_notice()
+        \ | if !empty(s:kbd_notice) | echomsg s:kbd_notice | endif
+augroup END

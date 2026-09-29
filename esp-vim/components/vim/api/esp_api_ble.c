@@ -55,6 +55,38 @@ void f_esp_bt_keyboard(typval_T *argvars UNUSED, typval_T *rettv)
     dict_add_bool(d, "paired", st.paired);
     dict_add_string(d, "last_report", (char_u *)st.last_report);
     dict_add_string(d, "security", (char_u *)st.security);
+    dict_add_string(d, "layout", (char_u *)st.layout);
+    dict_add_number(d, "bonds", st.bonds);
+}
+
+/* esp_bt_keyboard_list() -> List of Dicts: addr, addr_type, name, connected,
+ * last -- the bonded keyboards, the one used last first. */
+void f_esp_bt_keyboard_list(typval_T *argvars UNUSED, typval_T *rettv)
+{
+    esp_ble_bond_t b[4];
+    if (rettv_list_alloc(rettv) == FAIL)
+        return;
+    int n = esp_ble_kbd_bonds(b, 4);
+    for (int i = 0; i < n; i++) {
+        dict_T *d = dict_alloc();
+        if (d == NULL)
+            return;
+        dict_add_string(d, "addr", (char_u *)b[i].addr);
+        dict_add_string(d, "addr_type", (char_u *)(b[i].random ? "random" : "public"));
+        dict_add_string(d, "name", (char_u *)b[i].name);
+        dict_add_bool(d, "connected", b[i].connected);
+        dict_add_bool(d, "last", b[i].last);
+        list_append_dict(rettv->vval.v_list, d);
+    }
+}
+
+/* esp_bt_keyboard_notice() -> "Paired: <name>" once after a pairing
+ * connected, else "". (plugin/esp.vim shows it when Vim is next idle.) */
+void f_esp_bt_keyboard_notice(typval_T *argvars UNUSED, typval_T *rettv)
+{
+    char buf[48];
+    rettv->v_type = VAR_STRING;
+    rettv->vval.v_string = esp_ble_kbd_notice(buf, sizeof buf) ? vim_strsave((char_u *)buf) : NULL;
 }
 
 /* esp_bt_keyboard_pair({addr} [, {addr_type}]): connect to the keyboard and
@@ -75,11 +107,17 @@ void f_esp_bt_keyboard_pair(typval_T *argvars, typval_T *rettv)
         semsg("esp_bt_keyboard_pair(): %s", err);
 }
 
-/* esp_bt_keyboard_forget(): disconnect and forget bonded keyboards. */
-void f_esp_bt_keyboard_forget(typval_T *argvars UNUSED, typval_T *rettv)
+/* esp_bt_keyboard_forget([{addr}]): disconnect and forget the keyboard at
+ * {addr} (as esp_bt_keyboard_list() gives it), or every bonded keyboard. */
+void f_esp_bt_keyboard_forget(typval_T *argvars, typval_T *rettv)
 {
     char err[128];
-    if (esp_ble_kbd_forget(err, sizeof err) == 0)
+    char_u buf[NUMBUFLEN];
+    char_u *addr = argvars[0].v_type == VAR_UNKNOWN ? NULL : tv_get_string_buf_chk(&argvars[0], buf);
+    if (argvars[0].v_type != VAR_UNKNOWN && addr == NULL)
+        return;
+    if ((addr ? esp_ble_kbd_forget_one((char *)addr, err, sizeof err)
+              : esp_ble_kbd_forget(err, sizeof err)) == 0)
         rettv->vval.v_number = TRUE;
     else
         semsg("esp_bt_keyboard_forget(): %s", err);

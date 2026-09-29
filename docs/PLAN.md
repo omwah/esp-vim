@@ -21,7 +21,7 @@
 | 9 — Tab5 hardware over UART | not started |
 | 10 — Tab5 display console | not started |
 | 10b — ESP32-S3 CYD display console | **in progress, pulled forward** (2026-09-25): Vim on the Hosyond ES3C28P's panel and the Freenove FNK0115Q's 5" RGB panel; see Phase 10b |
-| 11 — Bluetooth keyboards (late-stage goal) | **in progress, pulled forward** (2026-09-25): on the ES3C28P a BLE keyboard pairs by command or by touch (the overlay) and types into Vim; see Phase 11 |
+| 11 — Bluetooth keyboards (late-stage goal) | **in progress, pulled forward** (2026-09-25): on the ES3C28P a BLE keyboard pairs by command or by touch (the overlay) and types into Vim. 2026-09-29: any keyboard's reports decoded from its report map (N-key rollover too), xterm modifier keys, several bonded keyboards, forget one, a "Paired" notice -- host-tested, the hands-on check still due; see Phase 11 |
 
 Toolchain: ESP-IDF **v5.5.5**, riscv32-esp-elf 14.2.0, emulator esp-emu 0.43.0.
 
@@ -1137,7 +1137,13 @@ commits, 13 s), a push (1.7 s), a fast-forward pull and merge pulls, with `git f
 --strict` clean on the host. Internal RAM stayed above 3.6 KB at its lowest, PSRAM above
 2.4 MB. The app is 4.02 MB of the 7 MB partition.
 
-Not yet: SSH on hardware (the emulator covers it), the Tab5 (Phase 9), rebase, stash,
+**Over SSH on the same board (2026-09-29)**, against an unprivileged key-only sshd on a
+LAN host: the unknown host key refused and named, then trusted with `esp_ssh_trust()`;
+a clone (30 commits, 14.5 s), a commit and push (8.0 s, host `git fsck --strict` clean),
+and a fast-forward pull (5.8 s). Making the ECDSA key took 3.9 s. The test key,
+`known_hosts` and repository were removed afterwards.
+
+Not yet: the Tab5 (Phase 9), rebase, stash,
 submodules and hooks (not planned).
 
 ### Superseded: pure Python on MicroPython (2026-09-23 design)
@@ -1264,13 +1270,48 @@ after a restart. The touch pairing overlay is still to come.
   (`nimble_port_init` failed with `ESP_ERR_NO_MEM`). WiFi now starts only when a network
   is stored, or on the first scan or connect. With the keyboard connected, about
   31 KB of internal RAM is free.
-- **Still to do:**
-  - the test keyboard's second keyboard report (ID 2, 20 bytes: N-key rollover) isn't decoded;
-    only the 8-byte boot-format one is;
-  - modified cursor/function keys (xterm's `CSI 1;5A` forms);
-  - the overlay's long-press to forget a keyboard, and a "Paired: <name>" notice in Vim;
-  - several bonded keyboards;
-  - Tab5 (esp-hosted HCI).
+- **Still to do:** Tab5 (esp-hosted HCI).
+
+### Keyboard follow-ups (2026-09-29): code and host tests; the hands-on check is still due
+
+- **Reports from the keyboard's own description.**
+  - `components/esp_kbd/esp_kbd_hid.c` reads a keyboard's HID report map and decodes
+    any report from it: modifier bits, key arrays, and N-key rollover bitmaps.
+    `esp_ble_kbd` parses each map when the keyboard connects.
+  - The test keyboard's 20-byte report 2 now decodes. Reports its map doesn't describe
+    as a keyboard's fall back to the boot layout.
+  - Up to 16 keys can be held at once (it was six). `esp_bt_keyboard().layout` shows
+    what was learnt, e.g. `1: mods@0 keys6@16; 2: mods@0 map0+152@8`.
+- **Modified keys, as xterm sends them.** Vim's builtin xterm termcap decodes them all.
+  - Ctrl, Shift and Alt with the cursor keys, Home, End, PgUp, PgDn, Insert, Delete and
+    F1–F12 give `CSI 1;{m}X` or `CSI {n};{m}~` (`<C-Right>`, `<S-F5>`, `<C-PageDown>`).
+  - Also: Shift-Tab (`CSI Z`), the keypad with Num Lock on, the non-US `\|` key,
+    Ctrl-Backspace, and xterm's Ctrl with digits.
+- **Several bonded keyboards** (up to four).
+  - One is connected at a time: each connection costs the S3 internal RAM.
+  - Each keyboard's name and the last one used are kept in NVS, and reconnecting tries
+    the last one used first. (Each attempt can wait out the HID host's 30 s connection
+    timeout, so the order matters.)
+  - `esp_bt_keyboard_list()`, `:EspBtKeyboard list` and `:EspBtKeyboard forget {n}`
+    forget one keyboard; `forget` alone forgets all, as before.
+- **"Paired: <name>".** It appears in Vim when a pairing connects: at the next SafeState
+  when paired on the touch screen, or in the command's own message. It is a 10 s window
+  after the pairing, so reconnects are not announced.
+- **Overlay.**
+  - Paired keyboards are marked `*`, and listed as `away` when not in range.
+  - Holding one (0.8 s) forgets it.
+  - The status line says `Paired: <name>`.
+- **Tests.** `pixi run kbd-test`, on the host with AddressSanitizer and UBSan: 63 checks.
+  They cover four report maps (the HID spec's boot keyboard; a composite map with a
+  20-byte NKRO bitmap, consumer keys and a mouse; listed usages; 4-byte usages), cut-short
+  and garbage maps, and the bytes for every key form. The S3 emulator's `ble.py` checks
+  the bond calls: none bonded, no notice, clean errors.
+- **Needs the board and the keyboard (not done):**
+  - type, including Ctrl-arrows and several keys held at once;
+  - read `esp_bt_keyboard().layout`;
+  - pair a second keyboard, and check that each comes back;
+  - hold one on the overlay to forget it;
+  - see the "Paired" notice after pairing by touch.
 
 ### The touch overlay, first version (2026-09-25)
 
@@ -1288,8 +1329,8 @@ touches go to the overlay while it's up.
   has come and gone.
 - Tested on the board: shown at boot and closed by waking the bonded keyboard; after
   forgetting, paired by touch alone, and typing worked.
-- Not yet: long-press to forget; marking bonded keyboards in the list; a
-  "Paired: <name>" notice in Vim.
+- Long-press to forget, the paired keyboards marked, and the "Paired" notice: see
+  the keyboard follow-ups above (written 2026-09-29, not yet tried on the board).
 
 ### Stack
 

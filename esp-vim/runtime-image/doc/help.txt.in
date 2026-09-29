@@ -352,8 +352,24 @@ go to Vim just as the console's do, and both work at once.
 		the confirmation.  After that the keyboard comes back by itself,
 		also after a restart: press a key to wake it.
 
-:EspBtKeyboard forget
-		Disconnect the keyboard and forget it.
+:EspBtKeyboard list
+		The paired keyboards, numbered: up to four can be paired.
+		One is connected at a time; the one used last is tried first
+		when reconnecting, the others after it.
+
+:EspBtKeyboard forget [{n}]
+:EspBtKeyboard forget {address}
+		Forget keyboard {n} from the list (or at {address}),
+		disconnecting it if it is the one connected.  With no
+		argument, every paired keyboard is forgotten.
+
+After a pairing connects, Vim says "Paired: <name>".  Keys with Ctrl, Shift
+and Alt reach Vim as xterm sends them, so mappings like <C-Right>, <S-F5> and
+<C-PageDown> work, and so do the keypad keys and Shift-Tab; Alt with a letter
+sends Escape first, as in a terminal.  A keyboard's own
+description of its reports is read when it connects, so keyboards that send
+"N-key rollover" reports (any number of keys at once) work as well as those
+that send the usual six.
 
 On boards with a touch screen, pairing needs no keyboard at all.  When there is
 no Bluetooth keyboard -- 10 seconds after starting, or 15 seconds after it went

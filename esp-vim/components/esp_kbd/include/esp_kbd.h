@@ -17,6 +17,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "esp_err.h"
+#include "esp_kbd_hid.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -30,6 +31,10 @@ esp_err_t esp_kbd_init(void);
  * whatever task the keyboard's driver runs on.
  */
 void esp_kbd_report(const uint8_t *report, size_t len);
+
+/* The keys held now, however the keyboard's report was laid out (decoded
+ * with esp_kbd_decode(), esp_kbd_hid.h). Any task. */
+void esp_kbd_input(const esp_kbd_keys_t *keys);
 
 /* Bytes for the console as they are: other input devices (touch-as-mouse
  * sends xterm mouse reports). Dropped if the queue is full. */

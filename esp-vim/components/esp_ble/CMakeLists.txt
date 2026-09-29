@@ -4,5 +4,5 @@
 idf_component_register(
     SRCS "esp_ble.c" "esp_ble_kbd.c"
     INCLUDE_DIRS "include"
-    PRIV_REQUIRES bt log esp_hid esp_kbd nvs_flash esp_hw_support
+    PRIV_REQUIRES bt log esp_hid esp_kbd nvs_flash esp_hw_support esp_timer
 )
