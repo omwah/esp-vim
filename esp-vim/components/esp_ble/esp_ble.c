@@ -190,8 +190,7 @@ int esp_ble_scan(unsigned ms, esp_ble_dev_cb cb, void *ctx, char *err, size_t er
         return snprintf(err, errlen, "scan time must be 1 ms to 30 s"), -1;
     if (!esp_ble__init_locks())
         return snprintf(err, errlen, "out of memory"), -1;
-    esp_ble__cancel_connect();          /* a background reconnect gives way */
-    xSemaphoreTake(s_lock, portMAX_DELAY);
+    esp_ble__take_lock();               /* a background reconnect gives way */
     int rc = esp_ble__start(err, errlen);
     esp_ble_dev_t *devs = NULL;
     int n = 0;

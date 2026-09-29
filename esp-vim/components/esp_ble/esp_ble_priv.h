@@ -18,3 +18,6 @@ uint8_t esp_ble__own_addr_type(void);
 /* esp_ble_kbd.c */
 void esp_ble__config_security(void);
 void esp_ble__cancel_connect(void);
+/* Take esp_ble__lock from a task that wants Bluetooth now (a scan, pairing,
+ * forgetting, sleep): the background reconnect gives way at once. */
+void esp_ble__take_lock(void);

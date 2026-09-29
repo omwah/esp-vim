@@ -355,10 +355,23 @@ void esp_ble__config_security(void)
     ble_store_config_init();
 }
 
+/* Set while something else wants the lock: the reconnect task stops trying
+ * keyboards and lets go (each attempt can wait 30 s, and with several bonded
+ * it would otherwise go on to the next). */
+static volatile bool s_give_way;
+
 void esp_ble__cancel_connect(void)
 {
+    s_give_way = true;
     if (s_task_started)
         ble_gap_conn_cancel();          /* harmless when none is pending */
+}
+
+void esp_ble__take_lock(void)
+{
+    esp_ble__cancel_connect();
+    xSemaphoreTake(esp_ble__lock, portMAX_DELAY);
+    s_give_way = false;                 /* ours now */
 }
 
 /* Start Bluetooth and the HID host, with esp_ble__lock held. */
@@ -383,7 +396,7 @@ static void reconnect_task(void *arg)
             if (ready(err, sizeof err) == 0) {
                 ble_addr_t peers[4];
                 int n = bonded(peers, 4);   /* the last one used first */
-                for (int i = 0; i < n && s_dev == NULL && !s_suspended; i++)
+                for (int i = 0; i < n && s_dev == NULL && !s_suspended && !s_give_way; i++)
                     esp_hidh_dev_open(peers[i].val, ESP_HID_TRANSPORT_BLE, peers[i].type);
             }
             xSemaphoreGive(esp_ble__lock);
@@ -439,8 +452,7 @@ int esp_ble_kbd_pair(const char *addr, bool random, char *err, size_t errlen)
         return snprintf(err, errlen, "not an address: %s", addr), -1;
     if (esp_kbd_init() != ESP_OK || !esp_ble__init_locks())
         return snprintf(err, errlen, "out of memory"), -1;
-    esp_ble__cancel_connect();
-    xSemaphoreTake(esp_ble__lock, portMAX_DELAY);
+    esp_ble__take_lock();
     int rc = ready(err, errlen);
     if (rc == 0) {
         if (s_dev != NULL) {            /* one keyboard at a time */
@@ -470,8 +482,7 @@ int esp_ble_kbd_forget(char *err, size_t errlen)
     if (!esp_ble__init_locks())
         return snprintf(err, errlen, "out of memory"), -1;
     paired_set(false);
-    esp_ble__cancel_connect();
-    xSemaphoreTake(esp_ble__lock, portMAX_DELAY);
+    esp_ble__take_lock();
     int rc = ready(err, errlen);
     if (rc == 0) {
         if (s_dev != NULL)
@@ -490,8 +501,7 @@ int esp_ble_kbd_forget_one(const char *addr, char *err, size_t errlen)
         return snprintf(err, errlen, "not an address: %s", addr), -1;
     if (!esp_ble__init_locks())
         return snprintf(err, errlen, "out of memory"), -1;
-    esp_ble__cancel_connect();
-    xSemaphoreTake(esp_ble__lock, portMAX_DELAY);
+    esp_ble__take_lock();
     int rc = ready(err, errlen);
     if (rc == 0) {
         ble_addr_t peers[4];
@@ -568,8 +578,7 @@ void esp_ble_kbd_suspend(void)
     s_suspended = true;
     if (!s_task_started)
         return;                         /* no keyboard: Bluetooth never started */
-    esp_ble__cancel_connect();          /* a reconnect attempt waiting to connect */
-    xSemaphoreTake(esp_ble__lock, portMAX_DELAY);
+    esp_ble__take_lock();               /* a reconnect attempt gives way */
     esp_hidh_dev_t *dev = s_dev;
     if (dev)
         esp_hidh_dev_close(dev);
@@ -614,6 +623,13 @@ void esp_ble_kbd_status(esp_ble_kbd_status_t *st)
 
 void esp_ble__config_security(void) {}
 void esp_ble__cancel_connect(void) {}
+
+#if CONFIG_BT_NIMBLE_ENABLED            /* scanning without keyboards */
+void esp_ble__take_lock(void)
+{
+    xSemaphoreTake(esp_ble__lock, portMAX_DELAY);
+}
+#endif
 void esp_ble_kbd_boot(void) {}
 void esp_ble_kbd_suspend(void) {}
 void esp_ble_kbd_resume(void) {}

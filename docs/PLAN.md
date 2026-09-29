@@ -1306,8 +1306,12 @@ after a restart. The touch pairing overlay is still to come.
   when paired on the touch screen, or in the command's own message. It is a 10 s window
   after the pairing, so reconnects are not announced.
 - **Overlay.**
-  - Paired keyboards are marked `*`, and listed as `away` when not in range.
-  - Holding one (0.8 s) forgets it.
+  - Paired keyboards say `paired` at the end of their line, and are listed when not
+    in range too.
+  - Holding one anywhere on its line (0.8 s, 40 px of drift allowed) forgets it. The
+    hold fires while the finger is still down, and says "Forgetting <name>..." at once.
+    The first version waited for the finger to lift, allowed 16 px, and gave no sign
+    until then: on the Freenove a hold never registered.
   - The status line says `Paired: <name>`.
 - **Tests.** `pixi run kbd-test`, on the host with AddressSanitizer and UBSan: 68 checks.
   They cover four report maps (the HID spec's boot keyboard; a composite map with a
@@ -1327,9 +1331,17 @@ after a restart. The touch pairing overlay is still to come.
   - Shift held with seven letters pressed one after another typed `ADHSJFG`: each
     once, in capitals, the last repeating while held. The host test replays the
     recorded reports.
-- **Still to try on a board:** pairing a second keyboard and checking that each comes
-  back; holding one on the overlay to forget it; the "Paired" notice after pairing by
-  touch (the overlay is on the ES3C28P).
+- **Several keyboards and the overlay, on the Freenove.** A second keyboard pairs and is
+  remembered, and forgetting by a hold takes it off the list at once. Two fixes made
+  that so:
+  - **The reconnect task gives way.** It tried each bonded keyboard in turn, each
+    attempt up to 30 s. A scan, pairing or forget cancelled only the current attempt, so
+    with two bonded keyboards it went straight on to the other, and "Forgetting..."
+    stalled until the next scan. Now whatever wants Bluetooth sets a give-way flag
+    (`esp_ble__take_lock`), and the reconnect loop stops trying keyboards until the
+    other party has the lock.
+  - **Paired keyboards at once.** The overlay lists them as soon as it opens, before
+    its first scan.
 
 ### The touch overlay, first version (2026-09-25)
 

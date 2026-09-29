@@ -6,9 +6,9 @@
  *    Bluetooth keyboard                  <- title
  *   Scanning...                          <- status
  *    My Keyboard          -60            <- up to six keyboards: those in
- *   *Old Keyboard         away              range, and the paired ones ("*");
- *    ...                                    tap one to select it, hold a
- *   Tap your keyboard, then Pair.        <- paired one to forget it
+ *    Old Keyboard      paired              range, and the paired ones (in
+ *    ...                                    range or not); tap one to select
+ *   Tap your keyboard, then Pair.        <- it, hold a paired one to forget it
  *   [ Not now ]         [  Pair  ]       <- buttons
  *
  * Everything runs on the overlay's own task: it polls the keyboard status,
@@ -45,6 +45,7 @@
 #define ROW_HINT        8
 #define ROW_BUTTONS     9
 #define TAP_SLOP        16
+#define HOLD_SLOP       40                  /* a held finger drifts more */
 #define HOLD_US         (800 * 1000)        /* a touch this long is a hold */
 
 typedef struct { int x, y; bool hold; } tap_t;
@@ -57,15 +58,23 @@ static int s_nkbd, s_sel = -1;
 
 /* ------------------------------------------------------------------ touch -- */
 
-/* On the touch task: a short touch that didn't wander is a tap. */
+/* On the touch task: a short touch that didn't wander is a tap; one that
+ * stays down 0.8 s is a hold, reported then -- while the finger is still
+ * down, so the screen answers it at once -- and its lifting is nothing. */
 static void on_touch(esp_touch_event_t ev, int x, int y, void *ctx)
 {
     static int x0, y0;
     static int64_t t0;
+    static bool held;
     if (ev == ESP_TOUCH_DOWN) {
-        x0 = x, y0 = y, t0 = esp_timer_get_time();
-    } else if (ev == ESP_TOUCH_UP && abs(x - x0) < TAP_SLOP && abs(y - y0) < TAP_SLOP) {
-        tap_t t = { x0, y0, esp_timer_get_time() - t0 >= HOLD_US };
+        x0 = x, y0 = y, t0 = esp_timer_get_time(), held = false;
+    } else if (ev == ESP_TOUCH_MOVE && !held && abs(x - x0) < HOLD_SLOP && abs(y - y0) < HOLD_SLOP
+               && esp_timer_get_time() - t0 >= HOLD_US) {
+        held = true;
+        tap_t t = { x0, y0, true };
+        xQueueSend(s_taps, &t, 0);
+    } else if (ev == ESP_TOUCH_UP && !held && abs(x - x0) < TAP_SLOP && abs(y - y0) < TAP_SLOP) {
+        tap_t t = { x0, y0, false };
         xQueueSend(s_taps, &t, 0);
     }
 }
@@ -99,15 +108,15 @@ static void draw_list(void)
     for (int i = 0; i < MAX_KBD; i++) {
         char buf[64] = "", rssi[8];
         if (i < s_nkbd) {
-            snprintf(rssi, sizeof rssi, "%4d", s_kbd[i].rssi);
-            snprintf(buf, sizeof buf, "%c%-18.18s %s", s_bonded[i] ? '*' : ' ',
-                     s_kbd[i].name[0] ? s_kbd[i].name : s_kbd[i].addr, s_away[i] ? "away" : rssi);
+            snprintf(rssi, sizeof rssi, "%6d", s_kbd[i].rssi);
+            snprintf(buf, sizeof buf, " %-17.17s %s", s_kbd[i].name[0] ? s_kbd[i].name : s_kbd[i].addr,
+                     s_bonded[i] ? "paired" : rssi);
             any_bonded |= s_bonded[i];
         }
         line(ROW_LIST + i, buf, i == s_sel);
     }
     line(ROW_HINT, !s_nkbd ? "Put your keyboard in pairing mode."
-                   : any_bonded ? "Tap+Pair; hold * forgets."
+                   : any_bonded ? "Hold paired to forget it."
                    : "Tap your keyboard, then Pair.", false);
     char buttons[64];
     snprintf(buttons, sizeof buttons, "%-*s%s", s_cols - 10, "[ Not now ]",
@@ -194,6 +203,8 @@ static int tap(tap_t t)
     if (row >= ROW_LIST && row < ROW_LIST + s_nkbd && t.hold && s_bonded[row - ROW_LIST]) {
         char err[96], msg[64];
         esp_ble_dev_t k = s_kbd[row - ROW_LIST];
+        snprintf(msg, sizeof msg, "Forgetting %s...", k.name[0] ? k.name : k.addr);
+        status(msg);                    /* it may wait for a reconnect attempt */
         if (esp_ble_kbd_forget_one(k.addr, err, sizeof err) == 0) {
             snprintf(msg, sizeof msg, "Forgot %s.", k.name[0] ? k.name : k.addr);
             status(msg);
@@ -251,6 +262,7 @@ static void pairui_task(void *arg)
                    && esp_display_overlay_begin(&s_rows, &s_cols)) {
             shown = true;
             s_nkbd = 0, s_sel = -1, last_scan = 0;
+            add_bonds();                        /* the paired ones at once, before a scan */
             xQueueReset(s_taps);
             esp_touch_set_handler(on_touch, NULL);
             draw_all();
