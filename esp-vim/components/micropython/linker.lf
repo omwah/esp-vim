@@ -1,0 +1,19 @@
+# MicroPython's zero-initialised state (mp_state_ctx and friends) in PSRAM on
+# the builds whose internal RAM is short (ESP_VIM_BSS_IN_PSRAM, as Vim's own
+# .bss: components/vim/linker.lf). Only the Vim task touches it, never from an
+# interrupt or with the cache off.
+[scheme:micropython_psram_bss]
+entries:
+    text -> flash_text
+    rodata -> flash_rodata
+    data -> dram0_data
+    bss -> extern_ram
+    common -> extern_ram
+
+[mapping:micropython]
+archive: libmicropython.a
+entries:
+    if ESP_VIM_BSS_IN_PSRAM = y:
+        * (micropython_psram_bss)
+    else:
+        * (default)

@@ -1,0 +1,16 @@
+diff -ruN '--exclude=.git' '--exclude=*.o' '--exclude=*.rej' '--exclude=*.orig' a/extmod/vfs_posix_file.c b/extmod/vfs_posix_file.c
+--- a/extmod/vfs_posix_file.c	2026-08-23 17:00:00.000000000 -0700
++++ b/extmod/vfs_posix_file.c	2026-09-29 08:02:32.449460059 -0700
+@@ -347,8 +347,12 @@
+     locals_dict, &vfs_posix_rawfile_locals_dict
+     );
+ 
++#ifndef MICROPY_VFS_POSIX_NO_SYS_STDFILES
++// A port whose sys.stdout is not fd 1 (esp-vim: Vim's messages) defines
++// MICROPY_VFS_POSIX_NO_SYS_STDFILES and links shared/runtime/sys_stdio_mphal.c.
+ mp_obj_vfs_posix_file_t mp_sys_stdin_obj = {{&mp_type_vfs_posix_textio}, STDIN_FILENO};
+ mp_obj_vfs_posix_file_t mp_sys_stdout_obj = {{&mp_type_vfs_posix_textio}, STDOUT_FILENO};
+ mp_obj_vfs_posix_file_t mp_sys_stderr_obj = {{&mp_type_vfs_posix_textio}, STDERR_FILENO};
++#endif
+ 
+ #endif // MICROPY_VFS_POSIX

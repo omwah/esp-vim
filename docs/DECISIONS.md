@@ -682,3 +682,57 @@ their sources. The same clone then kept internal RAM above 3.6 KB.
 aren't set, the device doesn't invent them; the command says how to set them device-wide
 (`/fat/.gitconfig`, found because HOME is `/fat`). An unset clock gets a warning instead
 of a refusal: a board with no clock chip and no network should still be able to commit.
+
+## 2026-09-29 — MicroPython: a trimmed archive, its own CMake, and Vim behind a table
+
+**A trimmed archive.** MicroPython's 1.29.0 release is 160 MB (1.5 GB unpacked), almost
+all of it the submodules of other ports: CMSIS, the Pico SDK, lwIP, mbedTLS, TinyUSB. The
+vendored archive keeps what this build reads: `py/`, `extmod/`, `shared/`, `tools/` and
+`lib/{uzlib,re1.5,crypto-algorithms,oofatfs}`, about 1 MB. It is repacked
+reproducibly (sorted, fixed dates, `gzip -n`), and the manifest records the release
+asset's sha256 as well as ours, as it does for Vim's `git archive`.
+
+**MicroPython's own CMake, not the embed port.** `ports/embed` exists for exactly this
+case, but its generator copies `py/` alone: no `json`, `re`, `os`, `time`, `hashlib`. The
+ESP32 port's approach works inside an ESP-IDF component instead: `py/py.cmake` lists the
+core, and `py/mkrules.cmake` generates the qstr tables at build time. The build
+preprocesses the sources with ESP-IDF's compiler and include paths, then runs
+MicroPython's Python scripts on the output. Our part is `mpconfigport.h`, a HAL, and the
+bridge.
+
+**Vim behind a table.** Vim's and MicroPython's headers are never included together. The
+interpreter component sees a Vim value as an opaque pointer, and reads, builds, runs
+commands and evaluates through an `esp_py_host_t` of function pointers that
+`esp_api_py.c` (a Vim file) fills in. That keeps the qstr pass away from Vim's headers,
+avoids a dependency cycle between the two components, and puts all the Vim-internal code
+in one file. It is the same shape as `if_py_both.h`, down to how a Vim error becomes a
+Python exception (`++trylevel`, then read `msg_list` or `current_exception`).
+
+**The Python-side modules are Python, in the runtime.** `vim.py` and `esp.py` live in
+`/vimrt/python`, on top of a four-function C module (`_vim`). Buffers, windows, `vars` and
+`options` are a few lines each over Vim's own `getbufline()`, `setbufline()`, `win_execute()`
+and `:let`, so they get Vim's undo, redraw and checks for free, and they can change
+without a reflash. `esp.<name>()` is a module `__getattr__` that calls `esp_<name>()`:
+every device function, present and future, with one implementation. The cost is a parse
+of both files when Python starts (0.5 s on the Freenove, 1.4 s in the emulated P4, then
+never again in that session).
+
+**Double floats.** Vim's Float is a double, and a value passed through Python should keep
+its digits. MicroPython's ESP32 port uses single precision; the cost here is speed in
+float-heavy scripts, which an editor's scripts rarely are.
+
+**One patch.** With `VfsPosix` on, `extmod/vfs_posix_file.c` defines `sys.stdout` as a
+file on fd 1: the unix port's choice. Here, fd 1 is the UART under Vim's screen, so
+`print()` scribbled on the display. Patch 0001 lets a port leave those definitions out
+(`MICROPY_VFS_POSIX_NO_SYS_STDFILES`); `shared/runtime/sys_stdio_mphal.c` then routes
+`sys.stdout` through `mp_hal_stdout_tx_strn()`, which is ours. The known `__assert_func`
+clash was in the embed port's `embed_util.c`, which this build does not use.
+
+**Files are the ordinary POSIX calls.** A `VfsPosix` mounted at `/` makes `open()`,
+`os.listdir()` and `import` go through `open()`, `stat()` and `opendir()`. The firmware
+interposes those at link time (`esp_shims.c`), so relative paths follow Vim's
+working directory with no extra code, and `os.chdir()` is `:cd`. Files that Python leaves
+open belong to the session's task, and `esp_vim_session_begin()` closes them with Vim's.
+That is why a new session starts a new interpreter without running the old one's
+finalisers: it doesn't call `mp_deinit()`, which would close those descriptors a second
+time.

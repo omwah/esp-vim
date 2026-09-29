@@ -16,7 +16,7 @@
 | 4 — Storage + curated runtime | **done** (2026-09-24), see [PHASE4.md](PHASE4.md) — runtime 74% of `vimrt`, 30 filetypes, 0.47 MB PSRAM to open a file |
 | 5 — Emulator bring-up over UART | **done** (2026-09-24), see [PHASE5.md](PHASE5.md) — interactive over UART; `:q` restarts in place; chip-named splash, device help, busy indicator. P4 gate green. **S3: open intermittent heap corruption under the emulator**, gate informational until tested on silicon |
 | 6 — `:Esp*` commands, file manager, transports, web | **in progress**, see [PHASE6.md](PHASE6.md). 6a–6e done 2026-09-24; 6f done 2026-09-25 (serial, I2C, ADC, sensors, S3 WiFi and BLE scan tested; Tab5 WiFi via the C6 built, with its run-time check moved to Phase 9 because esp-emu cannot run esp-hosted) |
-| 7 — MicroPython | not started |
+| 7 — MicroPython | **done, first cut** (2026-09-29): MicroPython 1.29 in every build, on the Vim task; `:EspPy`, `:EspPyRun`, `:EspPyReset`, the `vim` and `esp` modules; emulator gate `py.py` green on the P4. See Phase 7 |
 | 8 — Git | **done, first cut** (2026-09-28): on libgit2 (the stage 6z gate), 18 `esp_git_*()` builtins and 19 `:EspGit*` commands in every build; emulator gate `git.py` green on the P4; clone, push, fast-forward and merge pulls tested on a real ESP32-S3 (Freenove FNK0115) over WiFi, HTTPS and the LAN. See Phase 8 |
 | 9 — Tab5 hardware over UART | not started |
 | 10 — Tab5 display console | not started |
@@ -28,7 +28,8 @@ Toolchain: ESP-IDF **v5.5.5**, riscv32-esp-elf 14.2.0, emulator esp-emu 0.43.0.
 Measured: Vim component **1.82 MB `.text`** at `-Os` (Phase 2); firmware 2.18 MB of a
 7 MB app partition; curated runtime **~2.2 MB of the 3 MB `vimrt` partition (74%)**;
 Vim uses **0.35 MB** of PSRAM idle and **0.47 MB** after opening a file (Phase 4). The
-partition table stays provisional until MicroPython and git are in (Phases 7–8).
+partition table stays provisional until MicroPython and git are in (Phases 7–8). (Both in
+since 2026-09-29: the largest app, the FNK0115's, is 4.01 MiB of 7.)
 
 **Phase 1 changed the plan** — see [PHASE1.md](PHASE1.md). In short: the `isatty(0)` gate
 passed, but ESP-IDF has **no working directory** (`chdir` is `ENOSYS`, `getcwd` always
@@ -913,6 +914,80 @@ editing.
 
 ## Phase 7 — MicroPython
 
+### Done, first cut (2026-09-29)
+
+MicroPython 1.29.0 runs inside Vim in every build: `:EspPy {code}`, `:[range]EspPyRun
+[file]` and `:EspPyReset`, the `vim` and `esp` modules, and four builtins
+(`esp_py_exec()`, `esp_py_eval()`, `esp_py_reset()`, `esp_py_heap()`). `:help esp-python`
+on the device. DECISIONS.md (2026-09-29) has the reasoning.
+
+- **Vendoring.** A trimmed repack of the release (1 MB of the release's 160 MB:
+  `py/`, `extmod/`, `shared/`, `tools/` and four small `lib/` directories), with one
+  patch: `sys.stdout` can be the port's rather than fd 1.
+- **Build.** `components/micropython` uses MicroPython's own `py/py.cmake` and
+  `py/mkrules.cmake`, as its ESP32 port does, so the qstr tables are generated at build
+  time. It builds at the EXTRA_FEATURES level with double floats and bignums. Modules:
+  `sys`, `gc`, `math`, `cmath`, `json`, `re`, `random`, `struct`, `collections`, `heapq`,
+  `binascii`, `hashlib` (mbedTLS), `deflate`, `time`, `os`, `io`, `array`. There are no
+  sockets, `machine` or threads.
+- **On the Vim task.** The heap is one fixed block from PSRAM (Kconfig
+  `ESP_VIM_PY_HEAP_KB`: 1 MB on the S3 builds, 4 MB on the P4), allocated on first use.
+  - The C stack is Vim's. The stack check leaves 12 KB, so deep recursion raises
+    `RuntimeError`.
+  - CTRL-C: the VM polls `ui_breakcheck()` at most every 20 ms, and `time.sleep()` sleeps
+    in 20 ms slices, so both raise `KeyboardInterrupt`.
+  - `print()` goes to Vim's messages, or to a buffer as it arrives. `input()` is Vim's.
+  - A new Vim session (after `:q`) starts a new interpreter.
+- **The bridge.** Vim is reached only through a table of functions (`esp_py_host_t`),
+  filled in by `components/vim/api/esp_api_py.c`. Commands and expressions run as Vim's
+  own Python interface runs them, so a Vim error is `vim.error`.
+  - Values convert both ways: Number/int, Float/float, String/str, Blob/bytes,
+    List/list, Tuple/tuple, Dict/dict, booleans, v:none/None.
+  - `vim.py` and `esp.py` (in `/vimrt/python`) build the rest on Vim's own functions:
+    buffers as lists of lines (with undo), windows and their cursors, `vim.vars`,
+    `vim.options`.
+  - `esp.<name>()` is every `esp_<name>()`, plus a `Pin` class.
+- **Files and imports.** Through a `VfsPosix` at `/`: relative paths follow Vim's
+  working directory. `sys.path` is `''`, `/fat/python`, `/vimrt/python`.
+- **`:EspPyRun`.** Output goes to a `[Python]` window, and a traceback goes to quickfix,
+  innermost call first, for an unsaved buffer too (`<buffer N>`). A range keeps the
+  buffer's line numbers.
+- **Test.** `esp-vim/test/py.py`, in `pixi run vim-test` (and `vim-test-py`).
+
+Measured (2026-09-29):
+- **Flash.** MicroPython is 178 KB on the P4 and 149 KB on the S3
+  (`idf.py size-components`), well under the 350–500 KB estimated.
+  - Apps (MiB of the 7 MiB partition): esp32p4 3.53, tab5 3.74, esp32s3 3.76,
+    es3c28p 3.88, rlcd42 3.92, fnk0115 4.01.
+  - The runtime is 89% of `vimrt`, with `vim.py`, `esp.py` and the help added.
+- **RAM.** 4 bytes of the S3's internal RAM: its state is in PSRAM with Vim's `.bss`.
+  The heap is 1 MB there and 4 MB on the P4.
+- **Speed.** Python starts (with `vim` and `esp` imported) in 0.5 s on the Freenove, and
+  1.4 s in the emulated P4. On the Freenove:
+  - a 100,000-iteration `s += i * i` loop takes 1.5 s;
+  - 200 `b.append()` calls take 0.6 s (each is a Vim function call);
+  - after the whole test, 141 KB of the Python heap was in use, internal RAM was at
+    24.9 KB free, and PSRAM had 1.35 MB free.
+- **Tests.**
+  - P4 emulator: the whole gate is green, `py.py` included.
+  - Freenove FNK0115 (a real ESP32-S3): every `py.py` check passed, driven through a
+    serial bridge rather than the harness's device mode, so NVS was left alone.
+  - S3 emulator: one run passed. One failed on a heap double free in Vim's
+    `:%bwipe!` (closing the `[Python]` window), then a watchdog reset. That run looks
+    like the S3 emulator's known heap corruption (Phase 5): the same checks passed on
+    the P4 every time and on the Freenove.
+- **Fixed on the way.**
+  - The S3 would not link with MicroPython's Xtensa `nlr_push`: its short jump
+    could not reach. It now uses setjmp, as MicroPython's ESP32 port does.
+  - A new Vim session had kept the old interpreter. Sessions reuse one task, so the
+    Vim side now tells the interpreter from its zeroed statics.
+
+Not yet: `vim.options` for window- and buffer-local values (it sets global and local
+together, as `:let &opt` does); `sys.stdin`; a Python prompt (REPL) in a buffer; frozen
+`.mpy` modules.
+
+### The design (2026-09-23)
+
 Embed MicroPython via **`ports/embed`** (`micropython_embed.h`) as an ESP-IDF component,
 following `agatti/micropython-idf-component` / `robdobsn/MicroPythonESP32Embedding`. Pin
 **v1.29.0**. Expect and plan for the known **`__assert_func` redefinition clash with IDF's
@@ -1619,7 +1694,7 @@ board (github.com/waveshareteam/ESP32-S3-RLCD-4.2).
 | Phase 6 | `esp_api_fs.c` path validation: a traversal suite (`../`, absolute escapes, symlink-ish paths, writes into read-only `/vimrt`) must be rejected from *both* front ends |
 | Phase 6 | Web manager: refuses to start with no password; TLS up with the fingerprint printed; login, browse, upload, download, rename, delete, mkdir; CSRF token required on mutations; failed-login backoff observed |
 | Phase 6 | Web settings panel round trip: change an editor option in the browser, observe Vim apply it via the queue; SSE status stream shows live line and word counts as you type, and `wordcount()` values match `g CTRL-G` |
-| Phase 7 | `:EspPyRun` on a buffer with output and a traceback in quickfix; `vim` module edits a buffer; `esp` module toggles a GPIO; `CTRL-C` interrupts an infinite loop without killing Vim; heap returns to baseline after `:EspPyReset` |
+| Phase 7 | **Done (2026-09-29), `test/py.py`:** `:EspPyRun` on a buffer with output and a traceback in quickfix; `vim` module edits a buffer (one `:undo` takes it back); `esp` module calls the `esp_*()` functions; `CTRL-C` interrupts an infinite loop and `time.sleep()` without killing Vim; recursion and a too-large allocation raise; `:EspPyReset` and a new session start a new interpreter |
 | Phase 8 (6z, **passed** 2026-09-28) | libgit2's init, commit, status and checkout on FAT; clone, push and fetch over HTTP, git:// and SSH against the host, whose `git fsck --strict` passes after each push; HTTPS from GitHub with the certificate verified; a 620 KB pack cloned within 2 MB of heap; no leaks |
 | Phase 8 (**passed** 2026-09-28) | `pixi run vim-test-git`, through the builtins and `:EspGit*` on the Vim task: a local repository and gc; the status, commit and log windows; pulls that fast-forward (a **thin pack**), merge, and conflict then are resolved by hand; push with host `git fsck --strict` after each; git:// and SSH (the host-key question); CTRL-C during a clone leaves nothing |
 | Phase 8 | On hardware: the same over WiFi on an S3 (done on the Freenove, except SSH), and on the Tab5 over the C6 (Phase 9) |

@@ -1,0 +1,13 @@
+menu "esp-vim: MicroPython"
+
+    config ESP_VIM_PY_HEAP_KB
+        int "Python heap (KB)"
+        range 64 16384
+        default 4096 if IDF_TARGET_ESP32P4
+        default 1024
+        help
+            The MicroPython heap: one block, from PSRAM when there is some,
+            allocated the first time Python runs (:EspPy, :EspPyRun) and kept.
+            A script cannot use more; the editor's own memory is separate.
+
+endmenu

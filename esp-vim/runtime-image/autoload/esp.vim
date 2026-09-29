@@ -149,6 +149,11 @@ function! esp#Heap() abort
   endfor
   call extend(rows, [[], ['Vim', 'in use', 'peak', 'budget'],
         \ ['', s:Size(h.vim.used), s:Size(h.vim.peak), h.vim.budget ? s:Size(h.vim.budget) : 'none']])
+  let py = esp_py_heap()
+  if py.running
+    call extend(rows, [[], ['Python', 'in use', 'free', 'total'],
+          \ ['', s:Size(py.used), s:Size(py.free), s:Size(py.total)]])
+  endif
   call s:Show('Heap', ['Memory   (R refresh, q close)'] + s:Table('Heap', rows, 'lrrrr'),
         \ 2, function('esp#Heap'))
 endfunction

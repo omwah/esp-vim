@@ -45,6 +45,12 @@ void f_esp_wifi_forget(typval_T *argvars, typval_T *rettv);
 void f_esp_wifi_saved(typval_T *argvars, typval_T *rettv);
 void f_esp_wifi_scan(typval_T *argvars, typval_T *rettv);
 
+/* api/esp_api_py.c (over components/micropython) */
+void f_esp_py_eval(typval_T *argvars, typval_T *rettv);
+void f_esp_py_exec(typval_T *argvars, typval_T *rettv);
+void f_esp_py_heap(typval_T *argvars, typval_T *rettv);
+void f_esp_py_reset(typval_T *argvars, typval_T *rettv);
+
 /* api/esp_api_git.c (over libgit2 and components/esp_git) */
 void f_esp_git_add(typval_T *argvars, typval_T *rettv);
 void f_esp_git_branch(typval_T *argvars, typval_T *rettv);

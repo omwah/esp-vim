@@ -488,6 +488,72 @@ large clone needs RAM too (a 600 KB pack takes about 2 MB), so keep
 repositories to a working set of files.  There are no hooks, no submodules,
 no rebase and no stash, and symbolic links become plain files.
 
+PYTHON							*esp-python*
+
+MicroPython 1.29, inside Vim: to script the editor and the device, and to
+run the Python you edit.  There is one interpreter; what one command defines,
+the next can use, until |:EspPyReset|.  "vim" and "esp" are already imported.
+
+:EspPy {code}						*:EspPy*
+		Run one statement, as typed at Python's prompt: an
+		expression's value is printed. >
+			:EspPy 2 ** 100
+			:EspPy vim.current.buffer[0]
+			:EspPy for i in range(3): print(i)
+<
+:[range]EspPyRun [{file}]				*:EspPyRun*
+		Run {file}, or the current buffer (saved or not), or the
+		lines in [range].  Output goes to the [Python] window as it
+		arrives ("q" closes it).  An error's traceback is shown
+		there too and put in the quickfix list: ":cc" goes to the
+		line that failed, ":cwindow" lists the calls.
+
+:EspPyReset						*:EspPyReset*
+		Start a new interpreter: every variable and module goes, and
+		open files are closed.
+
+CTRL-C stops a script, raising KeyboardInterrupt; time.sleep() stops too.
+input() asks on Vim's command line.  Files work as usual -- open(),
+os.listdir(), os.chdir() -- with relative names from Vim's current directory.
+A file is closed when you close it (or leave a "with open(...) as f:" block),
+not when the last reference goes: write with "with", or what you wrote may not
+be there yet when Vim reads the file.
+"import name" finds name.py in the current directory, /fat/python, then
+/vimrt/python.
+
+The vim module (named as in Vim's own Python interface):
+	vim.command(cmd)	run an Ex command
+	vim.eval(expr)		a Vim expression's value
+	vim.call(func, ...)	call a Vim function
+	vim.error		raised when a Vim command fails
+	vim.current.buffer	the current buffer; .window, .line too
+	vim.buffers[nr]		a buffer by number
+	vim.windows[nr]		a window of this tab page, from 1
+	vim.vars, vim.options	g: variables and options, as dicts
+A buffer is a list of lines, from 0: b[0], b[-1], b[2:5] = [...],
+del b[0], b.append("text") (or a list, or b.append(line, n) before line n),
+len(b), b.name, b.number.  A window has .buffer, .cursor (line from 1,
+column from 0, and you can set it), .height, .width.
+Values convert both ways: Number and int, Float and float, String and str,
+Blob and bytes, List and list, Tuple and tuple, Dict and dict, v:true and
+True, v:none and None.
+
+The esp module: every esp_*() function, as esp.name() -- esp.heap(),
+esp.gpio_write(2, 1), esp.i2c_scan(), esp.wifi_scan() -- plus a Pin class: >
+	p = esp.Pin(2, esp.Pin.OUT)
+	p.on()
+<
+Also there: math, cmath, json, re, random, struct, collections, heapq,
+binascii, hashlib (sha1, sha256, md5), deflate, time, os, io, sys, gc.  Not:
+threads, sockets (use esp.http_get()), or the "machine" module.  time.time()
+is UTC, and so are time.localtime() and time.gmtime(); Vim's strftime() is
+local.
+
+The Python heap is fixed (1 MB on the ESP32-S3, 4 MB on the ESP32-P4) and
+separate from Vim's: a script that runs out gets MemoryError, and the editor
+carries on.  |:EspHeap| shows it once Python has run.  Scripts can use
+esp_py_exec(), esp_py_eval(), esp_py_reset() and esp_py_heap().
+
 THE WEB INTERFACE					*esp-web*
 
 A browser on the same network can manage the device's files, change editor

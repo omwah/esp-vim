@@ -78,3 +78,24 @@ notes:    libgit2, GPLv2 with a linking exception (COPYING). Built as an
           git2_features.h: no threads, no mmap, mbedTLS for SHA and HTTPS,
           libssh2 from skuodi/libssh2_esp, bundled zlib, llhttp and PCRE.
           See docs/PLAN.md, stage 6z.
+
+name:     micropython
+version:  1.29.0
+file:     micropython-1.29.0.tar.gz
+sha256:   f478e86d2de750290413e2249cfc6019350204b92918f8fa11930ed4927a115e
+prefix:   micropython-1.29.0
+url:      https://github.com/micropython/micropython/releases/download/v1.29.0/micropython-1.29.0.tar.xz
+origin:   trimmed repack of the upstream release asset (sha256 of the .tar.xz:
+          d925a7c664e79a2bdf3dfcb285ba5e2237041cc35a0bd4ee573b6c5711efeca0).
+          The release is 160 MB, almost all of it other ports' submodules, so
+          only these are kept: LICENSE, README.md, py/, extmod/, shared/, tools/,
+          ports/embed/, examples/embedding/, lib/{uzlib,re1.5,crypto-algorithms,oofatfs},
+          lib/README.md. (oofatfs for its headers: extmod's VFS code
+          includes them even with FAT off.) Repacked with
+          tar --sort=name --mtime='2026-08-24 00:00:00 UTC' --owner=0 --group=0
+          --numeric-owner | gzip -n -9.
+patches:  micropython
+notes:    MicroPython, MIT (LICENSE). Built as an ESP-IDF component
+          (components/micropython) with MicroPython's own CMake fragments
+          (py/py.cmake, py/mkrules.cmake) and our mpconfigport.h. It runs on
+          the Vim task; see docs/PLAN.md, Phase 7.
