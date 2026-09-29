@@ -74,6 +74,63 @@ static const uint8_t extended_map[] = {
     0xc0,
 };
 
+/* The Air75 BT5.0 (seen on the board, 2026-09-29): report 1 is modifiers, a
+ * reserved byte and five keys (8 bytes); report 2 is a 160-usage bitmap with
+ * NO modifier bits, holding only the keys beyond report 1's five. */
+static const uint8_t air75_map[] = {
+    0x05, 0x01, 0x09, 0x06, 0xa1, 0x01, 0x85, 0x01,
+    0x05, 0x07, 0x19, 0xe0, 0x29, 0xe7, 0x15, 0x00, 0x25, 0x01, 0x75, 0x01, 0x95, 0x08, 0x81, 0x02,
+    0x75, 0x08, 0x95, 0x01, 0x81, 0x01,
+    0x75, 0x08, 0x95, 0x05, 0x15, 0x00, 0x25, 0xff, 0x05, 0x07, 0x19, 0x00, 0x29, 0xff, 0x81, 0x00,
+    0x75, 0x08, 0x95, 0x01, 0x81, 0x01,
+    0xc0,
+    0x05, 0x01, 0x09, 0x06, 0xa1, 0x01, 0x85, 0x02,
+    0x05, 0x07, 0x19, 0x00, 0x29, 0x9f, 0x15, 0x00, 0x25, 0x01, 0x75, 0x01, 0x95, 0xa0, 0x81, 0x02,
+    0xc0,
+};
+
+/* What it sent for Shift held with a s d f g h j, then all let go
+ * (esp_bt_keyboard().reports on the board): {report id, 8 or 20 bytes}. */
+typedef struct { uint8_t id; uint8_t len; uint8_t d[20]; } seen_t;
+static const seen_t air75_seen[] = {
+    { 1, 8, { 0x02, 0, 0x04, 0x16, 0x07, 0, 0, 0 } },
+    { 1, 8, { 0x02, 0, 0x04, 0x16, 0x07, 0x09, 0, 0 } },
+    { 1, 8, { 0x02, 0, 0x04, 0x16, 0x07, 0x09, 0x0a, 0 } },
+    { 2, 20, { 0, 0x08 } },                             /* h: the sixth */
+    { 2, 20, { 0, 0x28 } },                             /* h j */
+    { 1, 8, { 0x02, 0, 0x04, 0x09, 0, 0, 0, 0 } },      /* s d g up */
+    { 1, 8, { 0x02, 0, 0, 0, 0, 0, 0, 0 } },            /* a f up */
+    { 2, 20, { 0, 0x20 } },                             /* h up */
+    { 1, 8, { 0 } },                                    /* Shift up */
+    { 2, 20, { 0 } },                                   /* j up */
+    { 1, 8, { 0, 0, 0x01, 0, 0, 0, 0, 0 } },            /* and then these */
+    { 1, 8, { 0 } },
+};
+
+/* Replay reports as esp_kbd.c does, and collect what is typed: each key
+ * that becomes held, with Shift, as its character. */
+static void replay(const esp_kbd_layouts_t *l, const seen_t *r, int n, char *typed, size_t len)
+{
+    esp_kbd_state_t st;
+    esp_kbd_keys_t k, now, prev = { 0 };
+    memset(&st, 0, sizeof st);
+    size_t t = 0;
+    for (int i = 0; i < n; i++) {
+        if (!esp_kbd_decode(l, r[i].id, r[i].d, r[i].len, &k))
+            continue;
+        esp_kbd_merge(&st, r[i].id, &k, &now);
+        for (int j = 0; j < now.n; j++)
+            if (memchr(prev.key, now.key[j], prev.n) == NULL && t + 2 < len) {
+                char b[16];
+                size_t m = esp_kbd_key_bytes(now.key[j], now.mods, false, b);
+                if (m == 1)
+                    typed[t++] = b[0];
+            }
+        prev = now;
+    }
+    typed[t] = '\0';
+}
+
 static void keys_are(const esp_kbd_keys_t *k, uint8_t mods, const char *want, int line)
 {
     char got[64] = "";
@@ -117,8 +174,9 @@ int main(void)
     const uint8_t r1[] = { 0x02, 0x00, 0x04, 0x05, 0, 0, 0, 0 };
     CHECK(esp_kbd_decode(&l, 0, r1, sizeof r1, &k), "boot report decodes");
     KEYS(&k, 0x02, "04 05");
-    const uint8_t over[] = { 0, 0, 1, 1, 1, 1, 1, 1 };
-    CHECK(!esp_kbd_decode(&l, 0, over, sizeof over, &k), "ErrorRollOver is refused");
+    const uint8_t over[] = { 0x02, 0, 1, 1, 1, 1, 1, 1 };
+    CHECK(esp_kbd_decode(&l, 0, over, sizeof over, &k) && k.rollover && k.n == 0
+          && k.has_mods && k.mods == 0x02, "ErrorRollOver: keys unknown, modifiers kept");
     CHECK(esp_kbd_decode_boot(r1, sizeof r1, &k), "the boot decoder");
     KEYS(&k, 0x02, "04 05");
     const uint8_t short_r[] = { 0x01, 0x06, 0x07 };         /* no reserved byte */
@@ -152,6 +210,32 @@ int main(void)
     const uint8_t cut[] = { 0x02, 0x10 };               /* a report cut short: no crash */
     CHECK(esp_kbd_decode(&l, 2, cut, sizeof cut, &k), "a short NKRO report decodes what it has");
     KEYS(&k, 0x02, "04");
+
+    /* -- the Air75: keys spread over two reports -------------------- */
+    CHECK(esp_kbd_parse_map(air75_map, sizeof air75_map, &l) == 2, "Air75: two keyboard reports");
+    esp_kbd_describe(&l, desc, sizeof desc);
+    CHECK(strcmp(desc, "1: mods@0 keys5@16; 2: map0+160@0") == 0, "Air75 layout (as the board saw it): %s", desc);
+    char typed[32];
+    replay(&l, air75_seen, sizeof air75_seen / sizeof air75_seen[0], typed, sizeof typed);
+    CHECK(strcmp(typed, "ASDFGHJ") == 0, "Air75: Shift + seven keys types each once, in capitals: %s", typed);
+    /* The other way keyboards do it: report 1 says "too many", the bitmap has
+     * every key -- and no modifiers. */
+    const seen_t all_in_map[] = {
+        { 1, 8, { 0x02, 0, 0x04, 0x05, 0x06, 0x07, 0x08, 0 } },
+        { 1, 8, { 0x02, 0, 0x01, 0x01, 0x01, 0x01, 0x01, 0 } },
+        { 2, 20, { 0xf0, 0x03 } },                      /* a..f: usages 4..9 */
+        { 2, 20, { 0 } },
+        { 1, 8, { 0 } },
+    };
+    replay(&l, all_in_map, 5, typed, sizeof typed);
+    CHECK(strcmp(typed, "ABCDEF") == 0, "a bitmap with every key, and rollover in report 1: %s", typed);
+    esp_kbd_state_t st;
+    memset(&st, 0, sizeof st);
+    esp_kbd_keys_t full;
+    const uint8_t over1[] = { 0x02, 0, 0x01, 0x01, 0x01, 0x01, 0x01, 0 };
+    esp_kbd_decode(&l, 1, over1, sizeof over1, &k);
+    esp_kbd_merge(&st, 1, &k, &full);
+    KEYS(&full, 0x02, "");                              /* rollover: modifiers only */
 
     /* -- usages listed one by one ------------------------------------- */
     CHECK(esp_kbd_parse_map(listed_map, sizeof listed_map, &l) == 1, "listed usages: one report");

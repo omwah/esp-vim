@@ -32,9 +32,10 @@ esp_err_t esp_kbd_init(void);
  */
 void esp_kbd_report(const uint8_t *report, size_t len);
 
-/* The keys held now, however the keyboard's report was laid out (decoded
- * with esp_kbd_decode(), esp_kbd_hid.h). Any task. */
-void esp_kbd_input(const esp_kbd_keys_t *keys);
+/* One report, however the keyboard laid it out (decoded with
+ * esp_kbd_decode(), esp_kbd_hid.h); {id} tells the keyboard's reports apart
+ * (esp_kbd_merge). Any task. */
+void esp_kbd_input(uint16_t id, const esp_kbd_keys_t *report);
 
 /* Bytes for the console as they are: other input devices (touch-as-mouse
  * sends xterm mouse reports). Dropped if the queue is full. */

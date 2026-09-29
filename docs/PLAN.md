@@ -21,7 +21,7 @@
 | 9 — Tab5 hardware over UART | not started |
 | 10 — Tab5 display console | not started |
 | 10b — ESP32-S3 CYD display console | **in progress, pulled forward** (2026-09-25): Vim on the Hosyond ES3C28P's panel and the Freenove FNK0115Q's 5" RGB panel; see Phase 10b |
-| 11 — Bluetooth keyboards (late-stage goal) | **in progress, pulled forward** (2026-09-25): on the ES3C28P a BLE keyboard pairs by command or by touch (the overlay) and types into Vim. 2026-09-29: any keyboard's reports decoded from its report map (N-key rollover too), xterm modifier keys, several bonded keyboards, forget one, a "Paired" notice -- host-tested, the hands-on check still due; see Phase 11 |
+| 11 — Bluetooth keyboards (late-stage goal) | **in progress, pulled forward** (2026-09-25): on the ES3C28P a BLE keyboard pairs by command or by touch (the overlay) and types into Vim. 2026-09-29: any keyboard's reports decoded from its report map (N-key rollover too), xterm modifier keys, several bonded keyboards, forget one, a "Paired" notice; typing, Ctrl-arrows and many keys held tested on the Freenove with a BLE keyboard; see Phase 11 |
 
 Toolchain: ESP-IDF **v5.5.5**, riscv32-esp-elf 14.2.0, emulator esp-emu 0.43.0.
 
@@ -1280,7 +1280,7 @@ after a restart. The touch pairing overlay is still to come.
   31 KB of internal RAM is free.
 - **Still to do:** Tab5 (esp-hosted HCI).
 
-### Keyboard follow-ups (2026-09-29): code and host tests; the hands-on check is still due
+### Keyboard follow-ups (2026-09-29)
 
 - **Reports from the keyboard's own description.**
   - `components/esp_kbd/esp_kbd_hid.c` reads a keyboard's HID report map and decodes
@@ -1309,17 +1309,27 @@ after a restart. The touch pairing overlay is still to come.
   - Paired keyboards are marked `*`, and listed as `away` when not in range.
   - Holding one (0.8 s) forgets it.
   - The status line says `Paired: <name>`.
-- **Tests.** `pixi run kbd-test`, on the host with AddressSanitizer and UBSan: 63 checks.
+- **Tests.** `pixi run kbd-test`, on the host with AddressSanitizer and UBSan: 68 checks.
   They cover four report maps (the HID spec's boot keyboard; a composite map with a
   20-byte NKRO bitmap, consumer keys and a mouse; listed usages; 4-byte usages), cut-short
   and garbage maps, and the bytes for every key form. The S3 emulator's `ble.py` checks
   the bond calls: none bonded, no notice, clean errors.
-- **Needs the board and the keyboard (not done):**
-  - type, including Ctrl-arrows and several keys held at once;
-  - read `esp_bt_keyboard().layout`;
-  - pair a second keyboard, and check that each comes back;
-  - hold one on the overlay to forget it;
-  - see the "Paired" notice after pairing by touch.
+- **On the Freenove with the Air75 BT5.0 (2026-09-29).** Typing is normal and Ctrl-arrows
+  work. The keyboard's layout, as learnt, is `1: mods@0 keys5@16; 2: map0+160@0`.
+  - The report history (`esp_bt_keyboard().reports`, the last 16, added for this)
+    showed something the design had assumed wrong. Report 1 keeps Shift and the first
+    five keys, and never says "too many"; report 2, a bitmap with no modifier bits,
+    carries only the keys beyond those five.
+  - Treating each report as the whole state therefore typed some keys twice, and would
+    have lost Shift. Now each report's keys are kept apart (`esp_kbd_merge`) and the
+    keyboard holds their union, with the modifiers from the reports that have them. A
+    rollover report changes only its modifiers.
+  - Shift held with seven letters pressed one after another typed `ADHSJFG`: each
+    once, in capitals, the last repeating while held. The host test replays the
+    recorded reports.
+- **Still to try on a board:** pairing a second keyboard and checking that each comes
+  back; holding one on the overlay to forget it; the "Paired" notice after pairing by
+  touch (the overlay is on the ES3C28P).
 
 ### The touch overlay, first version (2026-09-25)
 

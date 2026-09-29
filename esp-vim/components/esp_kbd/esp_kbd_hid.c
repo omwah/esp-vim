@@ -150,11 +150,12 @@ static uint32_t get_bits(const uint8_t *d, size_t len, uint32_t bit, uint8_t siz
     return v;
 }
 
-/* One usage held: a modifier, or a key (0-3 are "no key" and errors). */
+/* One usage held: a modifier, or a key (0-3 are "no key" and errors). False
+ * for ErrorRollOver. */
 static bool held(esp_kbd_keys_t *out, int32_t usage)
 {
     if (usage == 0x01)
-        return false;                   /* ErrorRollOver */
+        return false;
     if (usage >= 0xe0 && usage <= 0xe7)
         out->mods |= (uint8_t)(1 << (usage - 0xe0));
     else if (usage >= 0x04 && usage <= 0xdf && out->n < ESP_KBD_MAX_KEYS)
@@ -174,17 +175,54 @@ bool esp_kbd_decode(const esp_kbd_layouts_t *l, uint8_t id, const uint8_t *data,
     memset(out, 0, sizeof *out);
     for (int f = 0; f < r->nfields; f++) {
         const esp_kbd_field_t *x = &r->field[f];
+        /* A bitmap over E0..E7 is modifier bits. */
+        if (!x->array && x->base <= 0xe0 && x->base + (int32_t)x->count > 0xe7)
+            out->has_mods = true;
         for (uint32_t i = 0; i < x->count; i++) {
             if (x->array) {
                 uint32_t v = get_bits(data, len, x->bit + i * x->size, x->size);
                 if (v != 0 && !held(out, (int32_t)v + x->base))
-                    return false;
+                    out->rollover = true;
             } else if (get_bits(data, len, x->bit + i, 1)) {
                 held(out, x->base + (int32_t)i);
             }
         }
     }
+    if (out->rollover)
+        out->n = 0;
     return true;
+}
+
+void esp_kbd_merge(esp_kbd_state_t *st, uint16_t id, const esp_kbd_keys_t *report,
+                   esp_kbd_keys_t *out)
+{
+    esp_kbd_part_t *p = NULL, *spare = NULL;
+    for (int i = 0; i < ESP_KBD_MAX_PARTS; i++) {
+        if (st->part[i].used && st->part[i].id == id)
+            p = &st->part[i];
+        else if (!st->part[i].used && spare == NULL)
+            spare = &st->part[i];
+    }
+    if (p == NULL && (p = spare != NULL ? spare : &st->part[ESP_KBD_MAX_PARTS - 1]) != NULL) {
+        memset(p, 0, sizeof *p);
+        p->used = true;
+        p->id = id;
+    }
+    if (report->has_mods)
+        st->mods = report->mods;
+    if (!report->rollover) {
+        p->n = report->n;
+        memcpy(p->key, report->key, report->n);
+    }
+    memset(out, 0, sizeof *out);
+    out->mods = st->mods;
+    out->has_mods = true;
+    for (int i = 0; i < ESP_KBD_MAX_PARTS; i++) {
+        const esp_kbd_part_t *q = &st->part[i];
+        for (int k = 0; q->used && k < q->n && out->n < ESP_KBD_MAX_KEYS; k++)
+            if (memchr(out->key, q->key[k], out->n) == NULL)
+                out->key[out->n++] = q->key[k];
+    }
 }
 
 bool esp_kbd_decode_boot(const uint8_t *r, size_t len, esp_kbd_keys_t *out)
@@ -198,9 +236,12 @@ bool esp_kbd_decode_boot(const uint8_t *r, size_t len, esp_kbd_keys_t *out)
     size_t n = len >= 8 ? 6 : len - 1;
     if (n > 6)
         n = 6;
+    out->has_mods = true;
     for (size_t i = 0; i < n; i++)
         if (keys[i] != 0 && !held(out, keys[i]))
-            return false;
+            out->rollover = true;
+    if (out->rollover)
+        out->n = 0;
     return true;
 }
 

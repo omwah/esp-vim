@@ -749,6 +749,16 @@ their bit positions per report ID. The decoder, and the mapping from keys to ter
 bytes, are pure C, built and tested on the host (`pixi run kbd-test`). The emulator can't
 be a keyboard, and the real one isn't always at hand.
 
+**Each report's keys kept apart (amended the same day, on the board).** The first
+design took each report as the keyboard's whole state. The Air75 BT5.0 splits its keys:
+the boot-style report has the modifiers and the first five, and the bitmap report only
+the keys beyond them. So the keyboard's state is the union of each report's latest
+keys, with the modifiers from the reports that carry them. That also covers the other
+style, where the bitmap holds every key and the boot report says "too many": a rollover
+report leaves its own keys as they were. A history of the last 16 raw reports
+(`esp_bt_keyboard().reports`) showed this at once, and it stays as a diagnostic for the
+next keyboard.
+
 **xterm's modifier forms.** With a modifier held, the special keys send what xterm
 sends: `CSI 1;{m}X` and `CSI {n};{m}~`, where m = 1 + Shift + 2·Alt + 4·Ctrl. Vim's
 builtin xterm termcap already decodes these, so `<C-Right>` and `<S-F5>` mappings work

@@ -62,6 +62,8 @@ typedef struct {
     uint8_t mods;
     uint8_t n;
     uint8_t key[ESP_KBD_MAX_KEYS];
+    bool has_mods;          /* the report has modifier bits (else mods is 0) */
+    bool rollover;          /* "too many keys": the keys are unknown, mods not */
 } esp_kbd_keys_t;
 
 /* Learn the keyboard input reports from a HID report map. Returns how many
@@ -69,13 +71,42 @@ typedef struct {
 int esp_kbd_parse_map(const uint8_t *map, size_t len, esp_kbd_layouts_t *out);
 
 /* Decode report {id}'s data (without the ID byte). False if the map has no
- * keyboard fields in that report, or the keyboard says too many keys are down
- * (ErrorRollOver): keep the last state then. */
+ * keyboard fields in that report. When the keyboard says too many keys are
+ * down (ErrorRollOver), out->rollover is set: its modifiers still count. */
 bool esp_kbd_decode(const esp_kbd_layouts_t *l, uint8_t id, const uint8_t *data, size_t len,
                     esp_kbd_keys_t *out);
 
 /* The boot layout, with or without its reserved byte. */
 bool esp_kbd_decode_boot(const uint8_t *r, size_t len, esp_kbd_keys_t *out);
+
+/*
+ * A keyboard may spread its keys over several reports: the Air75 BT5.0 sends
+ * the first five in its boot-style report and only the ones beyond in its
+ * bitmap report, with the modifiers in the first alone. So each report's keys
+ * are kept apart, and the keyboard holds their union.
+ */
+#define ESP_KBD_MAX_PARTS 4
+
+typedef struct {
+    uint16_t id;                        /* which report: the caller's number */
+    bool used;
+    uint8_t n;
+    uint8_t key[ESP_KBD_MAX_KEYS];
+} esp_kbd_part_t;
+
+typedef struct {
+    uint8_t mods;
+    esp_kbd_part_t part[ESP_KBD_MAX_PARTS];
+} esp_kbd_state_t;
+
+/*
+ * One report ({id}: any number that tells the keyboard's reports apart)
+ * into {st}; {out} is then every key held and the modifiers. A report without
+ * modifier bits leaves the modifiers; a rollover report ("too many keys")
+ * leaves its own keys as they were and sets only the modifiers.
+ */
+void esp_kbd_merge(esp_kbd_state_t *st, uint16_t id, const esp_kbd_keys_t *report,
+                   esp_kbd_keys_t *out);
 
 /* The bytes a press of {usage} sends, with {mods} held and Caps Lock {caps}:
  * at most 16. 0: the key sends nothing. */

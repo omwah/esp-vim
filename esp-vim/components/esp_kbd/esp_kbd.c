@@ -26,7 +26,8 @@
 static StreamBufferHandle_t s_queue;
 static SemaphoreHandle_t s_lock;        /* the queue has one writer at a time */
 static esp_timer_handle_t s_repeat;
-static esp_kbd_keys_t s_prev;           /* the keys held in the last report */
+static esp_kbd_keys_t s_prev;           /* the keys held, as of the last report */
+static esp_kbd_state_t s_state;         /* each report's keys (esp_kbd_merge) */
 static uint8_t s_repeat_key, s_repeat_mods;
 static bool s_caps;
 
@@ -65,10 +66,12 @@ static bool holds(const esp_kbd_keys_t *k, uint8_t usage)
     return memchr(k->key, usage, k->n) != NULL;
 }
 
-void esp_kbd_input(const esp_kbd_keys_t *now)
+void esp_kbd_input(uint16_t id, const esp_kbd_keys_t *report)
 {
     if (s_queue == NULL)
         return;
+    esp_kbd_keys_t state, *now = &state;
+    esp_kbd_merge(&s_state, id, report, &state);    /* with the other reports' keys */
     uint8_t newest = 0;
     for (int i = 0; i < now->n; i++) {
         uint8_t k = now->key[i];
@@ -99,8 +102,8 @@ void esp_kbd_input(const esp_kbd_keys_t *now)
 void esp_kbd_report(const uint8_t *r, size_t len)
 {
     esp_kbd_keys_t k;
-    if (esp_kbd_decode_boot(r, len, &k))    /* false: too many keys; ignore */
-        esp_kbd_input(&k);
+    if (esp_kbd_decode_boot(r, len, &k))
+        esp_kbd_input(0, &k);
 }
 
 /* One-shot timer re-armed at the repeat rate while the key stays down. */
@@ -118,6 +121,7 @@ void esp_kbd_release_all(void)
     if (s_repeat)
         esp_timer_stop(s_repeat);
     memset(&s_prev, 0, sizeof s_prev);
+    memset(&s_state, 0, sizeof s_state);
 }
 
 bool esp_kbd_pending(void)

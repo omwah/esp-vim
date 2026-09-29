@@ -93,6 +93,10 @@ int esp_ble_kbd_forget_one(const char *addr, char *err, size_t errlen);
  * Bluetooth hasn't started (it starts at boot when a keyboard is bonded). */
 int esp_ble_kbd_bonds(esp_ble_bond_t *out, int max);
 
+/* The last input reports (at most 16, oldest first), as
+ * "map.id/len: hex bytes", for seeing what a keyboard sends. */
+int esp_ble_kbd_reports(char (*out)[72], int max);
+
 /* "Paired: <name>", once, after a pairing (by command or on the touch
  * screen) connects. False when there is none. */
 bool esp_ble_kbd_notice(char *out, size_t len);

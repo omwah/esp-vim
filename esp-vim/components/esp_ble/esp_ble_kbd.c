@@ -66,6 +66,13 @@ static EXT_RAM_BSS_ATTR esp_kbd_layouts_t s_layouts[MAX_MAPS];
 static int s_nmaps;
 static char s_layout_desc[96];
 
+/* The last reports, for seeing what a keyboard sends (esp_ble_kbd_reports). */
+#define HIST 16
+#define HIST_LEN 72
+static EXT_RAM_BSS_ATTR char s_hist[HIST][HIST_LEN];
+static unsigned s_hist_next;
+static portMUX_TYPE s_hist_mux = portMUX_INITIALIZER_UNLOCKED;
+
 /* ------------------------------------------------------------- the flag -- */
 
 /* "A keyboard is bonded", so boot can skip Bluetooth entirely when not. Kept
@@ -243,7 +250,7 @@ static void input(const esp_hidh_event_data_t *p)
     if (m < s_nmaps && map_has(&s_layouts[m], p->input.report_id)) {
         if (esp_kbd_decode(&s_layouts[m], (uint8_t)p->input.report_id, p->input.data,
                            p->input.length, &k))
-            esp_kbd_input(&k);          /* false: too many keys down; keep the last */
+            esp_kbd_input((uint16_t)(m << 8 | p->input.report_id), &k);
     } else if (p->input.usage == ESP_HID_USAGE_KEYBOARD) {
         esp_kbd_report(p->input.data, p->input.length);    /* boot protocol, or no map */
     }
@@ -280,6 +287,14 @@ static void on_hidh(void *arg, esp_event_base_t base, int32_t id, void *data)
                          p->input.length);
         for (int i = 0; i < p->input.length && n < (int)sizeof s_last - 3; i++)
             n += snprintf(s_last + n, sizeof s_last - n, " %02x", p->input.data[i]);
+        char h[HIST_LEN];
+        int m = snprintf(h, sizeof h, "%u.%u/%u:", p->input.map_index, p->input.report_id,
+                         p->input.length);
+        for (int i = 0; i < p->input.length && m < (int)sizeof h - 3; i++)
+            m += snprintf(h + m, sizeof h - m, " %02x", p->input.data[i]);
+        taskENTER_CRITICAL(&s_hist_mux);
+        memcpy(s_hist[s_hist_next++ % HIST], h, sizeof h);
+        taskEXIT_CRITICAL(&s_hist_mux);
         input(p);
         break;
     }
@@ -528,6 +543,17 @@ int esp_ble_kbd_bonds(esp_ble_bond_t *out, int max)
     return n;
 }
 
+int esp_ble_kbd_reports(char (*out)[72], int max)
+{
+    int n = 0;
+    taskENTER_CRITICAL(&s_hist_mux);
+    unsigned total = s_hist_next;
+    for (unsigned i = total > HIST ? total - HIST : 0; i < total && n < max; i++)
+        memcpy(out[n++], s_hist[i % HIST], HIST_LEN);
+    taskEXIT_CRITICAL(&s_hist_mux);
+    return n;
+}
+
 bool esp_ble_kbd_notice(char *out, size_t len)
 {
     if (!s_notice_ready)
@@ -615,6 +641,11 @@ int esp_ble_kbd_bonds(esp_ble_bond_t *out, int max)
 bool esp_ble_kbd_notice(char *out, size_t len)
 {
     return false;
+}
+
+int esp_ble_kbd_reports(char (*out)[72], int max)
+{
+    return 0;
 }
 
 void esp_ble_kbd_status(esp_ble_kbd_status_t *st)

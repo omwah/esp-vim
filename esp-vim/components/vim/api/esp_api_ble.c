@@ -4,6 +4,7 @@
  */
 
 #include "vim.h"
+#include "esp_heap_caps.h"
 #include "esp_vim_api.h"
 #include "esp_ble.h"
 
@@ -57,6 +58,17 @@ void f_esp_bt_keyboard(typval_T *argvars UNUSED, typval_T *rettv)
     dict_add_string(d, "security", (char_u *)st.security);
     dict_add_string(d, "layout", (char_u *)st.layout);
     dict_add_number(d, "bonds", st.bonds);
+    list_T *l = list_alloc();
+    if (l != NULL) {
+        char (*h)[72] = heap_caps_malloc(16 * 72, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (h == NULL)
+            h = malloc(16 * 72);
+        int n = h ? esp_ble_kbd_reports(h, 16) : 0;
+        for (int i = 0; i < n; i++)
+            list_append_string(l, (char_u *)h[i], -1);
+        free(h);
+        dict_add_list(d, "reports", l);
+    }
 }
 
 /* esp_bt_keyboard_list() -> List of Dicts: addr, addr_type, name, connected,
