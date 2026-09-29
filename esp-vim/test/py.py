@@ -188,6 +188,58 @@ def main():
             s.quiet(1.0)
             s.type("\r")
 
+            # -- :EspPyRepl ---------------------------------------------------
+            s.type(":EspPyRepl\r")
+            s.expect(rb">>> ", 60)
+            s.quiet(1.0)
+            s.type("6*7\r")
+            s.quiet(1.0)
+            s.type("for i in range(3):\r")
+            s.quiet(1.0)
+            s.type("print(i*i)\r")
+            s.quiet(1.0)
+            s.type("\r")                                  # the indentation alone ends it
+            s.quiet(1.0)
+            s.type("1/0\r")
+            s.quiet(1.0)
+            s.send(b"\x1bOA")                             # <Up>: the last line typed
+            time.sleep(0.5)
+            s.type("\r")
+            s.quiet(1.0)
+            s.type("vim.cur\t")                           # <Tab> completes
+            s.quiet(1.0)
+            s.send(b"\x1b")
+            s.quiet(1.0)
+            got = probe("P1", "join(getline(2, 9), '~')")
+            want = ">>> 6*7~42~>>> for i in range(3):~...     print(i*i)~...     ~0~1~4"
+            check(got == want, ":EspPyRepl runs lines and blocks, with ... and indentation", f"got {got!r}")
+            got = probe("P2", "len(filter(getline(1, '$'), 'v:val =~# \"^ZeroDivisionError\"')) . ':' . getline('$')")
+            check(got == "2:>>> vim.current", "a traceback shows, <Up> brings the line back, <Tab> completes",
+                  f"got {got!r}")
+            s.type("A")                                    # CTRL-C drops the line being typed
+            s.type("abc")
+            s.quiet(1.0)            # typed after a pause, as a person does: Vim reads a CTRL-C
+            s.send(b"\x03")        # in a burst of typeahead as an interrupt, mapped or not
+            s.quiet(1.0)
+            s.send(b"\x1b")
+            s.quiet(1.0)
+            got = probe("P3", "getline(line('$') - 1) . '~' . getline('$')")
+            check(got == "KeyboardInterrupt~>>> ", "CTRL-C at the prompt drops the line", f"got {got!r}")
+            s.type("A")                                    # CTRL-C still stops a running line
+            s.type("while True: pass\r\r")
+            time.sleep(3)
+            s.send(b"\x03")
+            s.quiet(2.0, timeout=60)
+            s.send(b"\x1b")
+            s.quiet(1.0)
+            got = probe("P5", "getline(line('$') - 1) . '~' . getline('$')")
+            check(got.startswith("KeyboardInterrupt") and got.endswith("~>>> "),
+                  "CTRL-C stops a loop run from the REPL", f"got {got!r}")
+            got = probe("P4", "esp_py_eval('i')")
+            check(got == "2", "the REPL shares the interpreter with :EspPy", f"got {got!r}")
+            s.type(":bwipe!\r")
+            s.quiet(1.0)
+
             # -- limits -------------------------------------------------------
             pyexec(["def deep(n):", "    return deep(n + 1)", "deep(0)"])
             got = probe("L1", "g:r.error")

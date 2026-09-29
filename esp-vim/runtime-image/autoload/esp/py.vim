@@ -124,3 +124,132 @@ function! esp#py#Reset() abort
     echo 'EspPyReset: Python will start afresh'
   endif
 endfunction
+
+" --------------------------------------------------------------- the REPL --
+"
+" :EspPyRepl: a buffer that works as Python's prompt. The last line is the
+" prompt ">>> " (or "... " inside a block); <CR> there runs it, and the output
+" follows. Vim's prompt buffers need +channel, which this build hasn't, so
+" this is a plain buffer with Insert-mode mappings.
+
+let s:ps1 = '>>> '
+let s:ps2 = '... '
+
+function! s:ReplLine() abort
+  let text = getline('$')
+  return text =~# '^\V' . s:ps1 ? text[len(s:ps1):]
+        \ : text =~# '^\V' . s:ps2 ? text[len(s:ps2):] : text
+endfunction
+
+" A new prompt line, with the cursor at its end.
+function! s:ReplPrompt(prompt, ...) abort
+  call append('$', a:prompt . (a:0 ? a:1 : ''))
+  call cursor(line('$'), col([line('$'), '$']))
+endfunction
+
+function! esp#py#Repl() abort
+  let buf = bufnr('^\[Python REPL\]$')
+  let win = buf > 0 ? bufwinid(buf) : -1
+  if win != -1
+    call win_gotoid(win)
+  elseif buf > 0
+    execute 'botright 12split | buffer ' . buf
+  else
+    botright 12new
+    setlocal buftype=nofile bufhidden=hide noswapfile nobuflisted
+    setlocal nonumber norelativenumber nospell nolist
+    silent file [Python REPL]
+    let b:repl_block = []
+    let b:repl_hist = []
+    let b:repl_hidx = 0
+    call setline(1, 'MicroPython '
+          \ . esp_py_eval('".".join(str(n) for n in __import__("sys").implementation.version[:3])')
+          \ . ' in Vim.  <CR> runs, <Up>/<Down> history, <Tab> completes, :q closes.')
+    call s:ReplPrompt(s:ps1)
+    syntax match EspPyReplPrompt /^\(>>>\|\.\.\.\) /
+    syntax match EspPyReplTitle /\%1l.*/
+    highlight default link EspPyReplPrompt Identifier
+    highlight default link EspPyReplTitle Comment
+    inoremap <buffer> <silent> <CR> <Cmd>call esp#py#ReplEnter()<CR>
+    inoremap <buffer> <silent> <expr> <Up> line('.') == line('$') ? "\<Cmd>call esp#py#ReplHistory(-1)\<CR>" : "\<Up>"
+    inoremap <buffer> <silent> <expr> <Down> line('.') == line('$') ? "\<Cmd>call esp#py#ReplHistory(1)\<CR>" : "\<Down>"
+    inoremap <buffer> <silent> <Tab> <C-R>=esp#py#ReplTab()<CR>
+    inoremap <buffer> <silent> <C-C> <Cmd>call esp#py#ReplCancel()<CR>
+    nnoremap <buffer> <silent> <CR> <Cmd>call esp#py#ReplEnter()<CR>
+  endif
+  call cursor(line('$'), col([line('$'), '$']))
+  startinsert!
+endfunction
+
+" <CR>: on the prompt line, add it to the block and run the block when it is
+" complete; on an earlier line, bring that line's text down to the prompt.
+function! esp#py#ReplEnter() abort
+  if line('.') != line('$')
+    let text = getline('.')
+    let text = text =~# '^\V' . s:ps1 ? text[len(s:ps1):]
+          \ : text =~# '^\V' . s:ps2 ? text[len(s:ps2):] : text
+    call setline('$', (empty(b:repl_block) ? s:ps1 : s:ps2) . text)
+    call cursor(line('$'), col([line('$'), '$']))
+    return
+  endif
+  let text = s:ReplLine()
+  if text =~# '^\s*$'
+    let text = ''                   " indentation alone ends a block
+  elseif empty(b:repl_hist) || b:repl_hist[-1] !=# text
+    call add(b:repl_hist, text)     " history is line by line, as readline's
+  endif
+  let b:repl_hidx = len(b:repl_hist)
+  call add(b:repl_block, text)
+  let src = join(b:repl_block, "\n")
+  if !empty(text) && esp_py_more(src)
+    " Inside a block: keep the indentation of the line before.
+    call s:ReplPrompt(s:ps2, matchstr(text, '^\s*') . (text =~# ':\s*$' ? '    ' : ''))
+  else
+    let b:repl_block = []
+    if src !~# '^\_s*$'
+      let r = esp_py_exec(src, {'mode': 'single', 'name': '<stdin>', 'buf': bufnr('%')})
+      if !r.ok
+        call append('$', split(r.traceback, "\n"))
+      endif
+    endif
+    call s:ReplPrompt(s:ps1)
+  endif
+  if mode() !=# 'i'
+    startinsert!
+  endif
+endfunction
+
+" <Up>/<Down> on the prompt line: the lines typed before.
+function! esp#py#ReplHistory(step) abort
+  if empty(b:repl_hist)
+    return
+  endif
+  let b:repl_hidx = max([0, min([len(b:repl_hist), b:repl_hidx + a:step])])
+  let entry = b:repl_hidx < len(b:repl_hist) ? b:repl_hist[b:repl_hidx] : ''
+  call setline('$', (empty(b:repl_block) ? s:ps1 : s:ps2) . entry)
+  call cursor(line('$'), col([line('$'), '$']))
+endfunction
+
+" <Tab>: complete the name before the cursor, or indent when there is none.
+function! esp#py#ReplTab() abort
+  let before = strpart(getline('.'), 0, col('.') - 1)
+  let before = before =~# '^\V' . s:ps1 ? before[len(s:ps1):]
+        \ : before =~# '^\V' . s:ps2 ? before[len(s:ps2):] : before
+  if before =~# '^\s*$' || line('.') != line('$')
+    return '    '
+  endif
+  let words = esp_py_complete(before)
+  if empty(words)
+    return ''
+  endif
+  let frag = matchstr(before, '\k*$')
+  call complete(col('.') - len(frag), words)
+  return ''
+endfunction
+
+" CTRL-C at the prompt: drop the block being typed.
+function! esp#py#ReplCancel() abort
+  let b:repl_block = []
+  call append('$', 'KeyboardInterrupt')
+  call s:ReplPrompt(s:ps1)
+endfunction

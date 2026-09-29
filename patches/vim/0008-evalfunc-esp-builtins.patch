@@ -12,7 +12,7 @@
  #if defined(FEAT_EVAL)
  
  #ifdef VMS
-@@ -2279,6 +2284,179 @@
+@@ -2279,6 +2284,183 @@
  			ret_void,	    f_err_teapot},
      {"escape",		2, 2, FEARG_1,	    arg2_string,
  			ret_string,	    f_escape},
@@ -120,12 +120,16 @@
 +			ret_bool,	    f_esp_nvs_set},
 +    {"esp_power",	0, 1, FEARG_1,	    arg1_dict_any,
 +			ret_dict_any,	    f_esp_power},
++    {"esp_py_complete",	1, 1, FEARG_1,	    arg1_string,
++			ret_list_string,    f_esp_py_complete},
 +    {"esp_py_eval",	1, 1, FEARG_1,	    arg1_string,
 +			ret_any,	    f_esp_py_eval},
 +    {"esp_py_exec",	1, 2, FEARG_1,	    arg2_string_or_list_dict,
 +			ret_dict_any,	    f_esp_py_exec},
 +    {"esp_py_heap",	0, 0, 0,	    NULL,
 +			ret_dict_number,    f_esp_py_heap},
++    {"esp_py_more",	1, 1, FEARG_1,	    arg1_string,
++			ret_bool,	    f_esp_py_more},
 +    {"esp_py_reset",	0, 0, 0,	    NULL,
 +			ret_bool,	    f_esp_py_reset},
 +    {"esp_reboot",	0, 0, 0,	    NULL,

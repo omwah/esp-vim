@@ -15,8 +15,8 @@
 | 3 — OS shim layer | **done** (2026-09-23), see [PHASE3.md](PHASE3.md) — Vim runs, edits, saves; `pixi run vim-test` |
 | 4 — Storage + curated runtime | **done** (2026-09-24), see [PHASE4.md](PHASE4.md) — runtime 74% of `vimrt`, 30 filetypes, 0.47 MB PSRAM to open a file |
 | 5 — Emulator bring-up over UART | **done** (2026-09-24), see [PHASE5.md](PHASE5.md) — interactive over UART; `:q` restarts in place; chip-named splash, device help, busy indicator. P4 gate green. **S3: open intermittent heap corruption under the emulator**, gate informational until tested on silicon |
-| 6 — `:Esp*` commands, file manager, transports, web | **in progress**, see [PHASE6.md](PHASE6.md). 6a–6e done 2026-09-24; 6f done 2026-09-25 (serial, I2C, ADC, sensors, S3 WiFi and BLE scan tested; Tab5 WiFi via the C6 built, with its run-time check moved to Phase 9 because esp-emu cannot run esp-hosted) |
-| 7 — MicroPython | **done, first cut** (2026-09-29): MicroPython 1.29 in every build, on the Vim task; `:EspPy`, `:EspPyRun`, `:EspPyReset`, the `vim` and `esp` modules; emulator gate `py.py` green on the P4. See Phase 7 |
+| 6 — `:Esp*` commands, file manager, transports, web | **done** (2026-09-29), see [PHASE6.md](PHASE6.md): 6a–6e 2026-09-24, 6f 2026-09-25 (serial, I2C, ADC, sensors; S3 WiFi and BLE scan; Tab5 WiFi via the C6 built, its run-time check in Phase 9 since esp-emu cannot run esp-hosted). `:EspUsbMsc` needs the Tab5's USB-C port and moves to Phase 9 |
+| 7 — MicroPython | **done, first cut** (2026-09-29): MicroPython 1.29 in every build, on the Vim task; `:EspPy`, `:EspPyRun`, `:EspPyReset`, `:EspPyRepl`, the `vim` and `esp` modules; emulator gate `py.py` green on the P4. See Phase 7 |
 | 8 — Git | **done, first cut** (2026-09-28): on libgit2 (the stage 6z gate), 18 `esp_git_*()` builtins and 19 `:EspGit*` commands in every build; emulator gate `git.py` green on the P4; clone, push, fast-forward and merge pulls tested on a real ESP32-S3 (Freenove FNK0115) over WiFi, HTTPS and the LAN. See Phase 8 |
 | 9 — Tab5 hardware over UART | not started |
 | 10 — Tab5 display console | not started |
@@ -982,9 +982,17 @@ Measured (2026-09-29):
   - A new Vim session had kept the old interpreter. Sessions reuse one task, so the
     Vim side now tells the interpreter from its zeroed statics.
 
+**`:EspPyRepl` (2026-09-29).** Python's prompt in a buffer: `>>> ` and `... ` lines,
+blocks ended by an empty line, indentation carried on, per-line history on `<Up>`/`<Down>`,
+`<Tab>` completion, and CTRL-C to drop the line being typed or to stop a running one.
+`<CR>` on an earlier line brings it down to the prompt. Vim's prompt buffers need
+`+channel`, so this is a plain buffer with Insert-mode mappings. Whether a block needs more
+lines, and the completions, come from MicroPython's own REPL helpers
+(`mp_repl_continue_with_input`, `mp_repl_autocomplete`) through `esp_py_more()` and
+`esp_py_complete()`, so it behaves as MicroPython's prompt does. `py.py` covers it.
+
 Not yet: `vim.options` for window- and buffer-local values (it sets global and local
-together, as `:let &opt` does); `sys.stdin`; a Python prompt (REPL) in a buffer; frozen
-`.mpy` modules.
+together, as `:let &opt` does); `sys.stdin`; frozen `.mpy` modules.
 
 ### The design (2026-09-23)
 

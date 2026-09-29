@@ -107,6 +107,15 @@ int  esp_py_exec(const char *src, size_t len, const char *name, esp_py_mode_t mo
 /* Evaluate an expression into out (a new_value() from the host). */
 int  esp_py_eval(const char *expr, size_t len, void *out, char **tb);
 
+/* As Python's prompt decides it: does {src} (the lines so far, "\n" apart)
+ * need more lines -- an open block, bracket or string? */
+int  esp_py_more(const char *src);
+
+/* The completions of the name ending {line}, as MicroPython's REPL finds them
+ * (in __main__, and through a.b attributes), into {out} as a List of whole
+ * words. Returns how many, or -1 (not started, or an error). */
+int  esp_py_complete(const char *line, size_t len, void *out);
+
 typedef struct {
     size_t total, used, free, max_free;     /* bytes of the Python heap */
     int running;                            /* started in this session */

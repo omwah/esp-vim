@@ -524,6 +524,17 @@ the next can use, until |:EspPyReset|.  "vim" and "esp" are already imported.
 		there too and put in the quickfix list: ":cc" goes to the
 		line that failed, ":cwindow" lists the calls.
 
+:EspPyRepl						*:EspPyRepl*
+		Python's prompt, in a window of its own: type at the ">>> "
+		line and press <CR>; the output follows, then a new prompt.
+		A block ("for ...:") continues with "... " until an empty
+		line.  In Insert mode there:
+			<Up> <Down>	earlier lines (and blocks)
+			<Tab>		complete a name: "vim.cur<Tab>"
+			<CTRL-C>	drop the block being typed
+		<CR> on an earlier line brings it down to the prompt.  It
+		shares the interpreter with :EspPy and :EspPyRun.
+
 :EspPyReset						*:EspPyReset*
 		Start a new interpreter: every variable and module goes, and
 		open files are closed.

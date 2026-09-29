@@ -23,6 +23,7 @@
 #include "py/objexcept.h"
 #include "py/objstr.h"
 #include "py/parse.h"
+#include "py/repl.h"
 #include "py/runtime.h"
 #include "py/unicode.h"
 #include "extmod/vfs.h"
@@ -554,6 +555,80 @@ int esp_py_exec(const char *src, size_t len, const char *name, esp_py_mode_t mod
 
 int esp_py_eval(const char *expr, size_t len, void *out, char **tb) {
     return run(expr, len, "<eval>", MP_PARSE_EVAL_INPUT, out, tb);
+}
+
+int esp_py_more(const char *src) {
+    if (!s_started) {
+        return 0;
+    }
+    return mp_repl_continue_with_input(src);
+}
+
+/* Words for the fragment at the end of {line}: the completions MicroPython's
+ * own REPL offers (py/repl.c), as whole words for Vim's complete(). */
+int esp_py_complete(const char *line, size_t len, void *out) {
+    int here;
+    int n = -1;
+    if (!s_started) {
+        return -1;
+    }
+    if (s_depth == 0 && set_stack(&here) != 0) {
+        return -1;
+    }
+    s_depth++;
+    const char *frag = line + len;          /* the last name in a.b.c */
+    while (frag > line && (unichar_isalpha(frag[-1]) || unichar_isdigit(frag[-1]) || frag[-1] == '_')) {
+        frag--;
+    }
+    size_t flen = line + len - frag;
+    nlr_buf_t nlr;
+    if (nlr_push(&nlr) == 0) {
+        vstr_t listing;
+        vstr_init(&listing, 64);
+        mp_print_t pr = { &listing, (mp_print_strn_t)vstr_add_strn };
+        const char *ext = NULL;
+        size_t got = mp_repl_autocomplete(line, len, &pr, &ext);
+        if (s_host->set_list(out) != 0) {
+            no_memory();
+        }
+        n = 0;
+        if (got == (size_t)-1) {            /* several: the listing, words apart */
+            const char *p = vstr_null_terminated_str(&listing);
+            while (*p) {
+                while (*p == ' ' || *p == '\n') {
+                    p++;
+                }
+                const char *w = p;
+                while (*p && *p != ' ' && *p != '\n') {
+                    p++;
+                }
+                if (p > w) {
+                    void *item = s_host->list_append(out);
+                    if (item == NULL || s_host->set_string(item, w, p - w) != 0) {
+                        no_memory();
+                    }
+                    n++;
+                }
+            }
+        } else if (got > 0 && ext != NULL) {    /* one, or a common prefix */
+            vstr_t word;
+            vstr_init(&word, flen + got + 1);
+            vstr_add_strn(&word, frag, flen);
+            vstr_add_strn(&word, ext, got);
+            void *item = s_host->list_append(out);
+            if (item == NULL || s_host->set_string(item, word.buf, word.len) != 0) {
+                no_memory();
+            }
+            vstr_clear(&word);
+            n = 1;
+        }
+        vstr_clear(&listing);
+        nlr_pop();
+    } else {
+        n = -1;
+    }
+    s_depth--;
+    return n;
 }
 
 void esp_py_heap(esp_py_heap_t *out) {

@@ -636,6 +636,39 @@ void f_esp_py_eval(typval_T *argvars, typval_T *rettv)
     free(tb);
 }
 
+/* esp_py_more({source}): does {source} need more lines, as Python's prompt
+ * decides it (an open block, bracket or string)? For :EspPyRepl. */
+void f_esp_py_more(typval_T *argvars, typval_T *rettv)
+{
+    if (check_for_string_arg(argvars, 0) == FAIL || start("esp_py_more") == FAIL)
+        return;
+    rettv->vval.v_number = esp_py_more((char *)tv_get_string(&argvars[0]));
+}
+
+/* esp_py_complete({text}) -> List: the words completing the name at the end
+ * of {text} ("vim.cur" -> ['current']), as MicroPython's REPL finds them. */
+void f_esp_py_complete(typval_T *argvars, typval_T *rettv)
+{
+    if (check_for_string_arg(argvars, 0) == FAIL)
+        return;
+    if (start("esp_py_complete") == FAIL)
+    {
+	rettv_list_alloc(rettv);
+	return;
+    }
+    char_u *text = tv_get_string(&argvars[0]);
+    sink_T sink, *prev;
+
+    sink_begin(&sink, &prev, 0);
+    if (esp_py_complete((char *)text, STRLEN(text), rettv) < 0)
+    {
+	clear_tv(rettv);
+	rettv_list_alloc(rettv);
+    }
+    sink_end(&sink, prev);
+    got_int = FALSE;
+}
+
 /* esp_py_reset(): discard every Python variable, module and open file. */
 void f_esp_py_reset(typval_T *argvars UNUSED, typval_T *rettv)
 {
