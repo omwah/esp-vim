@@ -22,6 +22,7 @@
 #include "nvs_flash.h"
 #include "esp_fs.h"
 #include "esp_net.h"
+#include "esp_git.h"
 #include "esp_ssh.h"
 #include "esp_web.h"
 #include "esp_display.h"
@@ -412,6 +413,7 @@ void app_main(void)
     storage_init();
     environment_init();
     esp_ssh_init();
+    esp_git_selftest_start();   /* CONFIG_ESP_VIM_GIT_SELFTEST only (stage 6z) */
     esp_web_init();
     esp_ble_kbd_boot();     /* a bonded Bluetooth keyboard reconnects by itself */
     esp_pairui_start();     /* no keyboard: offer to pair one by touch */

@@ -616,3 +616,38 @@ a hand-written narrow alternative in the template (`@WIDE@ … @NARROW@ … @END
 Every other variant gets the 78-column help exactly as before. Runtime images are
 now per variant: `vimrt-<variant>`, falling back to the chip's for a variant
 without one. Upstream help files (netrw, version9, ...) are not reflowed.
+
+## 2026-09-28 — Git is libgit2, not Python on MicroPython (stage 6z)
+
+The plan chose a pure-Python git because no ESP-IDF port of libgit2 existed. The 6z gate
+ported libgit2 1.9.7 as Vim was ported: its own CMake component over the extracted
+archive, a hand-written `git2_features.h`, a few port shims and five `ESP_PLATFORM`
+patches. It passed in the emulator (Phase 8 has the numbers): local init, commit, status
+and checkout on FAT; clone, push and fetch over HTTP, git:// and SSH, with the host's
+`git fsck --strict` clean after each push; HTTPS with a verified certificate. libgit2 is
+392 KB of flash. The Python design would have spent its effort writing the hardest part,
+packfile reading with delta resolution, which libgit2 already has along with merge. So git
+no longer waits for MicroPython.
+
+What the port had to change, and why:
+- **Stack.** libgit2 puts 64 KB I/O buffers on the stack. The first run jumped past the
+  whole task stack and both cores faulted at PC 0, with the end-of-stack watchpoint
+  never hit, since one frame skipped over it. 4 KB buffers (patch 0002) bring the
+  deepest use to 13.7 KB.
+- **Heap.** Without mmap, libgit2 reads pack "windows" into malloc'd memory, 32 MB each by
+  default on 32-bit, and caches up to 16 MB of delta bases. The device sets 256 KB windows,
+  a 1 MB mapped limit and a 1 MB object cache through `git_libgit2_opts`. Patches 0003-0004
+  cap two compile-time sizes (the push compress buffer and the pack cache). Push went from
+  1.65 MB to 0.64 MB, and a 620 KB pack clone from 5.7 MB to 2.0 MB.
+- **FAT.** `rename()` won't replace a file and `link()` copies one, so `p_rename` removes
+  the target first (patch 0001), as libgit2 does on Windows. libgit2's own probes set
+  `core.filemode` and `core.symlinks` to false.
+- **Names.** Vim links its own xdiff and has a `p_write` option. libgit2's copies are
+  renamed by macros in a force-included header, rather than by patching either.
+- **Certificates.** No CA file exists, so libgit2's mbedTLS stream attaches ESP-IDF's
+  bundle (patch 0005), as `esp_http_client` does.
+
+The self-test is its own build variant (`p4git`), so the everyday builds don't carry it.
+Every variant still compiles libgit2, because IDF can't make a component requirement
+depend on Kconfig, but only `p4git` links it. The other builds' binaries are the same
+size as before.

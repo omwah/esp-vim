@@ -1,0 +1,26 @@
+diff -ruN '--exclude=.git' '--exclude=*.o' '--exclude=*.rej' '--exclude=*.orig' a/src/util/posix.c b/src/util/posix.c
+--- a/src/util/posix.c	2026-08-13 13:08:41.000000000 -0700
++++ b/src/util/posix.c	2026-09-28 17:27:43.623535998 -0700
+@@ -152,6 +152,22 @@
+ 
+ int p_rename(const char *from, const char *to)
+ {
++#ifdef ESP_PLATFORM
++	/*
++	 * FAT: link() copies the file, and rename() refuses an existing target.
++	 * Replace it as Windows does: remove the target, then rename. Not atomic
++	 * -- a power cut between the two leaves the new contents in the .lock.
++	 */
++	struct stat st;
++
++	if (!rename(from, to))
++		return 0;
++	if (errno != EEXIST && stat(to, &st) != 0)
++		return -1;
++	if (p_unlink(to) != 0 && errno != ENOENT)
++		return -1;
++	return rename(from, to) ? -1 : 0;
++#endif
+ 	if (!link(from, to)) {
+ 		p_unlink(from);
+ 		return 0;

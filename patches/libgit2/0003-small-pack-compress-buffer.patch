@@ -1,0 +1,17 @@
+--- a/src/libgit2/pack-objects.c	2026-08-13 13:08:41.000000000 -0700
++++ b/src/libgit2/pack-objects.c	2026-09-28 18:08:47.095089427 -0700
+@@ -62,7 +62,13 @@
+ #define MIN_PROGRESS_UPDATE_INTERVAL 0.5
+ 
+ /* Size of the buffer to feed to zlib */
+-#define COMPRESS_BUFLEN (1024 * 1024)
++#ifdef ESP_PLATFORM
++/* A loop drains it, so small only means more passes; 1 MB was most of a
++ * push's heap on a microcontroller. */
++# define COMPRESS_BUFLEN (16 * 1024)
++#else
++# define COMPRESS_BUFLEN (1024 * 1024)
++#endif
+ 
+ GIT_HASHMAP_OID_FUNCTIONS(git_packbuilder_pobjectmap, GIT_HASHMAP_INLINE, git_pobject *);
+ GIT_HASHMAP_OID_FUNCTIONS(git_packbuilder_walk_objectmap, GIT_HASHMAP_INLINE, struct walk_object *);

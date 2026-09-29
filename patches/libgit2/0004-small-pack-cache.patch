@@ -1,0 +1,20 @@
+--- a/src/libgit2/pack.h	2026-08-13 13:08:41.000000000 -0700
++++ b/src/libgit2/pack.h	2026-09-28 18:14:10.091760920 -0700
+@@ -79,8 +79,15 @@
+ 
+ typedef git_array_t(struct pack_chain_elem) git_dependency_chain;
+ 
+-#define GIT_PACK_CACHE_MEMORY_LIMIT 16 * 1024 * 1024
+-#define GIT_PACK_CACHE_SIZE_LIMIT 1024 * 1024 /* don't bother caching anything over 1MB */
++#ifdef ESP_PLATFORM
++/* Delta bases kept while reading a pack: a microcontroller's heap is a
++ * few MB in all. */
++# define GIT_PACK_CACHE_MEMORY_LIMIT 1024 * 1024
++# define GIT_PACK_CACHE_SIZE_LIMIT 256 * 1024
++#else
++# define GIT_PACK_CACHE_MEMORY_LIMIT 16 * 1024 * 1024
++# define GIT_PACK_CACHE_SIZE_LIMIT 1024 * 1024 /* don't bother caching anything over 1MB */
++#endif
+ 
+ struct git_pack_entry {
+ 	off64_t offset;

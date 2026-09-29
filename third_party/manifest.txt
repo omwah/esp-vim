@@ -63,3 +63,18 @@ notes:    Dimitar Zhekov's Terminus Font, SIL OFL 1.1 (OFL.TXT in the archive).
           The display console uses ter-u20n.bdf and ter-u22n.bdf (10x20 and
           11x22), converted to C tables at build time by scripts/bdf2c.py: the
           sizes Spleen lacks between 8x16 and 12x24.
+
+name:     libgit2
+version:  1.9.7
+file:     libgit2-1.9.7.tar.gz
+sha256:   1a4fbe7589e814777ae76b64734ad80f4ecad22cd33a22682a2aaea4ae5375e7
+prefix:   libgit2-1.9.7
+url:      https://github.com/libgit2/libgit2/archive/refs/tags/v1.9.7.tar.gz
+origin:   upstream download via scripts/add-dep.sh (GitHub tag tarball,
+          renamed from v1.9.7.tar.gz)
+patches:  libgit2
+notes:    libgit2, GPLv2 with a linking exception (COPYING). Built as an
+          ESP-IDF component (components/libgit2) with a hand-written
+          git2_features.h: no threads, no mmap, mbedTLS for SHA and HTTPS,
+          libssh2 from skuodi/libssh2_esp, bundled zlib, llhttp and PCRE.
+          See docs/PLAN.md, stage 6z.

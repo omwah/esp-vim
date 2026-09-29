@@ -1,0 +1,17 @@
+--- a/src/util/git2_util.h	2026-08-13 13:08:41.000000000 -0700
++++ b/src/util/git2_util.h	2026-09-28 17:39:55.733748916 -0700
+@@ -110,7 +110,13 @@
+ 
+ #include "posix.h"
+ 
+-#define GIT_BUFSIZE_DEFAULT 65536
++#ifdef ESP_PLATFORM
++/* These are stack arrays (hashing a file, writing a blob, copying): 64 KB
++ * is more than a whole task's stack on a microcontroller. */
++# define GIT_BUFSIZE_DEFAULT 4096
++#else
++# define GIT_BUFSIZE_DEFAULT 65536
++#endif
+ #define GIT_BUFSIZE_FILEIO GIT_BUFSIZE_DEFAULT
+ #define GIT_BUFSIZE_FILTERIO GIT_BUFSIZE_DEFAULT
+ #define GIT_BUFSIZE_NETIO GIT_BUFSIZE_DEFAULT

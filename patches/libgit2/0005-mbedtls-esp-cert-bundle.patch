@@ -1,0 +1,27 @@
+--- a/src/libgit2/streams/mbedtls.c	2026-08-13 13:08:41.000000000 -0700
++++ b/src/libgit2/streams/mbedtls.c	2026-09-28 18:24:17.664459544 -0700
+@@ -36,6 +36,9 @@
+ #include <mbedtls/error.h>
+ #include <mbedtls/entropy.h>
+ #include <mbedtls/ctr_drbg.h>
++#ifdef ESP_PLATFORM
++# include "esp_crt_bundle.h"
++#endif
+ 
+ #undef inline
+ 
+@@ -145,6 +148,14 @@
+ 	if (!loaded && crtpath != NULL && stat(crtpath, &statbuf) == 0 && S_ISDIR(statbuf.st_mode))
+ 		loaded = (git_mbedtls__set_cert_location(NULL, crtpath) == 0);
+ 
++#ifdef ESP_PLATFORM
++	/* No CA file on the device: ESP-IDF's certificate bundle, as its own
++	 * HTTP client uses. It verifies through mbedTLS's verify callback, so
++	 * there is no chain here for shutdown_ssl() to free. */
++	if (!loaded)
++		esp_crt_bundle_attach(&mbedtls_config);
++#endif
++
+ 	initialized = true;
+ 
+ 	return git_runtime_shutdown_register(shutdown_ssl);

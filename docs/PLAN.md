@@ -17,7 +17,7 @@
 | 5 — Emulator bring-up over UART | **done** (2026-09-24), see [PHASE5.md](PHASE5.md) — interactive over UART; `:q` restarts in place; chip-named splash, device help, busy indicator. P4 gate green. **S3: open intermittent heap corruption under the emulator**, gate informational until tested on silicon |
 | 6 — `:Esp*` commands, file manager, transports, web | **in progress**, see [PHASE6.md](PHASE6.md). 6a–6e done 2026-09-24; 6f done 2026-09-25 (serial, I2C, ADC, sensors, S3 WiFi and BLE scan tested; Tab5 WiFi via the C6 built, with its run-time check moved to Phase 9 because esp-emu cannot run esp-hosted) |
 | 7 — MicroPython | not started |
-| 8 — Git | not started. **Being reconsidered:** libgit2 instead of pure Python; test build scheduled after Phase 6 (see Phase 8) |
+| 8 — Git | not started. **Built on libgit2** (decided 2026-09-28 by the stage 6z gate: init, commit, status, checkout, clone, fetch and push over HTTP, HTTPS, git:// and SSH in the emulator), so it no longer waits for Phase 7; see Phase 8 |
 | 9 — Tab5 hardware over UART | not started |
 | 10 — Tab5 display console | not started |
 | 10b — ESP32-S3 CYD display console | **in progress, pulled forward** (2026-09-25): Vim on the Hosyond ES3C28P's panel and the Freenove FNK0115Q's 5" RGB panel; see Phase 10b |
@@ -66,11 +66,12 @@ smallest possible thing rendering over UART in the emulator, prove each OS depen
 there, then add the command/plugin layer, then hardware, then display.
 
 **Phase ordering note.** Phase 0 (repository bootstrap) comes first; Phases 1–6 are then a
-dependency chain. After that, Phase 7
-(MicroPython) → Phase 8 (git) is a hard dependency — git is written in Python — but that
-pair is independent of Phase 9 (hardware) and Phase 10 (display/keyboard), which are their
-own chain. Either branch can be pulled forward; the device is a usable editor after Phase 6
-and a usable *tablet* after Phase 10 regardless of where git sits.
+dependency chain. After that, Phase 7 (MicroPython) and Phase 8 (git) are
+independent of each other — git was to be written in Python, and since the stage 6z gate
+(2026-09-28) it is libgit2 in C instead — and of Phase 9 (hardware) and Phase 10
+(display/keyboard), which are their own chain. Any of them can be pulled forward; the
+device is a usable editor after Phase 6 and a usable *tablet* after Phase 10 regardless
+of where git sits.
 
 **Decisions taken:**
 
@@ -96,6 +97,7 @@ Phase 0 converted both upstream trees to LFS archives; neither is a checked-in s
 |---|---|---|
 | `third_party/vim-9.2.1125.tar.gz` | Vim upstream, `git archive` of `12c69acc` (2026-09-21) | `1c243758…cbb2d5` |
 | `third_party/esp-emu-0.43.0-x86_64-unknown-linux-gnu.tar.gz` | Espressif emulator, upstream release asset | `ec875a31…200243` |
+| `third_party/libgit2-1.9.7.tar.gz` | libgit2 upstream, GitHub tag tarball (stage 6z, 2026-09-28) | `1a4fbe75…5375e7` |
 
 `scripts/prepare-deps.sh` verifies and extracts these into `build-deps/` and applies
 `patches/`. It uses no network. Full records in `third_party/manifest.txt`.
@@ -192,6 +194,9 @@ that P4 silicon changed at **chip revision 3.0**, so pre-rev3 parts need a build
 against the CPython C-API, which MicroPython does not provide. The bridge is purpose-built
 either way, so it is built as `esp_*()` eval builtins plus a MicroPython module — not by
 enabling `FEAT_PYTHON3`.
+
+> **Superseded 2026-09-28:** git is libgit2, ported as Vim was (Phase 8, stage 6z). The
+> finding below is kept for the record.
 
 **Git: no libgit2 port exists, so write it in MicroPython, not C.** I searched and found no
 libgit2 ESP-IDF port, so git means implementing it — and since MicroPython is already being
@@ -387,8 +392,8 @@ esp-vim/
       esp_micropython/              # MicroPython embed port as an IDF component
         mp_mod_vim.c                # the `vim` module (buffers, cursor, eval)
         mp_mod_esp.c                # the `esp` module (gpio/i2c/wifi/nvs/fs)
-        frozen/
-          espgit/                   # pure-Python git, frozen to .mpy
+      libgit2/                      # libgit2 as an IDF component (port/ + build-deps source)
+      esp_git/                      # git on the device over libgit2 (6z: its self-test)
     c6-slave/                       # esp-hosted slave app, built for esp32c6
     runtime-image/                  # OUR files only; vim's runtime is copied in at
       plugin/esp.vim                #   build time from build-deps/ by the script
@@ -662,7 +667,7 @@ for one:
 | 6e | web file manager, settings, live status | **done** |
 | 6f | radio via esp-hosted/C6 (`:EspWifi*`, `:EspBle*`), `:EspSerial`, `:EspI2cScan`, `:EspAdc`, `:EspSensors`. Also establish, for Phase 11: can esp-hosted carry a BLE **HID host** (NimBLE on the P4, controller on the C6), and what does `esp-emu --ble-hci` bridge to? | **done** (answers in Phase 11); the Tab5's C6 link is checked on hardware, Phase 9 |
 | — | `:EspUsbMsc` | hardware only, Phase 9 |
-| 6z | **libgit2 feasibility build** (see Phase 8): decides how Phase 8 is built | after 6f, before Phase 7 |
+| 6z | **libgit2 feasibility build** (see Phase 8): decides how Phase 8 is built | **done** 2026-09-28: passed, Phase 8 is libgit2 |
 
 ### Architecture: thin C, thick vimscript
 
@@ -933,9 +938,8 @@ a blocking socket read are different problems and need different answers:
   This is exactly why the HTTPS/SSH transports live in C builtins rather than in Python —
   it is what makes the chunking possible.
 
-**This matters most in Phase 8**: a `:EspGitClone` that blocked the editor for an entire
-network transfer would be unusable. Git's transport must drive the chunked builtins and pump
-Vim between chunks, so a clone shows progress, redraws, and can be interrupted.
+(Git was the main reason for this, when it was to be Python. It is libgit2 in C now,
+whose transfer callbacks give the same progress and CTRL-C: Phase 8.)
 
 Give the heap a fixed PSRAM arena, sized by Kconfig, so a script cannot starve the editor.
 
@@ -960,59 +964,85 @@ All of this is emulator-testable — no hardware needed.
 
 ## Phase 8 — Git
 
-> **Under reconsideration (2026-09-24): libgit2 instead of pure Python.** The design
-> below chose pure Python because no ESP-IDF port of libgit2 exists. That underrated
-> porting it the way Vim was ported, which is likely less work than writing git,
-> because packfile reading with delta resolution, the hardest Python piece, is what
-> libgit2 already does. libgit2 would also bring full clone, fetch, push and merge, and
-> run far faster than interpreted Python. It would remove Phase 8's dependency on
-> MicroPython. Its transfer callbacks can cancel, so CTRL-C and the spinner fit the
-> `esp_fs` progress pattern. It can use mbedTLS (SHA-1, HTTPS), bundles zlib and its
-> HTTP parser, runs without threads, and takes SSH from the libssh2 that 6d brings.
-> Licence: GPLv2 with a linking exception, compatible with linking into this firmware.
->
-> **Gate, after Phase 6 and before Phase 7:** build libgit2 as an ESP-IDF component for
-> the P4 and measure its flash size. Check that the no-`mmap` fallback works on real
-> packs, and that FAT settings (`core.symlinks=false`, `core.filemode=false`) behave.
-> Then init, commit, clone and push against a host server in the emulator, measuring
-> RAM and stack. If it passes, this phase is rewritten around `esp_git_*()` builtins and
-> `:EspGit*` commands, and DECISIONS records why. If not, the pure-Python design stands.
+**Built on libgit2 (decided 2026-09-28, stage 6z).** The first design (at the end,
+superseded) was a pure-Python git on MicroPython, because no ESP-IDF port of libgit2
+existed. The 6z gate ported libgit2 1.9.7 the way Vim was ported instead, and it passed:
+git is C, it no longer depends on Phase 7, and it brings full clone, fetch, push and merge
+rather than a hand-written subset. DECISIONS.md (2026-09-28) has the reasoning.
 
-**Depends on Phase 7.** Implemented as a MicroPython package (frozen into the app as `.mpy`),
-modelled on `benhoyt/pygit`, with the hot paths in C as tabulated in the findings above:
-`hashlib.sha1`, `deflate`, the native HTTPS/SSH transports and Vim's `xdiff`.
+### The 6z gate (done 2026-09-28)
 
-**Stage 1 — local repository.** A real on-disk `.git` with loose objects, so the repo is
-valid for real git the moment you pull the SD card: object read/write (blob, tree, commit,
-tag), index v2 read/write, refs and `packed-refs`, `HEAD` and branches. Commands:
-`:EspGitInit`, `:EspGitAdd`, `:EspGitStatus`, `:EspGitCommit`, `:EspGitLog`, `:EspGitDiff`,
-`:EspGitCheckout`. `:EspGitDiff` renders through Vim's existing `FEAT_DIFF`/xdiff rather
-than a Python differ.
+`components/libgit2` builds upstream's sources from `build-deps/libgit2` with a
+hand-written `git2_features.h`: no threads, no `mmap` (upstream's read-into-memory
+fallback), SHA-1/SHA-256 and HTTPS from ESP-IDF's mbedTLS, SSH from the libssh2 of 6d,
+newlib's `regcomp` (not the bundled PCRE2), the bundled zlib and llhttp, `poll()`. Five
+small patches (`patches/libgit2/`), all `#ifdef ESP_PLATFORM`:
 
-**Loose objects on FAT will bite.** A `.git` accumulating thousands of loose objects on a
-5.5 MB FATFS partition is pathological for both slack space (every object rounds up to a
-cluster) and directory-scan time. `:EspGitGc` — pack loose objects into a packfile — is the
-mitigation, and it is nearly free because Stage 2 already builds packfile *writing*. Run it
-automatically past a loose-object threshold.
+| Patch | Why |
+|---|---|
+| 0001 `p_rename` | FAT's `rename()` refuses an existing target, and IDF's `link()` copies the file: replace by remove-then-rename, as on Windows |
+| 0002 small I/O buffers | `GIT_BUFSIZE_*` are 64 KB **stack** arrays (hashing a file, writing a blob): the first run crashed both cores. 4 KB |
+| 0003 small compress buffer | the packbuilder's 1 MB zlib output buffer was most of a push's heap. 16 KB |
+| 0004 small pack cache | the delta-base cache may hold 16 MB. 1 MB, and nothing over 256 KB cached |
+| 0005 certificate bundle | no CA file on the device: ESP-IDF's bundle, so HTTPS verifies |
 
-**Stage 2 — push.** pkt-line framing, capability negotiation, `git-receive-pack` over
-smart-HTTPS and over SSH (`libssh2` exec'ing `git-receive-pack` on the remote — the same
-connection code as SCP/SFTP). **Write delta-free packfiles**: every object a full zlib
-entry. Costs bandwidth, saves the single most complex piece of git.
+Port shims (`port/esp_port.[ch]`): `lstat` is `stat`, no symlinks, no password database,
+`utimes` through `utime`, no process groups, `gai_strerror`. Two name clashes with Vim:
+its bundled xdiff (`xdl_*`) and its `'write'` option (`p_write`), renamed on libgit2's
+side. The device sets `GIT_OPT_SET_MWINDOW_SIZE` 256 KB, `…_MAPPED_LIMIT` 1 MB and
+`GIT_OPT_SET_CACHE_MAX_SIZE` 1 MB: without mmap a pack window is a malloc'd copy, and the
+32-bit default window is 32 MB.
 
-**Stage 3 — clone and fetch.** The genuinely new work, since pygit has no read side:
-`git-upload-pack`, want/have negotiation, and **packfile reading with delta resolution for
-both `ofs-delta` and `ref-delta`**. Restrict merging to fast-forward only; a real merge
-engine is out of scope and should be stated as such.
+**Test:** `scripts/vim-build.sh p4git` (the P4 build plus `CONFIG_ESP_VIM_GIT_SELFTEST`)
+and `esp-vim/test/git.py` (`pixi run vim-test-git`). The host serves a bare repository
+with a packed, delta-compressed history (30 commits, 55 deltas) over smart HTTP (`git
+http-backend`), git:// (`git daemon`) and SSH (the 6d sshd, with the device's key); a
+task on the device runs the steps and the host checks what arrived. Measured in esp-emu
+(P4):
 
-**Be clear-eyed about this phase.** It is the largest item in the plan and the one most
-likely to slip; the pure-Python route makes it affordable, not small. Stage 1 alone delivers
-most of the practical value (version history for files edited on the device), so ship the
-stages independently rather than as one gate. Performance scales with repo size — fine for a
-handful of files, slow for a large tree — and that is an accepted trade.
+| | Result |
+|---|---|
+| Flash | libgit2 **392 KB** (372 KB text); app 2.95 → 3.43 MB of the 7 MB partition |
+| Local | init (probes `core.filemode=false`, `core.symlinks=false` on FAT), two commits, status, branch + checkout: all pass, ≤ 56 KB heap |
+| Clone | HTTP, git://, SSH: the host's head and all 30 commits, ~2 s, ~0.53 MB heap peak |
+| Push | all three; the host's `git fsck --strict` passes and has the device's commit; ~1 s, ~0.64 MB peak |
+| Fetch | all three, ~0.52 MB peak |
+| HTTPS | a public GitHub repository, certificate verified by the bundle, 3.8 s |
+| Larger pack | a 620 KB pack (several windows) cloned: 2.0 MB heap peak (5.7 MB before patch 0004) |
+| Stack | 13.7 KB used (patch 0002 made that possible) |
+| Leaks | none: every byte freed by `git_libgit2_shutdown()` |
 
-Also emulator-testable end to end: run a real `sshd` and a bare repo on the host, reachable
-over `--net user`.
+Not yet covered: a thin pack on fetch (ref-delta against local objects: the test's
+fetches had nothing new), merges, real hardware, and an S3 build that links it (libgit2
+compiles for Xtensa in every S3 variant, unlinked). On an S3, the 2 MB peak of a larger
+clone has to fit beside Vim's 2.5 MB heap in 8 MB of PSRAM.
+
+### The design, from here
+
+- **`esp_git_*()` builtins** in the Vim component over a small `esp_git` C layer (not the
+  self-test), each returning a Dict or List like the other `esp_*()` builtins, and
+  **`:EspGit*` commands** in `plugin/esp.vim`: `Init`, `Add`, `Status`, `Commit`, `Log`,
+  `Diff`, `Checkout`, `Branch`, `Clone`, `Fetch`, `Pull` (fast-forward and merge),
+  `Push`. `:EspGitDiff` shows libgit2's patch text in a `diff` buffer; `:EspGitStatus` a
+  status window like the others (`R`, `q`).
+- **libgit2 runs on the Vim task**, as libssh2 does for `esp_ssh`: 14 KB of stack fits in
+  Vim's 64 KB, and one caller keeps the no-threads build honest. The web server never
+  calls it. Transfer and checkout callbacks drive the busy indicator and return an error
+  on CTRL-C, so a clone can be interrupted.
+- **Credentials:** SSH with the device key (`esp_ssh_keygen()`) and `known_hosts` checked
+  as `esp_ssh` does (trust on first use, never a changed key); HTTPS with a user and token
+  from NVS, never in the repository's config. Author name and email from `git config` or
+  NVS.
+- **Loose objects on FAT will bite** (every object rounds up to a cluster): `:EspGitGc`
+  repacks with libgit2's packbuilder, automatically past a loose-object threshold.
+- Emulator-testable end to end as the gate was; Phase 9 repeats it over the Tab5's C6.
+
+### Superseded: pure Python on MicroPython (2026-09-23 design)
+
+Git as a frozen MicroPython package modelled on `benhoyt/pygit`, with SHA-1, deflate, the
+transports and xdiff in C, delivered in three stages: a local repository, push with
+delta-free packfiles, then clone and fetch with delta resolution written from scratch.
+Kept for the record; libgit2 does all of it, faster, and without Phase 7.
 
 ---
 
@@ -1171,7 +1201,7 @@ touches go to the overlay while it's up.
 - **ESP-IDF's `esp_hidh`** (HID host) does GATT discovery and report-map parsing, with
   boot-protocol keyboards as the fallback.
 - Flash cost of NimBLE plus `esp_hidh`: **to be measured** against the app partition,
-  alongside MicroPython and (if Phase 8 goes that way) libgit2.
+  alongside MicroPython and libgit2 (392 KB, measured in 6z).
 
 ### Input path
 
@@ -1562,10 +1592,10 @@ board (github.com/waveshareteam/ESP32-S3-RLCD-4.2).
 | Phase 6 | Web manager: refuses to start with no password; TLS up with the fingerprint printed; login, browse, upload, download, rename, delete, mkdir; CSRF token required on mutations; failed-login backoff observed |
 | Phase 6 | Web settings panel round trip: change an editor option in the browser, observe Vim apply it via the queue; SSE status stream shows live line and word counts as you type, and `wordcount()` values match `g CTRL-G` |
 | Phase 7 | `:EspPyRun` on a buffer with output and a traceback in quickfix; `vim` module edits a buffer; `esp` module toggles a GPIO; `CTRL-C` interrupts an infinite loop without killing Vim; heap returns to baseline after `:EspPyReset` |
-| Phase 8 | Stage 1: `:EspGitInit`/`add`/`commit`/`log`/`diff`, then **`git fsck` and `git log` on the host** against the copied-off repo — the real-git-compatibility check is the gate |
-| Phase 8 | Stage 2: push to a bare repo on the host over both HTTPS and SSH; host-side `git log` shows the commits |
-| Phase 8 | Stage 3: clone and verify checked-out blobs byte-for-byte. **Both delta forms must be exercised deliberately** — real servers send `ofs-delta` almost exclusively once the client advertises it, so `ref-delta` is only reached by omitting that capability from our advertisement (or by constructing such a packfile by hand). Test both paths explicitly or the gate silently covers one |
-| Phase 8 | `:EspGitGc` packs loose objects; repo still passes host-side `git fsck` afterwards |
+| Phase 8 (6z, **passed** 2026-09-28) | `pixi run vim-test-git`: libgit2's init, commit, status and checkout on FAT; clone, push and fetch over HTTP, git:// and SSH against the host, whose `git fsck --strict` passes after each push; `--https` clones from GitHub with the certificate verified; a 620 KB pack cloned within 2 MB of heap; no leaks |
+| Phase 8 | The same through `:EspGit*` on the Vim task: `:EspGitInit`/`Add`/`Commit`/`Log`/`Diff`, then **`git fsck` and `git log` on the host** against the copied-off repo |
+| Phase 8 | A fetch that gets a **thin pack** (ref-deltas against objects the device already has): commit on the host after the device clones, then fetch and fast-forward |
+| Phase 8 | CTRL-C during a clone stops it cleanly; `:EspGitGc` packs loose objects and the repo still passes host-side `git fsck` |
 | Phase 9 | **Re-test the Vim task unpinned** (drop `xTaskCreatePinnedToCore(..., 0)`). Under the emulator, running Vim on core 1 crashed `esp_vfs_select` with a NULL-spinlock assert; the cause (IDF cross-core select vs the emulator's multi-hart model) is unresolved — see PHASE3.md |
 | Phase 9 | **Re-run the Phase 1 spike on real silicon** (`pixi run spike-build` + flash) and diff against `docs/phase1-spike-results.txt` — the emulator's answers are assumptions until confirmed on a real UART and real flash |
 | Phase 9 | Scripted round trip on Tab5 over real UART; heap, redraw timing and C6 latency recorded |
@@ -1597,9 +1627,9 @@ plan that quietly diverges from the build is worse than no plan.
 - The web file manager uses a self-signed certificate; browsers will warn, and trust is
   established on first use by checking the printed fingerprint.
 - The Tab5 keyboard accessory has no F-key row; F1–F12 exist only as a `Sym` layer.
-- Git is pure Python on MicroPython: correct and real-git-compatible, but performance scales
-  with repo size — fine for a working set of files, slow on a large tree. Merging is
-  fast-forward only.
+- Git is libgit2, so repositories are real git's, but a device's RAM bounds them: every
+  object must fit in memory whole, and a clone of a 620 KB pack peaks at 2 MB of heap.
+  Fine for a working set of files, not for a large tree.
 - MicroPython runs synchronously on the Vim task, so a long script blocks the editor until
   it finishes or is interrupted with `CTRL-C`.
 - Flash, not RAM, is the limiting resource; see the Phase 4 levers if the app partition
