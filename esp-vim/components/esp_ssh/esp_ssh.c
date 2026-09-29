@@ -25,6 +25,7 @@
 #include "mbedtls/base64.h"
 #include "mbedtls/ecp.h"
 #include "mbedtls/pk.h"
+#include "mbedtls/sha256.h"
 
 #define CHUNK       16384
 #define TIMEOUT_MS  20000
@@ -199,6 +200,65 @@ static int knownhost_keybits(int type)
     }
 }
 
+/*
+ * Check (or, with {add}, record) {host}:{port}'s key -- {key}, {len} bytes, a
+ * LIBSSH2_HOSTKEY_TYPE_* -- against known_hosts. {session} only carries
+ * libssh2's known-hosts API; it need not be connected.
+ */
+static int check_key(LIBSSH2_SESSION *session, const char *host, int port, const char *key,
+                     size_t len, int type, bool add, esp_ssh_hostkey_t *out, char *err, size_t n)
+{
+    esp_ssh_hostkey_t hk = {0};
+    snprintf(hk.type, sizeof hk.type, "%s", key_type_name(type));
+    unsigned char sha[32], b64[48];
+    size_t olen = 0;
+    if (mbedtls_sha256((const unsigned char *)key, len, sha, 0) == 0) {
+        mbedtls_base64_encode(b64, sizeof b64, &olen, sha, 32);
+        while (olen > 0 && b64[olen - 1] == '=')
+            olen--;                             /* ssh-keygen prints no padding */
+        b64[olen] = '\0';
+        snprintf(hk.fingerprint, sizeof hk.fingerprint, "SHA256:%s", b64);
+    }
+
+    LIBSSH2_KNOWNHOSTS *kh = libssh2_knownhost_init(session);
+    if (kh == NULL)
+        return fail(err, n, -1, "known_hosts: out of memory");
+    libssh2_knownhost_readfile(kh, ESP_SSH_KNOWN_HOSTS, LIBSSH2_KNOWNHOST_FILE_OPENSSH);
+    int typemask = LIBSSH2_KNOWNHOST_TYPE_PLAIN | LIBSSH2_KNOWNHOST_KEYENC_RAW | knownhost_keybits(type);
+    struct libssh2_knownhost *found = NULL;
+    int c = libssh2_knownhost_checkp(kh, host, port, key, len, typemask, &found);
+    int rc = 0;
+    if (c == LIBSSH2_KNOWNHOST_CHECK_MATCH) {
+        hk.status = 0;
+    } else if (c == LIBSSH2_KNOWNHOST_CHECK_MISMATCH) {
+        hk.status = ESP_SSH_E_HOSTKEY_CHANGED;
+        rc = fail(err, n, ESP_SSH_E_HOSTKEY_CHANGED,
+                  "esp_ssh: host key CHANGED for %s (%s %s); remove its line from %s "
+                  "only if you know why it changed", host, hk.type, hk.fingerprint,
+                  ESP_SSH_KNOWN_HOSTS);
+    } else if (add) {
+        /* known_hosts writes "[host]:port" for non-22 ports, like OpenSSH. */
+        char name[160];
+        if (port == 22)
+            snprintf(name, sizeof name, "%s", host);
+        else
+            snprintf(name, sizeof name, "[%s]:%d", host, port);
+        mkdir(ESP_SSH_DIR, 0700);
+        if (libssh2_knownhost_addc(kh, name, NULL, key, len, NULL, 0, typemask, NULL) != 0
+                || libssh2_knownhost_writefile(kh, ESP_SSH_KNOWN_HOSTS,
+                                               LIBSSH2_KNOWNHOST_FILE_OPENSSH) != 0)
+            rc = fail(err, n, -1, "%s: could not write %s", host, ESP_SSH_KNOWN_HOSTS);
+    } else {
+        hk.status = ESP_SSH_E_HOSTKEY_UNKNOWN;
+        rc = fail(err, n, ESP_SSH_E_HOSTKEY_UNKNOWN,
+                  "esp_ssh: unknown host key for %s (%s %s)", host, hk.type, hk.fingerprint);
+    }
+    libssh2_knownhost_free(kh);
+    if (out != NULL)
+        *out = hk;
+    return rc;
+}
+
 /* Check (or, with {add}, record) the connected server's key. */
 static int check_hostkey(const url_t *u, bool add, esp_ssh_hostkey_t *out, char *err, size_t n)
 {
@@ -207,57 +267,17 @@ static int check_hostkey(const url_t *u, bool add, esp_ssh_hostkey_t *out, char 
     const char *key = libssh2_session_hostkey(S.session, &len, &type);
     if (key == NULL)
         return fail(err, n, -1, "%s: no host key", u->host);
+    return check_key(S.session, u->host, u->port, key, len, type, add, out, err, n);
+}
 
-    esp_ssh_hostkey_t hk = {0};
-    snprintf(hk.type, sizeof hk.type, "%s", key_type_name(type));
-    const unsigned char *sha = (const unsigned char *)
-        libssh2_hostkey_hash(S.session, LIBSSH2_HOSTKEY_HASH_SHA256);
-    if (sha != NULL) {
-        unsigned char b64[48];
-        size_t olen = 0;
-        mbedtls_base64_encode(b64, sizeof b64, &olen, sha, 32);
-        while (olen > 0 && b64[olen - 1] == '=')
-            olen--;                             /* ssh-keygen prints no padding */
-        b64[olen] = '\0';
-        snprintf(hk.fingerprint, sizeof hk.fingerprint, "SHA256:%s", b64);
-    }
-
-    LIBSSH2_KNOWNHOSTS *kh = libssh2_knownhost_init(S.session);
-    if (kh == NULL)
-        return fail(err, n, -1, "known_hosts: out of memory");
-    libssh2_knownhost_readfile(kh, ESP_SSH_KNOWN_HOSTS, LIBSSH2_KNOWNHOST_FILE_OPENSSH);
-    int typemask = LIBSSH2_KNOWNHOST_TYPE_PLAIN | LIBSSH2_KNOWNHOST_KEYENC_RAW | knownhost_keybits(type);
-    struct libssh2_knownhost *found = NULL;
-    int c = libssh2_knownhost_checkp(kh, u->host, u->port, key, len, typemask, &found);
-    int rc = 0;
-    if (c == LIBSSH2_KNOWNHOST_CHECK_MATCH) {
-        hk.status = 0;
-    } else if (c == LIBSSH2_KNOWNHOST_CHECK_MISMATCH) {
-        hk.status = ESP_SSH_E_HOSTKEY_CHANGED;
-        rc = fail(err, n, ESP_SSH_E_HOSTKEY_CHANGED,
-                  "esp_ssh: host key CHANGED for %s (%s %s); remove its line from %s "
-                  "only if you know why it changed", u->host, hk.type, hk.fingerprint,
-                  ESP_SSH_KNOWN_HOSTS);
-    } else if (add) {
-        /* known_hosts writes "[host]:port" for non-22 ports, like OpenSSH. */
-        char name[160];
-        if (u->port == 22)
-            snprintf(name, sizeof name, "%s", u->host);
-        else
-            snprintf(name, sizeof name, "[%s]:%d", u->host, u->port);
-        mkdir(ESP_SSH_DIR, 0700);
-        if (libssh2_knownhost_addc(kh, name, NULL, key, len, NULL, 0, typemask, NULL) != 0
-                || libssh2_knownhost_writefile(kh, ESP_SSH_KNOWN_HOSTS,
-                                               LIBSSH2_KNOWNHOST_FILE_OPENSSH) != 0)
-            rc = fail(err, n, -1, "%s: could not write %s", u->host, ESP_SSH_KNOWN_HOSTS);
-    } else {
-        hk.status = ESP_SSH_E_HOSTKEY_UNKNOWN;
-        rc = fail(err, n, ESP_SSH_E_HOSTKEY_UNKNOWN,
-                  "esp_ssh: unknown host key for %s (%s %s)", u->host, hk.type, hk.fingerprint);
-    }
-    libssh2_knownhost_free(kh);
-    if (out != NULL)
-        *out = hk;
+int esp_ssh_check_hostkey(const char *host, int port, const char *key, size_t len, int type,
+                          char *err, size_t errlen)
+{
+    LIBSSH2_SESSION *session = libssh2_session_init();
+    if (session == NULL)
+        return fail(err, errlen, -1, "esp_ssh: out of memory");
+    int rc = check_key(session, host, port, key, len, type, false, NULL, err, errlen);
+    libssh2_session_free(session);
     return rc;
 }
 

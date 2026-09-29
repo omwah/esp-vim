@@ -17,7 +17,7 @@
 | 5 — Emulator bring-up over UART | **done** (2026-09-24), see [PHASE5.md](PHASE5.md) — interactive over UART; `:q` restarts in place; chip-named splash, device help, busy indicator. P4 gate green. **S3: open intermittent heap corruption under the emulator**, gate informational until tested on silicon |
 | 6 — `:Esp*` commands, file manager, transports, web | **in progress**, see [PHASE6.md](PHASE6.md). 6a–6e done 2026-09-24; 6f done 2026-09-25 (serial, I2C, ADC, sensors, S3 WiFi and BLE scan tested; Tab5 WiFi via the C6 built, with its run-time check moved to Phase 9 because esp-emu cannot run esp-hosted) |
 | 7 — MicroPython | not started |
-| 8 — Git | not started. **Built on libgit2** (decided 2026-09-28 by the stage 6z gate: init, commit, status, checkout, clone, fetch and push over HTTP, HTTPS, git:// and SSH in the emulator), so it no longer waits for Phase 7; see Phase 8 |
+| 8 — Git | **done, first cut** (2026-09-28): on libgit2 (the stage 6z gate), 18 `esp_git_*()` builtins and 19 `:EspGit*` commands in every build; emulator gate `git.py` green on the P4; clone, push, fast-forward and merge pulls tested on a real ESP32-S3 (Freenove FNK0115) over WiFi, HTTPS and the LAN. See Phase 8 |
 | 9 — Tab5 hardware over UART | not started |
 | 10 — Tab5 display console | not started |
 | 10b — ESP32-S3 CYD display console | **in progress, pulled forward** (2026-09-25): Vim on the Hosyond ES3C28P's panel and the Freenove FNK0115Q's 5" RGB panel; see Phase 10b |
@@ -993,12 +993,11 @@ side. The device sets `GIT_OPT_SET_MWINDOW_SIZE` 256 KB, `…_MAPPED_LIMIT` 1 MB
 `GIT_OPT_SET_CACHE_MAX_SIZE` 1 MB: without mmap a pack window is a malloc'd copy, and the
 32-bit default window is 32 MB.
 
-**Test:** `scripts/vim-build.sh p4git` (the P4 build plus `CONFIG_ESP_VIM_GIT_SELFTEST`)
-and `esp-vim/test/git.py` (`pixi run vim-test-git`). The host serves a bare repository
-with a packed, delta-compressed history (30 commits, 55 deltas) over smart HTTP (`git
-http-backend`), git:// (`git daemon`) and SSH (the 6d sshd, with the device's key); a
-task on the device runs the steps and the host checks what arrived. Measured in esp-emu
-(P4):
+**Test:** a self-test task in a `p4git` build variant (both since replaced by the
+Phase 8 builtins and their gate). The host served a bare repository with a packed,
+delta-compressed history (30 commits, 55 deltas) over smart HTTP (`git http-backend`),
+git:// (`git daemon`) and SSH (the 6d sshd, with the device's key); the task ran the
+steps and the host checked what arrived. Measured in esp-emu (P4):
 
 | | Result |
 |---|---|
@@ -1012,30 +1011,59 @@ task on the device runs the steps and the host checks what arrived. Measured in 
 | Stack | 13.7 KB used (patch 0002 made that possible) |
 | Leaks | none: every byte freed by `git_libgit2_shutdown()` |
 
-Not yet covered: a thin pack on fetch (ref-delta against local objects: the test's
-fetches had nothing new), merges, real hardware, and an S3 build that links it (libgit2
-compiles for Xtensa in every S3 variant, unlinked). On an S3, the 2 MB peak of a larger
-clone has to fit beside Vim's 2.5 MB heap in 8 MB of PSRAM.
+What 6z left open (thin packs, merges, real hardware, an S3 build that links it) the
+Phase 8 gate and the Freenove below cover.
 
-### The design, from here
+### Git in Vim (done 2026-09-28)
 
-- **`esp_git_*()` builtins** in the Vim component over a small `esp_git` C layer (not the
-  self-test), each returning a Dict or List like the other `esp_*()` builtins, and
-  **`:EspGit*` commands** in `plugin/esp.vim`: `Init`, `Add`, `Status`, `Commit`, `Log`,
-  `Diff`, `Checkout`, `Branch`, `Clone`, `Fetch`, `Pull` (fast-forward and merge),
-  `Push`. `:EspGitDiff` shows libgit2's patch text in a `diff` buffer; `:EspGitStatus` a
-  status window like the others (`R`, `q`).
-- **libgit2 runs on the Vim task**, as libssh2 does for `esp_ssh`: 14 KB of stack fits in
-  Vim's 64 KB, and one caller keeps the no-threads build honest. The web server never
-  calls it. Transfer and checkout callbacks drive the busy indicator and return an error
-  on CTRL-C, so a clone can be interrupted.
-- **Credentials:** SSH with the device key (`esp_ssh_keygen()`) and `known_hosts` checked
-  as `esp_ssh` does (trust on first use, never a changed key); HTTPS with a user and token
-  from NVS, never in the repository's config. Author name and email from `git config` or
-  NVS.
-- **Loose objects on FAT will bite** (every object rounds up to a cluster): `:EspGitGc`
-  repacks with libgit2's packbuilder, automatically past a loose-object threshold.
-- Emulator-testable end to end as the gate was; Phase 9 repeats it over the Tab5's C6.
+- **`esp_git_*()` builtins** (`components/vim/api/esp_api_git.c`), each returning plain
+  data: `init`, `status`, `add`, `reset` (unstage), `restore` (discard), `commit`, `log`,
+  `diff`, `show`, `branch`, `checkout`, `config`, `remote`, `clone`, `fetch`, `pull`,
+  `push`, `gc`. Under them `components/esp_git`: libgit2's set-up and memory limits, the
+  credential and certificate callbacks, and `gc`.
+- **`:EspGit*` commands** (`autoload/esp/git.vim`, `:help esp-git`): `Init`, `Status` (a
+  window: `a` add, `u` unstage, `x` discard, `d` diff, `<CR>` edit, `c` commit), `Add`,
+  `Reset`, `Restore`, `Commit` (a message buffer, `:w` commits; `!` stages everything),
+  `Log` (a window; `<CR>` shows a commit), `Show`, `Diff`, `Branch`, `Checkout`, `Clone`,
+  `Fetch`, `Pull`, `Push`, `Remote`, `Config`, `Credential`, `Gc`.
+- **libgit2 runs on the Vim task**, as libssh2 does for `esp_ssh`: 14 KB of stack in Vim's
+  64 KB, one caller for a no-threads build; the web server never calls it. Progress goes
+  to the command line, and CTRL-C stops a transfer (the callbacks return an error; a
+  clone removes what it made).
+- **Pull** fetches, then fast-forwards or merges the upstream, committing a clean merge
+  ("Merge branch 'main' of <url>", as git words it). A conflict leaves markers in the
+  files and the repository in its merge state: fix, `:EspGitAdd`, and `:EspGitCommit`
+  finishes it with both parents.
+- **Credentials:** SSH with the device key and `known_hosts` checked by `esp_ssh`'s rules
+  (a new `esp_ssh_check_hostkey()`: the first time asks, as `:EspFiles` does; a changed
+  key is refused); HTTPS certificates by ESP-IDF's bundle, and a user and token from NVS
+  (`:EspGitCredential`). The author comes from git config: `/fat/.gitconfig` is the
+  device-wide one (HOME is `/fat`).
+- **Loose objects:** `:EspGitGc` packs everything reachable into one pack, deletes the
+  loose objects it holds and older packs it makes redundant; after a commit it runs by
+  itself past about 1000 loose objects (estimated from `objects/17`, as git does).
+- **Memory from PSRAM first.** ESP-IDF gives any allocation under 16 KB internal RAM, and
+  a clone makes thousands: on the S3 they used it all up, and TLS then failed for want of
+  a socket buffer. libgit2 and its zlib now allocate from PSRAM first (the force-included
+  `port/esp_port.h`).
+
+**Emulator gate** (`esp-vim/test/git.py`, in `pixi run vim-test` and alone as `pixi run
+vim-test-git`), all through the builtins and commands: a local repository end to end
+(and gc); the status, commit-message and log windows; clone, push and pull over HTTP
+with the host committing too -- a fast-forward (a thin pack), a clean merge, and a
+conflict resolved by hand -- with `git fsck --strict` on the host after each push; clone
+and push over git:// and over SSH, answering the host-key question; CTRL-C during a
+clone, leaving nothing; and a larger clone to the end.
+
+**On a real ESP32-S3** (Freenove FNK0115, WiFi): local init, commit (~2 s: FAT on flash),
+status, diff, branch, checkout and gc; a clone of a public GitHub repository over HTTPS
+(21 commits, 17 s, the certificate verified); against a host on the LAN, a clone (30
+commits, 13 s), a push (1.7 s), a fast-forward pull and merge pulls, with `git fsck
+--strict` clean on the host. Internal RAM stayed above 3.6 KB at its lowest, PSRAM above
+2.4 MB. The app is 4.02 MB of the 7 MB partition.
+
+Not yet: SSH on hardware (the emulator covers it), the Tab5 (Phase 9), rebase, stash,
+submodules and hooks (not planned).
 
 ### Superseded: pure Python on MicroPython (2026-09-23 design)
 
@@ -1592,10 +1620,9 @@ board (github.com/waveshareteam/ESP32-S3-RLCD-4.2).
 | Phase 6 | Web manager: refuses to start with no password; TLS up with the fingerprint printed; login, browse, upload, download, rename, delete, mkdir; CSRF token required on mutations; failed-login backoff observed |
 | Phase 6 | Web settings panel round trip: change an editor option in the browser, observe Vim apply it via the queue; SSE status stream shows live line and word counts as you type, and `wordcount()` values match `g CTRL-G` |
 | Phase 7 | `:EspPyRun` on a buffer with output and a traceback in quickfix; `vim` module edits a buffer; `esp` module toggles a GPIO; `CTRL-C` interrupts an infinite loop without killing Vim; heap returns to baseline after `:EspPyReset` |
-| Phase 8 (6z, **passed** 2026-09-28) | `pixi run vim-test-git`: libgit2's init, commit, status and checkout on FAT; clone, push and fetch over HTTP, git:// and SSH against the host, whose `git fsck --strict` passes after each push; `--https` clones from GitHub with the certificate verified; a 620 KB pack cloned within 2 MB of heap; no leaks |
-| Phase 8 | The same through `:EspGit*` on the Vim task: `:EspGitInit`/`Add`/`Commit`/`Log`/`Diff`, then **`git fsck` and `git log` on the host** against the copied-off repo |
-| Phase 8 | A fetch that gets a **thin pack** (ref-deltas against objects the device already has): commit on the host after the device clones, then fetch and fast-forward |
-| Phase 8 | CTRL-C during a clone stops it cleanly; `:EspGitGc` packs loose objects and the repo still passes host-side `git fsck` |
+| Phase 8 (6z, **passed** 2026-09-28) | libgit2's init, commit, status and checkout on FAT; clone, push and fetch over HTTP, git:// and SSH against the host, whose `git fsck --strict` passes after each push; HTTPS from GitHub with the certificate verified; a 620 KB pack cloned within 2 MB of heap; no leaks |
+| Phase 8 (**passed** 2026-09-28) | `pixi run vim-test-git`, through the builtins and `:EspGit*` on the Vim task: a local repository and gc; the status, commit and log windows; pulls that fast-forward (a **thin pack**), merge, and conflict then are resolved by hand; push with host `git fsck --strict` after each; git:// and SSH (the host-key question); CTRL-C during a clone leaves nothing |
+| Phase 8 | On hardware: the same over WiFi on an S3 (done on the Freenove, except SSH), and on the Tab5 over the C6 (Phase 9) |
 | Phase 9 | **Re-test the Vim task unpinned** (drop `xTaskCreatePinnedToCore(..., 0)`). Under the emulator, running Vim on core 1 crashed `esp_vfs_select` with a NULL-spinlock assert; the cause (IDF cross-core select vs the emulator's multi-hart model) is unresolved — see PHASE3.md |
 | Phase 9 | **Re-run the Phase 1 spike on real silicon** (`pixi run spike-build` + flash) and diff against `docs/phase1-spike-results.txt` — the emulator's answers are assumptions until confirmed on a real UART and real flash |
 | Phase 9 | Scripted round trip on Tab5 over real UART; heap, redraw timing and C6 latency recorded |

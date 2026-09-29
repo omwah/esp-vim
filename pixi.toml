@@ -78,18 +78,17 @@ vim-build-es3c28p = { cmd = 'bash -c ". scripts/env.sh >/dev/null && scripts/vim
 
 vim-build-fnk0115 = { cmd = 'bash -c ". scripts/env.sh >/dev/null && scripts/vim-build.sh fnk0115"', depends-on = ["runtime"], description = "Build the Vim firmware for the Freenove FNK0115 (ESP32-S3, 5\" 800x480 RGB panel)" }
 vim-build-rlcd42 = { cmd = 'bash -c ". scripts/env.sh >/dev/null && scripts/vim-build.sh rlcd42"', depends-on = ["runtime"], description = "Build the Vim firmware for the Waveshare ESP32-S3-RLCD-4.2 (4.2\" 400x300 reflective mono LCD): console on its USB port" }
-vim-build-p4git = { cmd = 'bash -c ". scripts/env.sh >/dev/null && scripts/vim-build.sh p4git"', depends-on = ["runtime"], description = "Build the ESP32-P4 emulator firmware with the libgit2 self-test (stage 6z)" }
 
 c6-build = { cmd = 'bash -c ". scripts/env.sh >/dev/null && scripts/c6-build.sh"', description = "Build the ESP32-C6 co-processor firmware (esp-hosted) the Tab5 build talks to" }
 
 vim-size = { cmd = 'bash -c ". scripts/env.sh >/dev/null && cd esp-vim && riscv32-esp-elf-size -t $(find build-esp32p4 -path \"*__idf_vim.dir*\" -name \"*.c.obj\") | tail -1"', description = "Report the Vim component's text/data/bss" }
 screenshots = { cmd = 'bash -c ". scripts/env.sh >/dev/null && \"$CONDA_PREFIX/bin/python\" scripts/screenshots.py"', description = "Regenerate docs/images/*.svg from the firmware running in the emulator (build first)" }
 
-vim-test = { cmd = 'bash -c ". scripts/env.sh >/dev/null && esp-vim/test/roundtrip.sh && python esp-vim/test/interactive.py && python esp-vim/test/web.py && python esp-vim/test/hw.py&& python esp-vim/test/wifi.py && python esp-vim/test/ble.py"', depends-on = ["vim-build"], description = "Emulator gate on ESP32-P4: round trips across reboots, interactive console checks, web interface, peripherals, WiFi and Bluetooth (where the build has them)" }
+vim-test = { cmd = 'bash -c ". scripts/env.sh >/dev/null && esp-vim/test/roundtrip.sh && python esp-vim/test/interactive.py && python esp-vim/test/web.py && python esp-vim/test/hw.py&& python esp-vim/test/wifi.py && python esp-vim/test/ble.py && python esp-vim/test/git.py"', depends-on = ["vim-build"], description = "Emulator gate on ESP32-P4: round trips across reboots, interactive console checks, web interface, peripherals, WiFi and Bluetooth (where the build has them), git" }
 
 vim-test-s3 = { cmd = 'bash -c ". scripts/env.sh >/dev/null && export ESPVIM_TARGET=esp32s3 && esp-vim/test/roundtrip.sh && python esp-vim/test/interactive.py && python esp-vim/test/web.py && python esp-vim/test/hw.py&& python esp-vim/test/wifi.py && python esp-vim/test/ble.py"', depends-on = ["vim-build-s3"], description = "The same emulator gate on the ESP32-S3 variant" }
 
-vim-test-git = { cmd = 'bash -c ". scripts/env.sh >/dev/null && ESPVIM_TARGET=p4git python esp-vim/test/git.py"', depends-on = ["vim-build-p4git"], description = "libgit2 gate (stage 6z): init, commit, status, checkout, then clone, push and fetch over HTTP, git:// and SSH against the host, in the emulator" }
+vim-test-git = { cmd = 'bash -c ". scripts/env.sh >/dev/null && python esp-vim/test/git.py"', depends-on = ["vim-build"], description = "Git gate (Phase 8) on ESP32-P4: the esp_git_*() builtins and :EspGit* commands against a host over HTTP, git:// and SSH" }
 
 # Phase 2: generate a baseline config.h on the HOST, to be curated by hand.
 # Needs pixi's ncurses: Vim's configure refuses to finish without a terminal

@@ -45,6 +45,26 @@ void f_esp_wifi_forget(typval_T *argvars, typval_T *rettv);
 void f_esp_wifi_saved(typval_T *argvars, typval_T *rettv);
 void f_esp_wifi_scan(typval_T *argvars, typval_T *rettv);
 
+/* api/esp_api_git.c (over libgit2 and components/esp_git) */
+void f_esp_git_add(typval_T *argvars, typval_T *rettv);
+void f_esp_git_branch(typval_T *argvars, typval_T *rettv);
+void f_esp_git_checkout(typval_T *argvars, typval_T *rettv);
+void f_esp_git_clone(typval_T *argvars, typval_T *rettv);
+void f_esp_git_commit(typval_T *argvars, typval_T *rettv);
+void f_esp_git_config(typval_T *argvars, typval_T *rettv);
+void f_esp_git_diff(typval_T *argvars, typval_T *rettv);
+void f_esp_git_fetch(typval_T *argvars, typval_T *rettv);
+void f_esp_git_gc(typval_T *argvars, typval_T *rettv);
+void f_esp_git_init(typval_T *argvars, typval_T *rettv);
+void f_esp_git_log(typval_T *argvars, typval_T *rettv);
+void f_esp_git_pull(typval_T *argvars, typval_T *rettv);
+void f_esp_git_push(typval_T *argvars, typval_T *rettv);
+void f_esp_git_remote(typval_T *argvars, typval_T *rettv);
+void f_esp_git_reset(typval_T *argvars, typval_T *rettv);
+void f_esp_git_restore(typval_T *argvars, typval_T *rettv);
+void f_esp_git_show(typval_T *argvars, typval_T *rettv);
+void f_esp_git_status(typval_T *argvars, typval_T *rettv);
+
 /* api/esp_api_ssh.c (over components/esp_ssh) */
 void f_esp_ssh_get(typval_T *argvars, typval_T *rettv);
 void f_esp_ssh_hostkey(typval_T *argvars, typval_T *rettv);

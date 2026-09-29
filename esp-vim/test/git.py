@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """
-libgit2 feasibility gate (stage 6z, docs/PLAN.md), on the p4git build
-(scripts/vim-build.sh p4git: the P4 build plus CONFIG_ESP_VIM_GIT_SELFTEST).
+Git gate (docs/PLAN.md, Phase 8): the esp_git_*() builtins and the :EspGit*
+commands, in the emulator, against a host.
 
-The host serves a bare repository -- with a packed, delta-compressed history --
+The host serves a bare repository -- a packed, delta-compressed history --
 three ways: smart HTTP (git http-backend behind a small CGI bridge), git://
-(git daemon) and SSH (the unprivileged sshd of interactive.py). The device's
-self-test task (components/esp_git/esp_git_selftest.c) inits, commits, checks
-status and checks out locally, then clones, pushes and fetches over each, and
-prints GIT-ST lines with its time, heap and stack figures. This side checks
-what arrived: the clone's head and history against the host's, and each push
-with git fsck and git show.
+(git daemon) and SSH (the unprivileged sshd of interactive.py), and commits
+into it itself, so the device's pulls get thin packs, merges and a conflict.
+Checked: a local repository (init, status, add, commit, diff, branch,
+checkout, show, gc), the status, commit and log windows, clone/push/pull
+over each transport with git fsck on the host after every push, the SSH
+host-key question, and CTRL-C stopping a clone cleanly.
 
-    ESPVIM_TARGET=p4git python esp-vim/test/git.py [--https URL]
+    python esp-vim/test/git.py [--https URL]
 
 --https also clones a public repository over HTTPS (needs internet access).
 """
@@ -21,7 +21,6 @@ import argparse
 import getpass
 import http.server
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -164,15 +163,36 @@ def start_git_daemon(root):
     return proc, port
 
 
+def host_commit(bare, root, name, text, msg, edit=None):
+    """Commit on the host side: clone {bare}, change {name} (or run {edit}),
+    commit and push back. Returns the new head."""
+    work = Path(tempfile.mkdtemp(dir=root, prefix="hostwork-"))
+    git("clone", "-q", str(bare), str(work))
+    git("config", "user.name", "Host", cwd=work)
+    git("config", "user.email", "host@localhost", cwd=work)
+    if edit:
+        edit(work)
+    else:
+        (work / name).write_text(text)
+    git("add", "-A", cwd=work)
+    git("commit", "-q", "-m", msg, cwd=work)
+    git("push", "-q", "origin", "main", cwd=work)
+    head = git("rev-parse", "HEAD", cwd=work)
+    shutil.rmtree(work)
+    return head
+
+
+def fsck_ok(bare):
+    r = subprocess.run(["git", "fsck", "--strict"], cwd=bare, capture_output=True, text=True)
+    return r.returncode == 0, r.stderr.strip()[:120]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--https", help="also clone this public repository over HTTPS")
     opts = ap.parse_args()
     if DEVICE:
-        print("  SKIP  git: needs the emulator (ESPVIM_DEVICE is set)")
-        return
-    if VARIANT != "p4git":
-        print(f"  SKIP  git: the self-test is in the p4git build, not {VARIANT} (ESPVIM_TARGET=p4git)")
+        print("  SKIP  git: needs the emulator's network to the host (ESPVIM_DEVICE is set)")
         return
 
     tmp = Path(tempfile.mkdtemp(prefix="vim-git-"))
@@ -184,116 +204,209 @@ def main():
         served[kind].parent.mkdir(exist_ok=True)
         shutil.copytree(bare, served[kind])
     big = make_big_repo(tmp)
-    big_head = git("rev-parse", "main", cwd=big)
-    big_pack = sum(p.stat().st_size for p in (big / "objects" / "pack").glob("*.pack"))
     head = git("rev-parse", "main", cwd=bare)
     ncommits = int(git("rev-list", "--count", "main", cwd=bare))
-    deltas = git("verify-pack", "-v", *[str(p) for p in (bare / "objects" / "pack").glob("*.idx")])
-    ndeltas = sum(1 for ln in deltas.splitlines() if re.match(r"^[0-9a-f]{40} \w+ +\d+ \d+ \d+ \d+ [0-9a-f]{40}", ln))
-    print(f"git session (variant {VARIANT}): host repo {head[:12]}, {ncommits} commits, {ndeltas} deltas in its pack;"
-          f" big repo pack {big_pack // 1024} KB")
+    print(f"git session (variant {VARIANT}): host repo {head[:12]}, {ncommits} commits")
 
     srv, http_port = start_git_http(tmp / "srv")
     daemon, git_port = start_git_daemon(tmp / "srv")
     sshroot = tmp / "sshd"
     sshroot.mkdir()
     sshd, ssh_port = start_sshd(sshroot)
-    results, allocs = {}, {}
+    H = HOST_FROM_DEVICE
+    http_url = f"http://{H}:{http_port}/http.git"
     try:
         with Session(term_size=(40, 120), log=str(log)) as s:
-            def probe(tag, expr, timeout=60):
-                s.type(f":echo '{tag}' . '=' . {expr} . '|'\r")
+            def probe(tag, expr, timeout=120):
+                s.type(f":echo '{tag}' . '=' . ({expr}) . '|'\r")
                 return s.expect(rf"{tag}=([^|]*)\|".encode(), timeout).group(1).decode()
+
+            def run(cmd, timeout=300):
+                """An Ex command; returns v:errmsg after it ('' when fine)."""
+                s.type(":let v:errmsg = ''\r")
+                s.type(f":{cmd}\r")
+                s.quiet(1.5, timeout=timeout)
+                return probe("ER", "substitute(v:errmsg, '|', '/', 'g')")
+
+            def ok(cmd, label, timeout=300):
+                err = run(cmd, timeout)
+                check(err == "", label, err)
+                return err == ""
 
             s.expect("ESPVIM-READY", 120)
             s.quiet(2.0)
-            conf = ["dir=/fat/gt", "name=esp-vim test", "email=test@localhost",
-                    f"http=http://{HOST_FROM_DEVICE}:{http_port}/http.git",
-                    f"git=git://{HOST_FROM_DEVICE}:{git_port}/git.git",
-                    f"big=git://{HOST_FROM_DEVICE}:{git_port}/big.git"]
+
+            # -- who is committing, device-wide (/fat/.gitconfig)
+            ok("call esp_git_config('', 'user.name', 'Device Tester') | call esp_git_config('', 'user.email', 'dev@localhost')",
+               "esp_git_config() sets the device-wide author")
+            check(probe("CN", "esp_git_config('', 'user.name')") == "Device Tester",
+                  "  ... and reads it back")
+
+            # -- a local repository
+            ok("call esp_git_init('/fat/work') | call writefile(['one'], '/fat/work/a.txt')",
+               "esp_git_init() makes a repository")
+            got = probe("S0", "join(map(esp_git_status('/fat/work').files, 'v:val.x . v:val.y . v:val.path'), ',')")
+            check(got == "??a.txt", "status: a new file is untracked", got)
+            ok("call esp_git_add('/fat/work', ['/fat/work/a.txt']) | call esp_git_commit('/fat/work', 'First commit')",
+               "add and commit")
+            got = probe("L1", "len(esp_git_log('/fat/work')) . ':' . esp_git_log('/fat/work')[0].summary . ':' . esp_git_status('/fat/work').branch")
+            check(got == "1:First commit:main", "the log has it, on branch main", got)
+            ok("call writefile(['one', 'two'], '/fat/work/a.txt')", "change the file")
+            got = probe("S1", "join(map(esp_git_status('/fat/work').files, 'v:val.x . v:val.y . v:val.path'), ',')")
+            check(got == " Ma.txt", "status: modified in the working tree", repr(got))
+            got = probe("D1", "join(filter(esp_git_diff('/fat/work'), 'v:val =~# \"^[-+][^-+]\"'), ',')")
+            check(got == "+two", "diff shows the new line", got)
+            ok("call esp_git_add('/fat/work') | call esp_git_commit('/fat/work', 'Second')", "add everything, commit")
+            ok("call esp_git_branch('/fat/work', 'feature') | call esp_git_checkout('/fat/work', 'feature')"
+               " | call writefile(['feature'], '/fat/work/b.txt') | call esp_git_add('/fat/work')"
+               " | call esp_git_commit('/fat/work', 'On a branch')", "branch, check out, commit on it")
+            ok("call esp_git_checkout('/fat/work', 'main')", "check out main again")
+            got = probe("CO", "filereadable('/fat/work/b.txt') . ':' . esp_git_status('/fat/work').branch . ':' . len(esp_git_branch('/fat/work'))")
+            check(got == "0:main:2", "the branch's file is gone on main; two branches", got)
+            got = probe("SH", "join(esp_git_show('/fat/work', 'feature')[0:4], '/')")
+            check(got.startswith("commit ") and "Author: Device Tester <dev@localhost>" in got,
+                  "esp_git_show() of a branch", got[:80])
+
+            # -- the commands and their windows
+            ok("e /fat/work/a.txt | call setline(1, 'ONE') | w | EspGitStatus", ":EspGitStatus opens its window")
+            got = probe("SW", "bufname('') . ':' . getline(2)")
+            check(got == "EspGitStatus: M a.txt", "  ... listing the change", got)
+            s.type("a")                                  # stage it, from the window
+            s.quiet(1.5)
+            got = probe("SA", "getline(2)")
+            check(got == "M  a.txt", "  'a' stages the file", got)
+            s.type("q")
+            s.quiet(1.0)
+            s.type(":EspGitCommit\r")
+            s.quiet(1.5)
+            s.type("Committed from its buffer")
+            s.send(b"\x1b")
+            s.type(":w\r")
+            s.quiet(2.0)
+            got = probe("CB", "esp_git_log('/fat/work', 1)[0].summary . ':' . bufname('')")
+            check(got == "Committed from its buffer:/fat/work/a.txt", ":EspGitCommit's buffer commits on :w", got)
+            ok("EspGitLog", ":EspGitLog opens")
+            got = probe("LW", "bufname('') . ':' . (line('$') - 1)")
+            check(got == "EspGitLog:3", "  ... with the three commits on main", got)
+            s.type("j\r")                                # show the second one
+            s.quiet(1.5)
+            got = probe("LS", "bufname('') . ':' . &filetype . ':' . (getline(1) =~# '^commit ')")
+            check(got == "EspGitShow:diff:1", "  <CR> shows a commit", got)
+            s.type(":only | enew!\r")
+            s.quiet(1.0)
+
+            # -- gc: the loose objects into a pack
+            got = probe("GC", "string(esp_git_gc('/fat/work'))")
+            check("'loose_removed': " in got and "'packed': " in got and "'packed': 0" not in got,
+                  "esp_git_gc() packs the loose objects", got)
+            got = probe("G2", "len(esp_git_log('/fat/work')) . ':' . len(esp_git_status('/fat/work').files)"
+                              " . ':' . len(glob('/fat/work/.git/objects/pack/*.pack', 0, 1))")
+            check(got == "3:0:1", "  ... and the history and the tree are intact", got)
+
+            # -- HTTP: clone, push, pull (fast-forward, merge, conflict)
+            ok(f"call esp_git_clone('{http_url}', '/fat/h')", "clone over HTTP")
+            got = probe("HC", "esp_git_log('/fat/h', 1)[0].id . ':' . len(esp_git_log('/fat/h')) . ':' . esp_git_status('/fat/h').upstream")
+            check(got == f"{head}:{ncommits}:origin/main", "  ... the host's head, history and upstream", got)
+            ok("call writefile(['from the device'], '/fat/h/device.txt') | call esp_git_add('/fat/h')"
+               " | call esp_git_commit('/fat/h', 'Device commit') | call esp_git_push('/fat/h')", "commit and push")
+            dev = probe("HD", "esp_git_log('/fat/h', 1)[0].id")
+            fine, why = fsck_ok(served["http"])
+            check(git("rev-parse", "main", cwd=served["http"]) == dev and fine,
+                  "  ... the host has it, and git fsck passes", why)
+
+            new = host_commit(served["http"], tmp, "host.txt", "from the host\n", "Host commit")
+            ok("let g:r = esp_git_pull('/fat/h')", "pull a host commit")
+            got = probe("P1", "g:r.result . ':' . g:r.head . ':' . join(readfile('/fat/h/host.txt'))")
+            check(got == f"fast-forward:{new}:from the host", "  ... a fast-forward (a thin pack)", got)
+
+            new = host_commit(served["http"], tmp, "host2.txt", "again\n", "Second host commit")
+            ok("call writefile(['device 2'], '/fat/h/device2.txt') | call esp_git_add('/fat/h')"
+               " | call esp_git_commit('/fat/h', 'Device again') | let g:r = esp_git_pull('/fat/h')",
+               "commits on both sides, then pull")
+            got = probe("P2", "g:r.result . ':' . esp_git_log('/fat/h', 1)[0].parents . ':' . filereadable('/fat/h/host2.txt')")
+            check(got == "merged:2:1", "  ... a merge commit with both parents", got)
+            ok("call esp_git_push('/fat/h')", "  push the merge")
+            fine, why = fsck_ok(served["http"])
+            subject = git("log", "-1", "--merges", "--format=%s", "main", cwd=served["http"])
+            check(fine and git("rev-list", "--count", "--merges", "main", cwd=served["http"]) == "1"
+                  and subject.startswith("Merge branch 'main' of http"),
+                  "  ... the host has the merge, as git words it, and git fsck passes", f"{subject!r} {why}")
+
+            host_commit(served["http"], tmp, "device.txt", "the host's line\n", "Host edits device.txt")
+            ok("call writefile(['the device line'], '/fat/h/device.txt') | call esp_git_add('/fat/h')"
+               " | call esp_git_commit('/fat/h', 'Device edits it too') | let g:r = esp_git_pull('/fat/h')",
+               "edits to the same line on both sides, then pull")
+            got = probe("P3", "g:r.result . ':' . join(g:r.conflicts) . ':' . esp_git_status('/fat/h').state"
+                              " . ':' . join(map(filter(esp_git_status('/fat/h').files, 'v:val.x == \"U\"'), 'v:val.path'))")
+            check(got == "conflicts:device.txt:merge:device.txt", "  ... a conflict, left to resolve", got)
+            got = probe("P4", "join(readfile('/fat/h/device.txt'), '/')")
+            check(got.startswith("<<<<<<<") and "the device line" in got and "the host's line" in got,
+                  "  ... with conflict markers in the file", got[:80])
+            err = run("call esp_git_commit('/fat/h', 'too soon')")
+            check("conflicts" in err, "committing before fixing it is refused", err)
+            ok("call writefile(['resolved'], '/fat/h/device.txt') | call esp_git_add('/fat/h', ['/fat/h/device.txt'])"
+               " | call esp_git_commit('/fat/h', 'Resolved') | call esp_git_push('/fat/h')",
+               "resolve, add, commit (finishing the merge) and push")
+            got = probe("P5", "esp_git_log('/fat/h', 1)[0].parents . ':' . esp_git_status('/fat/h').state")
+            fine, why = fsck_ok(served["http"])
+            check(got == "2:" and fine and (served["http"] / "HEAD").exists()
+                  and git("show", "main:device.txt", cwd=served["http"]) == "resolved",
+                  "  ... a two-parent commit, the merge state cleared, the host has it", f"{got} {why}")
+
+            # -- git://
+            ok(f"call esp_git_clone('git://{H}:{git_port}/git.git', '/fat/g') | call writefile(['x'], '/fat/g/x.txt')"
+               " | call esp_git_add('/fat/g') | call esp_git_commit('/fat/g', 'Over git://') | call esp_git_push('/fat/g')",
+               "clone, commit and push over git://")
+            fine, why = fsck_ok(served["git"])
+            check(fine and git("show", "main:x.txt", cwd=served["git"]) == "x", "  ... the host has it", why)
+
+            # -- SSH, with the host key asked about the first time
             if sshd is not None:
                 s.type(":let g:pub = esp_ssh_keygen()\r")
                 s.quiet(2.0, timeout=120)
-                # In pieces: an :echo wider than the screen wraps.
                 n = int(probe("PL", "len(g:pub)"))
                 pub = "".join(probe(f"P{i}", f"strpart(g:pub, {i * 60}, 60)") for i in range((n + 59) // 60))
                 (sshroot / "authorized_keys").write_text(pub + "\n")
-                conf.append(f"ssh=ssh://{getpass.getuser()}@{HOST_FROM_DEVICE}:{ssh_port}{served['ssh']}")
+                url = f"ssh://{getpass.getuser()}@{H}:{ssh_port}{served['ssh']}"
+                s.type(":let v:errmsg = ''\r")
+                s.type(f":EspGitClone {url} /fat/s\r")
+                s.expect(r"Trust it and remember it\?", 120)
+                s.type("y")
+                s.quiet(2.0, timeout=300)
+                got = probe("SC", "v:errmsg . ':' . len(esp_git_log('/fat/s'))")
+                check(got == f":{ncommits}", ":EspGitClone over SSH asks about the host key, then clones", got)
+                ok("call writefile(['ssh'], '/fat/s/s.txt') | call esp_git_add('/fat/s')"
+                   " | call esp_git_commit('/fat/s', 'Over SSH') | call esp_git_push('/fat/s')",
+                   "push over SSH (the host now known)")
+                fine, why = fsck_ok(served["ssh"])
+                check(fine and git("show", "main:s.txt", cwd=served["ssh"]) == "ssh", "  ... the host has it", why)
             else:
                 print("  SKIP  ssh (no sshd on the host)")
+
             if opts.https:
-                conf.append(f"https={opts.https}")
-            s.type(":call writefile(" + repr(conf).replace('"', "'") + ", '/fat/gittest.conf')\r")
-            s.expect("GIT-ST-BEGIN", 60)
-            # A panic's text can come out of both cores at once, interleaved, so
-            # watch for what follows it: the ROM's banner as the chip restarts.
-            end = s.expect(r"GIT-ST-END ([^\r\n]*)\r?\n|ESP-ROM:", 1800)
-            if not end.group(0).startswith(b"GIT-ST-END"):
-                raise RuntimeError("the device crashed and restarted (panic in the UART log)")
-            text = log.read_text(errors="replace")
-            for m in re.finditer(r"GIT-ST (\S+) (ok|FAIL) ([^\r\n\x1b]*)", text):
-                results[m.group(1)] = (m.group(2) == "ok", dict(re.findall(r"(\w+)=('[^']*'|\S+)", m.group(3))),
-                                       m.group(3))
-            for m in re.finditer(r"GIT-ALLOC (\d+) (\S+)", text):
-                allocs[m.group(2)] = max(allocs.get(m.group(2), 0), int(m.group(1)))
-            summary = dict(re.findall(r"(\w+)=(\S+)", end.group(1).decode()))
+                ok(f"call esp_git_clone('{opts.https}', '/fat/https')", "clone over HTTPS (the certificate verified)")
+
+            # -- CTRL-C stops a clone, and it leaves nothing behind
+            s.type(f":let v:errmsg = '' | call esp_git_clone('git://{H}:{git_port}/big.git', '/fat/big')\r")
+            s.expect(r"Receiving objects|Resolving deltas|Checking out", 120)
+            s.send(b"\x03")
+            s.expect(r"Press ENTER", 120)        # after an interrupt, as Vim always does
+            s.send(b"\r")
+            s.quiet(2.0, timeout=120)
+            got = probe("IC", "(v:errmsg =~? 'interrupt') . ':' . isdirectory('/fat/big')")
+            check(got == "1:0", "CTRL-C stops a clone, and it leaves nothing", got)
+            ok(f"call esp_git_clone('git://{H}:{git_port}/big.git', '/fat/big')", "a larger clone, to the end")
+            got = probe("BC", "esp_git_log('/fat/big', 1)[0].id")
+            check(got == git("rev-parse", "main", cwd=big), "  ... the host's head", got)
+            heap = probe("HP", "string(esp_heap())")
+            print(f"  (heap after: {heap[:160]})")
     except Exception as e:
         check(False, "session completed", f"{type(e).__name__}: {e}")
-        summary = {}
     finally:
         srv.shutdown()
         os.killpg(daemon.pid, 15)
         if sshd is not None:
             sshd.kill()
-
-    def step(name, label, extra=lambda f: (True, "")):
-        ok, fields, raw = results.get(name, (False, {}, "(not run)"))
-        good, why = extra(fields) if ok else (False, "")
-        check(ok and good, label, why or raw.strip()[:160])
-        return fields
-
-    step("libinit", "git_libgit2_init")
-    step("init", "init: FAT's config probes: no file modes, no symlinks",
-         lambda f: (f.get("filemode") == "0" and f.get("symlinks") == "0",
-                    f"filemode={f.get('filemode')} symlinks={f.get('symlinks')}"))
-    step("commit", "two commits in a new repository")
-    step("status", "status sees the modified file",
-         lambda f: (f.get("entries") == "1" and f.get("modified") == "1", str(f)))
-    step("checkout", "a branch at HEAD~1, checked out, brings the first version back",
-         lambda f: (f.get("file") == "'hello from the device'", f.get("file", "")))
-    for kind in ("http", "git", "ssh"):
-        if kind == "ssh" and sshd is None:
-            continue
-        repo = served[kind]
-        step(f"clone-{kind}", f"clone over {kind}: the host's head and history",
-             lambda f: (f.get("head") == head and f.get("commits") == str(ncommits),
-                        f"head={f.get('head', '')[:12]} commits={f.get('commits')} objects={f.get('objects')}"))
-        pushed = step(f"push-{kind}", f"push over {kind}")
-        if pushed.get("head"):
-            now = git("rev-parse", "main", cwd=repo)
-            fsck = subprocess.run(["git", "fsck", "--strict"], cwd=repo, capture_output=True, text=True)
-            shown = git("show", f"main:device-{kind}.txt", cwd=repo, check=False)
-            check(now == pushed["head"] and fsck.returncode == 0 and shown == "pushed from the device",
-                  f"  the host has the device's commit ({kind}), and git fsck passes",
-                  f"host main={now[:12]} fsck={fsck.returncode} {fsck.stderr.strip()[:80]}")
-        step(f"fetch-{kind}", f"fetch over {kind}")
-    if opts.https:
-        step("clone-https", "clone over HTTPS, the server's certificate verified (ESP-IDF's bundle)",
-             lambda f: (f.get("cert") == "1", f"cert={f.get('cert')} head={f.get('head', '')[:12]}"))
-    step("clone-big", f"clone a {big_pack // 1024} KB pack through 256 KB windows",
-         lambda f: (f.get("head") == big_head, f"head={f.get('head', '')[:12]} peak={int(f.get('peak', 0)) // 1024} KB"))
-
-    print("\nmeasurements (esp-emu, P4):")
-    for name, (ok, fields, raw) in results.items():
-        print(f"  {name:12} {'ok  ' if ok else 'FAIL'} {fields.get('ms', '?'):>7} ms  "
-              f"libgit2 heap peak {int(fields.get('peak', 0)) // 1024:>5} KB")
-    if summary:
-        print(f"  whole run: heap peak {int(summary.get('peak', 0)) // 1024} KB, stack used "
-              f"{summary.get('stack')} of the task's bytes, leaked {summary.get('leaked')} B, "
-              f"internal RAM low {int(summary.get('int_min', 0)) // 1024} KB")
-        for site, n in sorted(allocs.items(), key=lambda kv: -kv[1]):
-            print(f"  allocation of {n // 1024} KB at {site}")
-        check(summary.get("leaked") == "0", "libgit2 frees everything by git_libgit2_shutdown")
 
     if failures:
         print(f"git: {failures} check(s) FAILED -- UART log kept at {log}")

@@ -1,5 +1,0 @@
-# The emulator's P4 build (sdkconfig.defaults.esp32p4) plus the libgit2
-# feasibility self-test, stage 6z (docs/PLAN.md): esp-vim/test/git.py drives it.
-CONFIG_ESP_VIM_GIT_SELFTEST=y
-# A task that runs off the end of its stack stops there, with a backtrace.
-CONFIG_FREERTOS_WATCHPOINT_END_OF_STACK=y

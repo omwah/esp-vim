@@ -647,7 +647,38 @@ What the port had to change, and why:
 - **Certificates.** No CA file exists, so libgit2's mbedTLS stream attaches ESP-IDF's
   bundle (patch 0005), as `esp_http_client` does.
 
-The self-test is its own build variant (`p4git`), so the everyday builds don't carry it.
-Every variant still compiles libgit2, because IDF can't make a component requirement
-depend on Kconfig, but only `p4git` links it. The other builds' binaries are the same
-size as before.
+The self-test was its own build variant (`p4git`), so the everyday builds didn't
+carry it. Phase 8 replaced both the next day: git is now in every build.
+
+## 2026-09-28 — Git in Vim: libgit2 on the Vim task, memory from PSRAM
+
+**On the Vim task.** The `esp_git_*()` builtins call libgit2 directly, as the SSH
+builtins call libssh2. A git task with a queue would have let Vim redraw during a clone,
+but everything about a clone is sequential and the user waits for it anyway. Progress on
+the command line and CTRL-C (the callbacks return an error; libgit2 unwinds and a clone
+deletes what it made) give what a task would have, with one caller for a library built
+without threads. libgit2 needs 14 KB of Vim's 64 KB stack.
+
+**Policy in `esp_git`, glue in the Vim component.** Credentials, certificates, memory
+limits and gc don't need Vim, so they sit in `components/esp_git`, which could serve a web
+page or MicroPython later. The conversion to Vim's types stays with the other builtins.
+
+**Host keys through `esp_ssh`.** libgit2's SSH transport hands its certificate callback
+the server's raw key. `esp_ssh_check_hostkey()` checks that key against `known_hosts` by
+the same rules as `:EspFiles` and netrw (the same file, the same messages). So the Vim side
+asks the same question, and `esp_ssh_trust()` records the answer. The device has one list
+of trusted hosts, not two.
+
+**PSRAM first.** ESP-IDF serves every `malloc()` under 16 KB
+(`SPIRAM_MALLOC_ALWAYSINTERNAL`) from internal RAM. A clone makes thousands of small
+allocations. On the Freenove, with WiFi up, they took internal RAM to 12 bytes, and TLS
+then failed with mbedTLS's generic error, since lwIP had no socket buffer left. Lowering
+the threshold would move every component's small allocations too, and some drivers need
+internal RAM. So only libgit2 and its bundled zlib are redirected: `malloc`, `calloc` and
+`realloc` map to `heap_caps_*_prefer(PSRAM, then default)` in the header force-included into
+their sources. The same clone then kept internal RAM above 3.6 KB.
+
+**No global identity by default.** A commit needs `user.name` and `user.email`. When they
+aren't set, the device doesn't invent them; the command says how to set them device-wide
+(`/fat/.gitconfig`, found because HOME is `/fat`). An unset clock gets a warning instead
+of a refusal: a board with no clock chip and no network should still be able to commit.

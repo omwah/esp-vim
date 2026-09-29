@@ -389,6 +389,105 @@ If a server's key later changes the connection is refused -- that is what
 a man-in-the-middle looks like.  If you know why it changed, delete that
 server's line from /fat/.ssh/known_hosts.
 
+GIT							*esp-git*
+
+Real git repositories, kept in /fat (or /sd), that git on your computer reads
+as its own, and that clone, fetch, pull and push over HTTPS, SSH or git://.
+The commands work on the repository of the current file -- or of the current
+directory, when the buffer has no file -- found upwards as git finds it.
+First say who you are, once for the whole device: >
+	:EspGitConfig --global user.name "Your Name"
+	:EspGitConfig --global user.email you@example.com
+<
+:EspGitInit [{dir}]					*:EspGitInit*
+		Make a new repository in {dir} (default: the current
+		directory).  Its first branch is "main".
+
+:EspGitStatus						*:EspGitStatus*
+		A window of what has changed, as "git status --short": the
+		first column is the index, the second the working tree ("??"
+		untracked, "UU" in conflict).  On a file:
+			a	stage it		u	unstage it
+			x	discard its changes	d	its diff
+			<CR>	edit it			c	commit
+			R	refresh			q	close
+
+:EspGitAdd [{file} ...]					*:EspGitAdd*
+		Stage files (default: the current one); "." stages every
+		change, new files and deletions included.
+:EspGitReset [{file} ...]				*:EspGitReset*
+		Unstage them; the files themselves are left alone.
+:EspGitRestore[!] {file} ...				*:EspGitRestore*
+		Throw away the changes to them, after asking (! doesn't ask).
+
+:EspGitCommit[!] [{message}]				*:EspGitCommit*
+		Commit what is staged, with {message}; without one, a buffer
+		opens to write it in: ":w" commits, ":q!" gives up.  With !,
+		every change is staged first.  After a commit the loose
+		objects are packed when there are many (|:EspGitGc|).  If the
+		clock isn't set (no network, no clock chip) you are warned:
+		the commit would be dated 1970.
+
+:EspGitLog [{max}]					*:EspGitLog*
+		The history, newest first (100 commits unless {max}); <CR>
+		shows a commit and its changes.
+:EspGitShow [{rev}]					*:EspGitShow*
+		A commit (default HEAD) and its patch.
+:EspGitDiff [--cached] [{file} ...]			*:EspGitDiff*
+		What changed in the working tree since it was staged, or with
+		--cached what is staged since the last commit.
+
+:EspGitBranch [{name}]					*:EspGitBranch*
+		List the branches; with {name}, make one at the current
+		commit.  "-d {name}" deletes one.
+:EspGitCheckout {branch}				*:EspGitCheckout*
+		Switch to {branch} -- a remote one of that name becomes a local
+		branch that tracks it -- or to a tag or commit.  Refused if it
+		would overwrite changes you haven't committed.
+
+:EspGitClone {url} [{dir}]				*:EspGitClone*
+		Clone into {dir}, or into a directory named after the
+		repository.  URLs: https://host/path, ssh://user@host/path or
+		user@host:path, git://host/path.
+:EspGitFetch [{remote}]					*:EspGitFetch*
+:EspGitPull [{remote}]					*:EspGitPull*
+		Fetch, and for pull also bring the branch up to date with the
+		one it tracks: a fast-forward, or a merge commit.  A merge
+		that conflicts leaves conflict markers in the files: fix them,
+		:EspGitAdd them, and :EspGitCommit finishes the merge.
+:EspGitPush [{remote} [{branch}]]			*:EspGitPush*
+		Push the current branch (to "origin" unless it tracks another
+		remote).  The first push makes it track what it pushed to.
+:EspGitRemote [{name} {url}]				*:EspGitRemote*
+		List the remotes, or add one (or change its URL); "-d {name}"
+		removes one.
+
+These show progress as they go, and CTRL-C stops them; a clone that stops
+leaves nothing behind.  Logging in:
+- SSH uses the device's key (|:EspSshKeygen|) -- put its public half in the
+  server's authorized_keys -- and checks the server's key against
+  /fat/.ssh/known_hosts as |esp-ssh| does, asking the first time.
+- HTTPS servers are checked against the certificate authorities built into
+  the device.  Public repositories need no login; for others:
+
+:EspGitCredential[!] [{user}]				*:EspGitCredential*
+		Ask for the token (or password) of {user}, and keep both on
+		the device (NVS) for HTTPS remotes.  Without {user}, shows who
+		is set; with !, forgets them.  For GitHub, make a token with
+		"Contents" access to the repositories you use.
+
+:EspGitConfig [--global] {key} [{value}]		*:EspGitConfig*
+		Show or set a git setting: the repository's, or with --global
+		the device's (/fat/.gitconfig, which every repository reads).
+:EspGitGc						*:EspGitGc*
+		Pack the loose objects: FAT gives every file a whole cluster,
+		and a new repository makes a file per object.
+
+Limits: every file must fit in memory to be committed or checked out, and a
+large clone needs RAM too (a 600 KB pack takes about 2 MB), so keep
+repositories to a working set of files.  There are no hooks, no submodules,
+no rebase and no stash, and symbolic links become plain files.
+
 THE WEB INTERFACE					*esp-web*
 
 A browser on the same network can manage the device's files, change editor
@@ -435,7 +534,9 @@ esp_gpio_write(), esp_gpio_mode(), esp_nvs_list(), esp_nvs_get(),
 esp_nvs_set(), esp_nvs_erase(), esp_reboot(), esp_net_status(),
 esp_http_get(), and for SSH esp_ssh_get(), esp_ssh_put(), esp_ssh_list(),
 esp_ssh_mkdir(), esp_ssh_remove(), esp_ssh_rename(), esp_ssh_hostkey(),
-esp_ssh_trust(), esp_ssh_keygen(), and for the web interface esp_web_start(),
+esp_ssh_trust(), esp_ssh_keygen(), and for git esp_git_status(),
+esp_git_add(), esp_git_commit(), esp_git_log(), esp_git_clone() and the
+others behind |esp-git|, and for the web interface esp_web_start(),
 esp_web_stop(), esp_web_info(), esp_web_passwd(), esp_settings(), and for the
 hardware esp_serial_open(), esp_serial_read(), esp_serial_write(),
 esp_serial_close(), esp_i2c_scan(), esp_sensors(), esp_adc_read().  Try ":echo esp_heap()".

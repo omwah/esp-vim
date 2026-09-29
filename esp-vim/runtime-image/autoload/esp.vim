@@ -103,6 +103,15 @@ function! s:Table(name, rows, align) abort
   return lines
 endfunction
 
+" The same, for the other autoload scripts (esp/git.vim).
+function! esp#View(name, lines, header, Refresh) abort
+  call s:Show(a:name, a:lines, a:header, a:Refresh)
+endfunction
+
+function! esp#Table(name, rows, align) abort
+  return s:Table(a:name, a:rows, a:align)
+endfunction
+
 " ------------------------------------------------------------- :EspInfo --
 
 function! esp#Info() abort

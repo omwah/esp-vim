@@ -97,6 +97,14 @@ int esp_ssh_rename(const char *url, const char *newpath, const esp_ssh_auth_t *a
 int esp_ssh_keygen(const char *path, const char *comment, char *pub, size_t publen,
                    char *err, size_t errlen);
 
+/*
+ * Check a host key that another SSH connection got (libgit2's) against
+ * known_hosts, by the rules above: 0 known, ESP_SSH_E_HOSTKEY_UNKNOWN or
+ * _CHANGED with the same messages. {type} is a LIBSSH2_HOSTKEY_TYPE_* value.
+ */
+int esp_ssh_check_hostkey(const char *host, int port, const char *key, size_t len, int type,
+                          char *err, size_t errlen);
+
 /* Close the cached session, if any. */
 void esp_ssh_disconnect(void);
 

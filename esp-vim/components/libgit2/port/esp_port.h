@@ -11,6 +11,35 @@
 
 #include "xdiff_rename.h"
 
+/*
+ * Memory from PSRAM first. ESP-IDF gives every malloc() under 16 KB
+ * (SPIRAM_MALLOC_ALWAYSINTERNAL) internal RAM, and a clone makes thousands
+ * of small ones: on the ESP32-S3, with WiFi up, they took all of it and TLS
+ * then failed for want of a socket buffer. libgit2's allocator and its
+ * zlib both call these names.
+ */
+#include <stdlib.h>
+#include "sdkconfig.h"
+#if CONFIG_SPIRAM
+#include "esp_heap_caps.h"
+#define ESP_GIT_PSRAM   (MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
+static inline void *esp_git_malloc(size_t n)
+{
+    return heap_caps_malloc_prefer(n, 2, ESP_GIT_PSRAM, MALLOC_CAP_DEFAULT);
+}
+static inline void *esp_git_calloc(size_t n, size_t size)
+{
+    return heap_caps_calloc_prefer(n, size, 2, ESP_GIT_PSRAM, MALLOC_CAP_DEFAULT);
+}
+static inline void *esp_git_realloc(void *p, size_t n)
+{
+    return heap_caps_realloc_prefer(p, n, 2, ESP_GIT_PSRAM, MALLOC_CAP_DEFAULT);
+}
+#define malloc  esp_git_malloc
+#define calloc  esp_git_calloc
+#define realloc esp_git_realloc
+#endif
+
 /* Vim's 'write' option is a global p_write too. */
 #define p_write git2_p_write
 
