@@ -21,6 +21,7 @@
 #include "esp_vfs_fat.h"
 #include "nvs_flash.h"
 #include "esp_fs.h"
+#include "esp_sd.h"
 #include "esp_net.h"
 #include "esp_ssh.h"
 #include "esp_web.h"
@@ -148,6 +149,8 @@ static void storage_init(void)
     esp_err_t e = esp_vfs_fat_spiflash_mount_rw_wl("/fat", "storage", &rw, &wl);
     if (e != ESP_OK)
         ESP_LOGE(TAG, "/fat mount failed: %s", esp_err_to_name(e));
+
+    esp_sd_init();                      /* /sd, when the board has a slot and a card is in */
 
     esp_vfs_fat_mount_config_t ro = { .max_files = 12 };
     e = esp_vfs_fat_rawflash_mount("/vimrt", "vimrt", &ro);

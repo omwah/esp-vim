@@ -1,0 +1,38 @@
+ESP-IDF v5.5.5, components/fatfs: FatFs is built without exFAT
+(FF_FS_EXFAT 0), and ESP-IDF has no Kconfig option for it. Most SD cards over
+32 GB come formatted exFAT, and would not mount. FatFs's exFAT code is there,
+and ESP-IDF's VFS layer already handles it (vfs/vfs_fat.c); this turns it on.
+The FAT12/16/32 volumes (/fat, /vimrt) are unaffected.
+
+With exFAT on, ff.c uses FF_USE_LABEL in a C expression, where the
+Kconfig option it maps to (CONFIG_FATFS_USE_LABEL) is undefined when off:
+it is made 0 or 1.
+
+--- a/src/ffconf.h
++++ b/src/ffconf.h
+@@ -52,7 +52,13 @@
+ /  (0:Disable or 1:Enable) Also FF_FS_READONLY needs to be 0 to enable this option. */
+ 
+ 
+-#define FF_USE_LABEL	CONFIG_FATFS_USE_LABEL
++/* esp-vim: 0 or 1 even when the option is off (undefined): exFAT's code uses
++   FF_USE_LABEL in a C expression, not only in #if. */
++#ifdef CONFIG_FATFS_USE_LABEL
++#define FF_USE_LABEL	1
++#else
++#define FF_USE_LABEL	0
++#endif
+ /* This option switches volume label functions, f_getlabel() and f_setlabel().
+ /  (0:Disable or 1:Enable) */
+ 
+@@ -279,7 +285,9 @@
+ /  buffer in the filesystem object (FATFS) is used for the file data transfer. */
+ 
+ 
+-#define FF_FS_EXFAT		0
++/* esp-vim: exFAT on, for SD cards (most over 32 GB come formatted exFAT).
++   FAT12/16/32 volumes (/fat, /vimrt) are unaffected. */
++#define FF_FS_EXFAT		1
+ /* This option switches support for exFAT filesystem. (0:Disable or 1:Enable)
+ /  To enable exFAT, also LFN needs to be enabled. (FF_USE_LFN >= 1)
+ /  Note that enabling exFAT discards ANSI C (C89) compatibility. */

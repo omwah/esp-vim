@@ -778,3 +778,28 @@ overlay's task, and nothing may call into Vim from there. The Bluetooth side lea
 message, and Vim takes it at `SafeState`: the first moment it is idle, typically the
 first key typed on the new keyboard. That needs no timer, and so no periodic wake-ups.
 It costs one C call that returns at once when nothing is waiting.
+
+## 2026-09-29 — SD cards: FAT and exFAT, never formatted
+
+**exFAT through a patch.** Cards over 32 GB come formatted exFAT. Reformatting one to FAT32
+would be a chore for the user, and would make it unusual on every other device. FatFs has
+exFAT; ESP-IDF compiles it out and offers no option. So `patches/esp-idf/0002` turns it on,
+in the patched-copy mechanism already used for `esp_hid`, now generalised to a list. The
+FAT volumes on flash are unaffected.
+
+**Not LittleFS on the card.** LittleFS survives power loss and is case-sensitive, both
+better for a device's own storage. But a card is for moving files to and from a computer,
+which can't read LittleFS without special tools. Moving `/fat` to LittleFS would be a
+separate decision, since it means reformatting internal storage.
+
+**Never format.** ESP-IDF's mount can format a card that won't mount. That is right for
+internal flash, and wrong for a card that may be a camera's or a phone's, one that just
+needs a different filesystem, or one that is failing. A card that won't mount is
+reported, with the reason, and left as it is.
+
+**The SPI interrupt path out of IRAM, per board.** ESP-IDF keeps the SPI master driver's
+interrupt path in IRAM, so that transfers carry on during flash writes. On the Freenove
+that is 9 KB of internal RAM, which Bluetooth and WiFi need more. There the SD card is the
+only SPI device, and waiting out a flash write is harmless. Boards whose display is on SPI
+(the ES3C28P, the RLCD-4.2) keep the default.
+

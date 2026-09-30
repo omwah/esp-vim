@@ -55,6 +55,11 @@ void f_esp_py_heap(typval_T *argvars, typval_T *rettv);
 void f_esp_py_more(typval_T *argvars, typval_T *rettv);
 void f_esp_py_reset(typval_T *argvars, typval_T *rettv);
 
+/* api/esp_api_sd.c (over components/esp_sd) */
+void f_esp_sd(typval_T *argvars, typval_T *rettv);
+void f_esp_sd_eject(typval_T *argvars, typval_T *rettv);
+void f_esp_sd_mount(typval_T *argvars, typval_T *rettv);
+
 /* api/esp_api_git.c (over libgit2 and components/esp_git) */
 void f_esp_git_add(typval_T *argvars, typval_T *rettv);
 void f_esp_git_branch(typval_T *argvars, typval_T *rettv);

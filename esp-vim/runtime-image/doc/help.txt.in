@@ -107,6 +107,19 @@ window at the bottom: "R" refreshes it, "q" closes it.
 		esp_fs_move(), esp_fs_delete(), esp_fs_mkdir(), esp_fs_info()
 		and esp_fs_roots().
 
+:EspSd							*:EspSd*
+		The microSD card, on boards with a slot: its name, type and
+		size, its filesystem (FAT or exFAT) and free space, and the
+		bus it is on.  A card in the slot at startup is mounted at
+		/sd; one that won't mount says why here.  A card is never
+		formatted.
+:EspSd eject
+		Unmount it, so it can come out.  Refused while a buffer with
+		unsaved changes is on the card.
+:EspSd mount
+		Mount the card just put in (the slot can't tell).
+		Scripts: esp_sd(), esp_sd_mount(), esp_sd_eject().
+
 :EspInfo						*:EspInfo*
 		Chip, revision, cores, flash and PSRAM size, versions, uptime
 		and why the chip last reset.
@@ -639,13 +652,16 @@ esp_gpio_read() returns -1, with an error, for a pin it may not use.
 ==============================================================================
 FILES AND STORAGE					*esp-files*
 
-The device has two filesystems:
+The device has these filesystems:
 
 	/fat		Your files.  Flash storage, kept across reboots.
 			This is $HOME, and Vim starts with /fat as the
 			current directory.
 	/vimrt		Vim's runtime files ($VIMRUNTIME): syntax files,
 			plugins, this help.  Read-only.
+	/sd		The microSD card, on boards with a slot, when one is
+			in: FAT or exFAT, readable on any computer.  See
+			|:EspSd|.
 
 Everything you write goes under /fat.  Relative names work as usual: ":w
 notes.txt" writes /fat/notes.txt, ":cd" changes directory, ":pwd" shows it,

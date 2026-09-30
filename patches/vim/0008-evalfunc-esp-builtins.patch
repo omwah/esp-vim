@@ -12,7 +12,7 @@
  #if defined(FEAT_EVAL)
  
  #ifdef VMS
-@@ -2279,6 +2284,183 @@
+@@ -2279,6 +2284,189 @@
  			ret_void,	    f_err_teapot},
      {"escape",		2, 2, FEARG_1,	    arg2_string,
  			ret_string,	    f_escape},
@@ -134,6 +134,12 @@
 +			ret_bool,	    f_esp_py_reset},
 +    {"esp_reboot",	0, 0, 0,	    NULL,
 +			ret_void,	    f_esp_reboot},
++    {"esp_sd",		0, 0, 0,	    NULL,
++			ret_dict_any,	    f_esp_sd},
++    {"esp_sd_eject",	0, 0, 0,	    NULL,
++			ret_bool,	    f_esp_sd_eject},
++    {"esp_sd_mount",	0, 0, 0,	    NULL,
++			ret_bool,	    f_esp_sd_mount},
 +    {"esp_sensors",	0, 2, FEARG_1,	    arg2_number,
 +			ret_list_dict_any,  f_esp_sensors},
 +    {"esp_serial_close", 1, 1, FEARG_1,	    arg1_number,

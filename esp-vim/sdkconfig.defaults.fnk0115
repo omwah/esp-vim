@@ -48,3 +48,16 @@ CONFIG_SPIRAM_XIP_FROM_PSRAM=y
 CONFIG_ESP_VIM_DISP_BOUNCE_LINES=5
 # The panel won't take a pixel clock much below Freenove's 13 MHz: at 10 it
 # shows its own test pattern instead.
+
+# The microSD slot, on SPI (Freenove's schematic: CS 10, SCLK 12, MISO 13,
+# MOSI 11), mounted at /sd (components/esp_sd).
+CONFIG_ESP_VIM_SD_SPI=y
+CONFIG_ESP_VIM_SD_SPI_CS=10
+CONFIG_ESP_VIM_SD_SPI_SCLK=12
+CONFIG_ESP_VIM_SD_SPI_MISO=13
+CONFIG_ESP_VIM_SD_SPI_MOSI=11
+# The SPI driver's interrupt handler in flash, not internal RAM: the SD card is
+# the only SPI device here, and its transfers can wait out a flash write. That
+# keeps about 9 KB of internal RAM (the driver's code and its HAL and DMA
+# helpers, which ESP-IDF otherwise places in IRAM) for Bluetooth and WiFi.
+CONFIG_SPI_MASTER_ISR_IN_IRAM=n

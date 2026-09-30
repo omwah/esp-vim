@@ -26,3 +26,13 @@ CONFIG_ESP_VIM_DISPLAY=y
 # The FT6336G touch panel (esp_touch; the Kconfig defaults are this board's):
 # taps, drags and swipes become mouse events in Vim.
 CONFIG_ESP_VIM_TOUCH=y
+
+# The microSD slot, SDMMC 4-bit (CLK 38, CMD 40, D0-D3 39/41/48/47), mounted at
+# /sd (components/esp_sd).
+CONFIG_ESP_VIM_SD_SDMMC=y
+CONFIG_ESP_VIM_SD_MMC_CLK=38
+CONFIG_ESP_VIM_SD_MMC_CMD=40
+CONFIG_ESP_VIM_SD_MMC_D0=39
+CONFIG_ESP_VIM_SD_MMC_D1=41
+CONFIG_ESP_VIM_SD_MMC_D2=48
+CONFIG_ESP_VIM_SD_MMC_D3=47

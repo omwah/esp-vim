@@ -1,0 +1,75 @@
+menu "esp-vim SD card"
+
+    choice ESP_VIM_SD
+        prompt "SD card slot"
+        default ESP_VIM_SD_NONE
+        help
+            The board's microSD slot, mounted at /sd (FAT or exFAT; a card
+            is never formatted). SPI is the common wiring on small boards;
+            SDMMC (4 data lines) is faster where the board has it.
+
+    config ESP_VIM_SD_NONE
+        bool "none"
+    config ESP_VIM_SD_SPI
+        bool "SPI"
+    config ESP_VIM_SD_SDMMC
+        bool "SDMMC, 4-bit"
+        depends on SOC_SDMMC_HOST_SUPPORTED
+    endchoice
+
+    config ESP_VIM_SD
+        bool
+        default y if !ESP_VIM_SD_NONE
+
+    config ESP_VIM_SD_MHZ
+        int "Clock (MHz)"
+        depends on ESP_VIM_SD
+        range 1 40
+        default 20
+        help
+            The card clock: 20 MHz is SPI's default; SDMMC cards run to 40
+            (high speed). A long or noisy wiring may need less.
+
+    config ESP_VIM_SD_SPI_SCLK
+        int "SCLK GPIO"
+        depends on ESP_VIM_SD_SPI
+        default 12
+    config ESP_VIM_SD_SPI_MOSI
+        int "MOSI GPIO"
+        depends on ESP_VIM_SD_SPI
+        default 11
+    config ESP_VIM_SD_SPI_MISO
+        int "MISO GPIO"
+        depends on ESP_VIM_SD_SPI
+        default 13
+    config ESP_VIM_SD_SPI_CS
+        int "CS GPIO"
+        depends on ESP_VIM_SD_SPI
+        default 10
+
+    config ESP_VIM_SD_MMC_CLK
+        int "CLK GPIO"
+        depends on ESP_VIM_SD_SDMMC
+        default 38
+    config ESP_VIM_SD_MMC_CMD
+        int "CMD GPIO"
+        depends on ESP_VIM_SD_SDMMC
+        default 40
+    config ESP_VIM_SD_MMC_D0
+        int "D0 GPIO"
+        depends on ESP_VIM_SD_SDMMC
+        default 39
+    config ESP_VIM_SD_MMC_D1
+        int "D1 GPIO"
+        depends on ESP_VIM_SD_SDMMC
+        default 41
+    config ESP_VIM_SD_MMC_D2
+        int "D2 GPIO"
+        depends on ESP_VIM_SD_SDMMC
+        default 48
+    config ESP_VIM_SD_MMC_D3
+        int "D3 GPIO"
+        depends on ESP_VIM_SD_SDMMC
+        default 47
+
+endmenu

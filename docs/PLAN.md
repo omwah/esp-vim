@@ -1660,6 +1660,44 @@ and TN panels with resistive XPT2046 touch) differ in panel size, timings and to
   kept in NVS. The three tables cost 62 KB of Vim's heap budget (2.49 MB), because
   the program runs from a copy in PSRAM.
 
+#### microSD cards at /sd (2026-09-29)
+
+`components/esp_sd` mounts a board's microSD card at `/sd`, over SPI or 4-bit SDMMC
+(Kconfig `ESP_VIM_SD`, pins and clock per board). Everything already went through
+`esp_fs`'s `/sd` root, so `:EspFiles`, the web file manager, `:e`/`:w`, Python's `open()`
+and git repositories all see the card with nothing else changed.
+- **FAT12/16/32 and exFAT.** ESP-IDF builds FatFs without exFAT, which most cards over 32 GB
+  come formatted in. `patches/esp-idf/0002` turns it on in a patched copy of the `fatfs`
+  component; `esp-vim/CMakeLists.txt` now applies any list of such patches. The patch also
+  fixes an upstream bug that exFAT exposes (`FF_USE_LABEL` from an undefined Kconfig
+  symbol). `CONFIG_FATFS_VOLUME_COUNT` is 3: `/fat`, `/vimrt`, `/sd`.
+- **Never formatted.** A card that won't mount is left as it is, and `:EspSd` says why:
+  no card, or no FAT/exFAT filesystem.
+- **Mounted at boot when a card is in.** The slots have no card-detect line, so
+  `:EspSd eject` comes before taking a card out, and `:EspSd mount` after putting one in.
+  Eject is refused while a buffer on the card has unsaved changes. Builtins:
+  `esp_sd()`, `esp_sd_mount()`, `esp_sd_eject()`.
+- **Internal RAM.** On the Freenove, SD support first cost 12 KB of internal RAM (31.9 KB
+  free at boot without it, 20.0 KB with). About 9 KB of that is the SPI driver's interrupt
+  path, which ESP-IDF places in IRAM by default. The SD card is that board's only SPI
+  device, and its transfers can wait out a flash write, so the Freenove builds with
+  `CONFIG_SPI_MASTER_ISR_IN_IRAM=n`: the cost is now 4.4 KB (27.7 KB free at boot). The
+  mount itself is 1.7 KB of that.
+- **Tested on the Freenove FNK0115 (SPI, 20 MHz)** with an 8 GB SDHC card, FAT32, 99%
+  full, and someone's files on it:
+  - it mounted at boot; the name, type, size and free space are right; long names with
+    spaces list correctly;
+  - eject and mount work;
+  - a 1 MB file was written in 7.1 s and read in 1.3 s (SHA-256 checked). The write
+    speed is likely the nearly full FAT, being searched for free clusters, and an old
+    card;
+  - Vim `:e`/`:w` work there; eject is refused over an unsaved buffer; `:EspFiles /`
+    lists `/sd`;
+  - the test folder was removed afterwards.
+- **ES3C28P:** configured (SDMMC 4-bit, CLK 38, CMD 40, D0–D3 39/41/48/47), not yet tried.
+  **RLCD-4.2:** not yet configured (its chip-select pin is to be checked). **Tab5:**
+  Phase 9. exFAT is built in but not yet tried on a card.
+
 #### Waveshare ESP32-S3-RLCD-4.2: a monochrome reflective screen
 
 | | |

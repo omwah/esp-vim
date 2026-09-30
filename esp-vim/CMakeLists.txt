@@ -1,25 +1,31 @@
 cmake_minimum_required(VERSION 3.16)
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 
-# ESP-IDF's esp_hid, with our fixes (patches/esp-idf/): a copy of the component,
+# ESP-IDF components with our fixes (patches/esp-idf/): a copy of each,
 # patched at configure time, overrides the one in ESP-IDF by name. ESP-IDF
 # itself is installed separately and never edited.
-set(ESP_HID_PATCHES "${CMAKE_CURRENT_LIST_DIR}/../patches/esp-idf/0001-esp_hid-nimble-hidh-hid-service.patch")
-file(SHA256 "${ESP_HID_PATCHES}" _esp_hid_sum)
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${ESP_HID_PATCHES}")
-set(ESP_HID_COPY "${CMAKE_BINARY_DIR}/patched_components/esp_hid")
-if(NOT EXISTS "${ESP_HID_COPY}/.patched-${_esp_hid_sum}")
-    file(REMOVE_RECURSE "${ESP_HID_COPY}")
-    file(COPY "$ENV{IDF_PATH}/components/esp_hid" DESTINATION "${CMAKE_BINARY_DIR}/patched_components")
-    execute_process(COMMAND patch -p1 --forward --quiet -i "${ESP_HID_PATCHES}"
-                    WORKING_DIRECTORY "${ESP_HID_COPY}" RESULT_VARIABLE _esp_hid_rc)
-    if(NOT _esp_hid_rc EQUAL 0)
-        message(FATAL_ERROR "Could not apply ${ESP_HID_PATCHES} to ESP-IDF's esp_hid "
-                            "(this ESP-IDF is not the v5.5.5 it was made for?)")
+#   esp_hid  0001: the NimBLE HID host skipped the HID service
+#   fatfs    0002: exFAT on, for SD cards
+function(espvim_patched_component name patch)
+    set(patch "${CMAKE_CURRENT_LIST_DIR}/../patches/esp-idf/${patch}")
+    file(SHA256 "${patch}" sum)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${patch}")
+    set(copy "${CMAKE_BINARY_DIR}/patched_components/${name}")
+    if(NOT EXISTS "${copy}/.patched-${sum}")
+        file(REMOVE_RECURSE "${copy}")
+        file(COPY "$ENV{IDF_PATH}/components/${name}" DESTINATION "${CMAKE_BINARY_DIR}/patched_components")
+        execute_process(COMMAND patch -p1 --forward --quiet -i "${patch}"
+                        WORKING_DIRECTORY "${copy}" RESULT_VARIABLE rc)
+        if(NOT rc EQUAL 0)
+            message(FATAL_ERROR "Could not apply ${patch} to ESP-IDF's ${name} "
+                                "(this ESP-IDF is not the v5.5.5 it was made for?)")
+        endif()
+        file(TOUCH "${copy}/.patched-${sum}")
     endif()
-    file(TOUCH "${ESP_HID_COPY}/.patched-${_esp_hid_sum}")
-endif()
-list(APPEND EXTRA_COMPONENT_DIRS "${ESP_HID_COPY}")
+    set(EXTRA_COMPONENT_DIRS ${EXTRA_COMPONENT_DIRS} "${copy}" PARENT_SCOPE)
+endfunction()
+espvim_patched_component(esp_hid 0001-esp_hid-nimble-hidh-hid-service.patch)
+espvim_patched_component(fatfs 0002-fatfs-exfat.patch)
 # One component-manager lock file per build variant (ESP-IDF's documented way):
 # the lock records the target and the Kconfig-dependent components, so a shared
 # one is rewritten by every build of another variant. scripts/vim-build.sh sets
