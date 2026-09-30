@@ -36,6 +36,11 @@ typedef bool (*esp_ble_dev_cb)(void *ctx, const esp_ble_dev_t *dev);
 /* True when this build has Bluetooth. */
 bool esp_ble_available(void);
 
+/* True once the stack has started (on first use, or at boot with a keyboard
+ * bonded). Until then the first scan or pairing starts it, which reads flash:
+ * from a task with an internal stack only. */
+bool esp_ble_running(void);
+
 /*
  * Scan for {ms} milliseconds (1 to 30000), blocking, then pass each device
  * found to {cb} on the calling task, at most once per address. Returns 0, or

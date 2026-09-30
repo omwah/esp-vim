@@ -363,7 +363,7 @@ go to Vim just as the console's do, and both work at once.
 		disconnecting it if it is the one connected.  With no
 		argument, every paired keyboard is forgotten.
 
-After a pairing connects, Vim says "Paired: <name>".  Keys with Ctrl, Shift
+Keys with Ctrl, Shift
 and Alt reach Vim as xterm sends them, so mappings like <C-Right>, <S-F5> and
 <C-PageDown> work, and so do the keypad keys and Shift-Tab; Alt with a letter
 sends Escape first, as in a terminal.  A keyboard's own
@@ -375,8 +375,8 @@ On boards with a touch screen, pairing needs no keyboard at all.  When there is
 no Bluetooth keyboard -- 10 seconds after starting, or 15 seconds after it went
 away -- a pairing screen comes up by itself, listing the keyboards in range.
 Tap yours, then "Pair".  Paired keyboards say "paired" at the end of their
-line, in range or not; hold one down for a second to forget it.  "Not now"
-puts it away until a keyboard has come and gone again, and it closes by itself as soon as a keyboard connects: pressing a
+line, in range or not; tap one and the button says "Unpair", which forgets it.
+"Not now" puts it away until a keyboard has come and gone again, and it closes by itself as soon as a keyboard connects: pressing a
 key wakes a paired one.  Keys typed on the serial console don't count, since
 nobody may be there.
 

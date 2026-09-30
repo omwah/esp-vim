@@ -1302,17 +1302,17 @@ after a restart. The touch pairing overlay is still to come.
     timeout, so the order matters.)
   - `esp_bt_keyboard_list()`, `:EspBtKeyboard list` and `:EspBtKeyboard forget {n}`
     forget one keyboard; `forget` alone forgets all, as before.
-- **"Paired: <name>".** It appears in Vim when a pairing connects: at the next SafeState
-  when paired on the touch screen, or in the command's own message. It is a 10 s window
-  after the pairing, so reconnects are not announced.
+- **"Paired: <name>".** `:EspBtKeyboard pair` names the keyboard in its message. An idle-time
+  notice in Vim after pairing on the touch screen (SafeState, then a popup) reached
+  `:messages` but was never seen on the Freenove; it was dropped as not needed. The
+  pairing screen's own status line says it.
 - **Overlay.**
   - Paired keyboards say `paired` at the end of their line, and are listed when not
     in range too.
-  - Holding one anywhere on its line (0.8 s, 40 px of drift allowed) forgets it. The
-    hold fires while the finger is still down, and says "Forgetting <name>..." at once.
-    The first version waited for the finger to lift, allowed 16 px, and gave no sign
-    until then: on the Freenove a hold never registered.
-  - The status line says `Paired: <name>`.
+  - Tapping a paired one turns the button into **[ Unpair ]**, which forgets it:
+    unpairing works as pairing does. (The first design, a hold on the line, was hard to
+    trigger and could forget the wrong keyboard by accident.)
+  - The status line says `Paired: <name>` / `Unpaired <name>.`
 - **Tests.** `pixi run kbd-test`, on the host with AddressSanitizer and UBSan: 68 checks.
   They cover four report maps (the HID spec's boot keyboard; a composite map with a
   20-byte NKRO bitmap, consumer keys and a mouse; listed usages; 4-byte usages), cut-short
@@ -1342,6 +1342,12 @@ after a restart. The touch pairing overlay is still to come.
     other party has the lock.
   - **Paired keyboards at once.** The overlay lists them as soon as it opens, before
     its first scan.
+  - **Taps answered at once.** The overlay's task used to scan too, and was deaf to
+    taps for 3 s in every 7, so a tap often seemed not to register. Scanning is now a
+    second task's, on a PSRAM stack, started the first time the overlay opens. Scan
+    results reach the overlay task through the same queue as taps. The first scan,
+    which may start Bluetooth (and so read flash), stays on the overlay task, which has
+    an internal stack. A tap also allows 32 px of movement, not 16.
 
 ### The touch overlay, first version (2026-09-25)
 

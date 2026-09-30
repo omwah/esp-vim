@@ -104,6 +104,11 @@ bool esp_ble__running(void)
     return s_synced_once;
 }
 
+bool esp_ble_running(void)
+{
+    return s_synced_once;
+}
+
 uint8_t esp_ble__own_addr_type(void)
 {
     return s_own_addr_type;
@@ -227,6 +232,11 @@ int esp_ble_scan(unsigned ms, esp_ble_dev_cb cb, void *ctx, char *err, size_t er
 }
 
 #else   /* no Bluetooth in this build */
+
+bool esp_ble_running(void)
+{
+    return false;
+}
 
 bool esp_ble_available(void)
 {
