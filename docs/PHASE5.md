@@ -296,7 +296,9 @@ tables), and Vim then crashed rather than reporting `E342`: `findtags_state_init
 upstream `tag.c` uses an `ALLOC_ONE()` result without checking it. The backtrace
 reaches it through a `:help` run while `syntax/vim.vim` was being sourced, which is not
 yet understood (perhaps a line mangled by the failed allocations). That is a separate,
-upstream bug.
+upstream bug, patched here (`patches/vim/0013-tag-check-pattern-alloc.patch`). The patch
+was checked under the emulator with that allocation forced to fail on a full heap: `:tag`
+fails and Vim carries on.
 
 **Consequences.**
 - The S3 emulator gate stays informational: esp-emu 0.44.0 is no better (3 of 5
@@ -305,7 +307,8 @@ upstream bug.
 - It explains why the private `multi_heap` arena and plain `heap_caps_malloc` failed
   alike: the allocator was never the problem. Whether it also explains the boot fault
   with ESP-IDF's heap poisoning on is not checked.
-- To report upstream (espressif/esp-emulator), with `emu-s3-loop` as the reproducer.
+- To report upstream (espressif/esp-emulator), with `emu-s3-loop` as the reproducer. The
+  issue is drafted, but not yet filed, in `docs/upstream/esp-emu-xtensa-loop-lend.md`.
 
 **The guard** (`CONFIG_ESP_VIM_HEAP_GUARD`, a debug option, off in every build): each
 Vim block gets a canary on both sides and remembers its allocator; freed blocks are

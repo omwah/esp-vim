@@ -1,0 +1,36 @@
+--- a/src/tag.c	2026-09-21 13:40:41.000000000 -0700
++++ b/src/tag.c	2026-09-30 10:25:12.126488473 -0700
+@@ -1754,9 +1754,12 @@
+     st->tag_fname = alloc(MAXPATHL + 1);
+     st->fp = NULL;
+     st->orgpat = ALLOC_ONE(pat_T);
+-    st->orgpat->pat = pat;
+-    st->orgpat->len = (int)STRLEN(pat);
+-    st->orgpat->regmatch.regprog = NULL;
++    if (st->orgpat != NULL)
++    {
++	st->orgpat->pat = pat;
++	st->orgpat->len = (int)STRLEN(pat);
++	st->orgpat->regmatch.regprog = NULL;
++    }
+     st->flags = flags;
+     st->tag_file_sorted = NUL;
+     st->help_only = (flags & TAG_HELP);
+@@ -1785,6 +1788,7 @@
+ 
+     // check for out of memory situation
+     if (st->tag_fname == NULL
++	    || st->orgpat == NULL
+ 	    || st->lbuf == NULL
+ #ifdef FEAT_EMACS_TAGS
+ 	    || st->ebuf == NULL
+@@ -1803,7 +1807,8 @@
+ {
+     vim_free(st->tag_fname);
+     vim_free(st->lbuf);
+-    vim_regfree(st->orgpat->regmatch.regprog);
++    if (st->orgpat != NULL)
++	vim_regfree(st->orgpat->regmatch.regprog);
+     vim_free(st->orgpat);
+ #ifdef FEAT_EMACS_TAGS
+     vim_free(st->ebuf);
