@@ -810,3 +810,24 @@ that is 9 KB of internal RAM, which Bluetooth and WiFi need more. There the SD c
 only SPI device, and waiting out a flash write is harmless. Boards whose display is on SPI
 (the ES3C28P, the RLCD-4.2) keep the default.
 
+
+## 2026-09-30 — The S3 emulator's heap corruption is esp-emu's; its gate stays informational
+
+The S3 emulator's intermittent heap corruption (PHASE5.md, known issue) is an esp-emu
+defect: when an interrupt is taken at a branch to a zero-overhead loop's end address, the
+loop goes round again. The ROM's `strcpy()` leaves its loops exactly that way, so about one
+copy in 28,000 runs on past the NUL. A 30-line app shows it with no Vim code
+(`pixi run emu-s3-loop`), on 0.43.0 and 0.44.0, and never with interrupts masked.
+
+**Not worked around in the firmware.** Replacing `strcpy()` would hide the case we found
+and leave every other loop GCC compiles the same way; and a firmware changed for its test
+bench would be tested as something other than what ships. So the S3 gate stays
+informational, the P4 gate is the one that must pass, and S3 behaviour is checked on
+silicon (the Freenove and the ES3C28P), as it has been. `emu-s3-loop` turning PASS on a new
+esp-emu is the signal to make the S3 gate count again.
+
+**Not moved to esp-emu 0.44.0.** It has the same defect (and one more flaky file-manager
+check); 0.43.0 stays vendored.
+
+**The heap guard stays**, as a debug option (`CONFIG_ESP_VIM_HEAP_GUARD`), off in every
+build: it is what caught this, and the next heap bug will want it too.

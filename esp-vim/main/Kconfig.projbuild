@@ -20,6 +20,24 @@ menu "esp-vim board"
             PSRAM (SPIRAM_XIP_FROM_PSRAM), when flash writes leave the cache
             on.
 
+    config ESP_VIM_HEAP_GUARD
+        bool "Debug: guard Vim's heap blocks"
+        default n
+        help
+            For hunting heap corruption (docs/PHASE5.md). Each block Vim
+            allocates gets a canary on both sides and remembers its caller;
+            they are checked on free and realloc, and every block (with
+            ESP-IDF's heap) every ESP_VIM_HEAP_GUARD_WALK allocator calls.
+            A corruption stops the chip with an ESPVIM-GUARD line naming the
+            block. Vim's allocator used on another task than Vim's is
+            reported too. Slower, and 24 bytes more per block: not for
+            normal builds.
+
+    config ESP_VIM_HEAP_GUARD_WALK
+        int "Debug: check every heap block every N allocator calls (0: never)"
+        depends on ESP_VIM_HEAP_GUARD
+        default 1024
+
     config ESP_VIM_SERIAL_TX
         int "Default TX pin for :EspSerial"
         default 22 if IDF_TARGET_ESP32P4

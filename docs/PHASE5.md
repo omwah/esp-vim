@@ -246,28 +246,71 @@ writing it can scroll some terminals.
 The gate checks the splash title, `:help version9`/`sponsor`/`Kuwasha`/`netrw`, the chip
 name in `help.txt` and `:version` (and no "Tab5"), and that spinner frames appear.
 
-## Known issue: intermittent heap corruption on the ESP32-S3 (emulator)
+## Known issue: heap corruption on the ESP32-S3 emulator -- an emulator defect
 
-**Open.** On the S3, some interactive runs die with a TLSF assertion in ESP-IDF's heap
-(`block_trim_free`/`block_merge_prev`: "block must be free"), or a silent reboot, almost
-always while Vim is sourcing syntax files. The P4 has never shown it.
+**Cause found (2026-09-30): esp-emu, not Vim or the port.** On the S3, some emulator
+runs die with a TLSF assertion in ESP-IDF's heap (`block_trim_free`/`block_merge_prev`:
+"block must be free"), a `LoadStoreError` inside `tlsf_malloc`, or a silent reboot (the
+emulator's log then says `Bus fault: write32 unmapped`), almost always while Vim is
+sourcing syntax files. The P4 has never shown it.
 
-What is established:
+**The defect.** The S3 ROM's `strcpy()` copies in a zero-overhead loop (Xtensa's `LOOP`)
+and leaves it by branching to the loop's own end address (`LEND`):
 
-- **It predates the session restart work.** Commit `4bbaa81`, from before `:q`
-  restarted anything, fails 1 run in 6 the same way. The S3 "pass" recorded for
-  Phase 5 was a lucky run, not a green gate.
-- **Not the allocator arrangement.** A private `multi_heap` arena, plain
-  `heap_caps_malloc`, and the tracked blocks all show it.
-- **Not dual-core.** It persists with `CONFIG_FREERTOS_UNICORE=y`.
-- **Not the emulator's PSRAM heap in isolation.** A standalone S3 app with no Vim code
-  ran 3 million random `heap_caps_malloc`/`realloc`/`free` operations on PSRAM with
-  verified fill patterns, with and without interleaved flash reads: clean.
-- ESP-IDF's heap poisoning can't be used to locate it. With it enabled, the S3 image
-  faults on core 1 inside the FreeRTOS scheduler during boot, before any Vim code runs.
-  That itself is evidence the S3 emulation isn't fully trustworthy, but it isn't proof.
+```
+400555ca: loop  a8, 400555e1        ; LEND = 400555e1
+            ...
+400555dc:   bnone a8, a7, 400555e1  ; the NUL was the word's last byte: leave
+400555e1: retw.n
+```
 
-Still open: an Xtensa-specific bug in Vim or the port that only syntax loading exercises,
-or an esp-emu Xtensa CPU/cache defect that only Vim's access pattern triggers. **Next
-step: run the S3 gate on real ESP32-S3 silicon.** Until then the S3 gate is
-informational, and the P4 gate (`pixi run vim-test`) is the one that must pass.
+(its byte-at-a-time loop, used when source and destination alignments differ, ends the
+same way). On silicon a taken branch to `LEND` leaves the loop. Under esp-emu, when an
+interrupt is taken at that branch, the loop goes round again, and the copy carries on to
+the *next* NUL. GCC emits the same pattern for a `break` out of a counted loop, so ROM
+`strcpy` is only the most frequent victim.
+
+**How it was found.** A debug build with guarded heap blocks
+(`CONFIG_ESP_VIM_HEAP_GUARD`, below) caught the damage as it happened, in
+`syn_cmd_keyword()`/`add_keyword()` while `syntax/cmake.vim` loaded: a new keyword entry
+held its keyword and NUL, and right after it, over the guard, the *next* keyword from the
+command's buffer. No live block overlapped it and the heap's header for it was sane, so
+nothing had overrun it and the heap had not handed out the same memory twice: the copy
+itself had gone on too far. Then a standalone S3 app (`esp-vim/test/emu-s3-loop/`, no Vim
+code, `pixi run emu-s3-loop`) showed it on its own:
+
+| | overran, of 960,000 `strcpy()` calls |
+|---|---|
+| esp-emu 0.43.0 | 34 (every alignment, every byte position of the NUL) |
+| esp-emu 0.44.0 | 54 |
+| esp-emu 0.43.0, batch size 500 to 1,000,000 | 32 to 38: not the emulator's batching |
+| esp-emu 0.43.0, interrupts masked around each copy | **0** |
+
+Two strings overwritten into TLSF's free-list pointers were legible in the bus faults:
+`SIZEOF_DATA_PTR` and `STANDARD_DEFAULT`, both from `cmake.vim`'s keyword lists.
+
+**Silicon.** The same stress (every filetype, then large files highlighted, repeatedly)
+ran on the Freenove FNK0115 through a serial bridge. It showed no heap corruption.
+It did run Vim out of its 2.5 MB budget (37 buffers, each with its own syntax
+tables), and Vim then crashed rather than reporting `E342`: `findtags_state_init()` in
+upstream `tag.c` uses an `ALLOC_ONE()` result without checking it. The backtrace
+reaches it through a `:help` run while `syntax/vim.vim` was being sourced, which is not
+yet understood (perhaps a line mangled by the failed allocations). That is a separate,
+upstream bug.
+
+**Consequences.**
+- The S3 emulator gate stays informational: esp-emu 0.44.0 is no better (3 of 5
+  interactive runs failed, against 2 of 6 on 0.43.0). `pixi run emu-s3-loop` says when
+  a new esp-emu can be trusted.
+- It explains why the private `multi_heap` arena and plain `heap_caps_malloc` failed
+  alike: the allocator was never the problem. Whether it also explains the boot fault
+  with ESP-IDF's heap poisoning on is not checked.
+- To report upstream (espressif/esp-emulator), with `emu-s3-loop` as the reproducer.
+
+**The guard** (`CONFIG_ESP_VIM_HEAP_GUARD`, a debug option, off in every build): each
+Vim block gets a canary on both sides and remembers its allocator; freed blocks are
+filled and held in a quarantine, so a write after free or a double free is caught; the
+newest 32 blocks are checked on every call, and everything (with ESP-IDF's heap) every
+`CONFIG_ESP_VIM_HEAP_GUARD_WALK` calls. A failure prints `ESPVIM-GUARD` lines naming the
+block, its neighbours and the bytes around it. The harness takes `ESPVIM_EMU` (another
+esp-emu) and `ESPVIM_EMU_LOG` (keep the emulator's own messages).

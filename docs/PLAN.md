@@ -14,7 +14,7 @@
 | 2 — Build system + generated files | **done** (2026-09-23), see [PHASE2.md](PHASE2.md) — Vim compiles, 1.82 MB text at `-Os` |
 | 3 — OS shim layer | **done** (2026-09-23), see [PHASE3.md](PHASE3.md) — Vim runs, edits, saves; `pixi run vim-test` |
 | 4 — Storage + curated runtime | **done** (2026-09-24), see [PHASE4.md](PHASE4.md) — runtime 74% of `vimrt`, 30 filetypes, 0.47 MB PSRAM to open a file |
-| 5 — Emulator bring-up over UART | **done** (2026-09-24), see [PHASE5.md](PHASE5.md) — interactive over UART; `:q` restarts in place; chip-named splash, device help, busy indicator. P4 gate green. **S3: open intermittent heap corruption under the emulator**, gate informational until tested on silicon |
+| 5 — Emulator bring-up over UART | **done** (2026-09-24), see [PHASE5.md](PHASE5.md) — interactive over UART; `:q` restarts in place; chip-named splash, device help, busy indicator. P4 gate green. **S3 emulator heap corruption: an esp-emu defect** (2026-09-30: Xtensa zero-overhead loops mis-handle an interrupt at a branch to the loop end, so ROM `strcpy` overruns; `pixi run emu-s3-loop`), gate informational until esp-emu is fixed |
 | 6 — `:Esp*` commands, file manager, transports, web | **done** (2026-09-29), see [PHASE6.md](PHASE6.md): 6a–6e 2026-09-24, 6f 2026-09-25 (serial, I2C, ADC, sensors; S3 WiFi and BLE scan; Tab5 WiFi via the C6 built, its run-time check in Phase 9 since esp-emu cannot run esp-hosted). `:EspUsbMsc` needs the Tab5's USB-C port and moves to Phase 9 |
 | 7 — MicroPython | **done, first cut** (2026-09-29): MicroPython 1.29 in every build, on the Vim task; `:EspPy`, `:EspPyRun`, `:EspPyReset`, `:EspPyRepl`, the `vim` and `esp` modules; emulator gate `py.py` green on the P4. See Phase 7 |
 | 8 — Git | **done, first cut** (2026-09-28): on libgit2 (the stage 6z gate), 18 `esp_git_*()` builtins and 19 `:EspGit*` commands in every build; emulator gate `git.py` green on the P4; clone, push, fast-forward and merge pulls tested on a real ESP32-S3 (Freenove FNK0115) over WiFi, HTTPS and the LAN. See Phase 8 |
@@ -974,8 +974,8 @@ Measured (2026-09-29):
     serial bridge rather than the harness's device mode, so NVS was left alone.
   - S3 emulator: one run passed. One failed on a heap double free in Vim's
     `:%bwipe!` (closing the `[Python]` window), then a watchdog reset. That run looks
-    like the S3 emulator's known heap corruption (Phase 5): the same checks passed on
-    the P4 every time and on the Freenove.
+    like the S3 emulator's known heap corruption (Phase 5, an esp-emu defect): the same
+    checks passed on the P4 every time and on the Freenove.
 - **Fixed on the way.**
   - The S3 would not link with MicroPython's Xtensa `nlr_push`: its short jump
     could not reach. It now uses setjmp, as MicroPython's ESP32 port does.
@@ -1558,7 +1558,9 @@ What it changes in the plan:
   three times in a row on the ES3C28P: all checks, one boot, no panic, `:help`
   included. In the emulator the same test crashes in `:help` (the TLSF
   `block_locate_free` assert, or a `LoadStoreError`). So the S3 heap corruption is
-  the emulator's, not ours. Tests that need emulator features (roundtrip, hw, wifi,
+  the emulator's, not ours. (2026-09-30, the cause: esp-emu mishandles an interrupt at
+  a branch to a zero-overhead loop's end, and the ROM's `strcpy` runs past the NUL;
+  PHASE5.md.) Tests that need emulator features (roundtrip, hw, wifi,
   ble) skip on a board, and web skips without `ESPVIM_WIFI=ssid:password`.
 - **Do this before 10b, as the first real-hardware run.** Vim over USB-Serial/JTAG on this
   board needs no display work, and it **settles the open S3 heap corruption**

@@ -105,6 +105,8 @@ emu = { cmd = 'bash -c ". scripts/env.sh >/dev/null && scripts/run-emu.sh \"$@\"
 
 # Interactive session over the emulator UART. socat, not nc: nc cannot do raw
 # mode, so arrows arrive as literal escapes. Detach with Ctrl-] .
+emu-s3-loop = { cmd = 'bash -c ". scripts/env.sh >/dev/null && cd esp-vim/test/emu-s3-loop && { [ -f build/CMakeCache.txt ] || idf.py set-target esp32s3 >/dev/null; } && idf.py build >/dev/null && cd build && python -m esptool --chip esp32s3 merge_bin -o merged.bin --flash_size 4MB @flash_args >/dev/null && cp merged.bin run.bin && ${ESPVIM_EMU:-../../../../build-deps/esp-emu/esp-emu} --chip esp32s3 --firmware run.bin --exit-on EMU-S3-LOOP-RESULT --timeout 600s < /dev/null | tr -d \\r | grep EMU-S3-LOOP"', description = "Check esp-emu for the Xtensa zero-overhead-loop defect behind the S3 emulator's heap corruption (docs/PHASE5.md): PASS means the S3 gate can be trusted" }
+
 emu-tty = { cmd = 'socat -,raw,echo=0,escape=0x1d TCP:127.0.0.1:5555', description = "Attach a raw terminal to an emulator started with --uart-tcp 127.0.0.1:5555" }
 
 [pypi-dependencies]

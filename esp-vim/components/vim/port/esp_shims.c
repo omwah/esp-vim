@@ -35,6 +35,7 @@
 
 #include "esp_log.h"
 #include "esp_heap_caps.h"
+#include "esp_rom_sys.h"
 #include "esp_timer.h"
 #include "esp_vim_port.h"
 #include "esp_power.h"
@@ -85,18 +86,285 @@ typedef struct vim_blk {
     struct vim_blk *prev, *next;
     size_t size;                /* payload bytes */
     struct vim_blk *self;       /* == this block while it is live: "is it ours?" */
-} vim_blk_t;                    /* 16 bytes: keeps the payload 8-byte aligned */
+#if CONFIG_ESP_VIM_HEAP_GUARD
+    void *caller;               /* who allocated it */
+    void *freed_by;             /* who freed it (in quarantine) */
+    uint32_t seq;               /* the how-many-th allocation */
+    uint32_t canary[2];         /* HEAD_CANARY; TAIL_CANARY follows the payload */
+    uint32_t pad;
+#endif
+} vim_blk_t;                    /* 16 (40) bytes: keeps the payload 8-byte aligned */
 
 static vim_blk_t *s_blocks;     /* every live Vim allocation */
 static size_t s_heap_used, s_heap_peak, s_heap_budget;
 
 #define VIM_HEAP_CAPS (MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
 
+#if CONFIG_ESP_VIM_HEAP_GUARD
+/*
+ * Debug build (docs/PHASE5.md, the S3's heap corruption): each block has a
+ * canary on both sides of its payload and remembers who allocated it. The
+ * canaries are checked when a block is freed or reallocated, and every block,
+ * with ESP-IDF's own heap, every GUARD_WALK_EVERY allocator calls -- so a
+ * corruption is reported near the time it happens, naming the block it hit.
+ * Vim's allocator is only ever meant to run on the Vim task (the block list
+ * has no lock): a call from any other task is reported too.
+ *
+ * A freed block is not given back at once: it is filled with FREED_BYTE and
+ * held in a quarantine (the last GUARD_Q_BLOCKS blocks, up to GUARD_Q_BYTES).
+ * When it leaves, the fill is checked, so a write after free is reported with
+ * the block's allocator and freer; freeing it again meanwhile is reported as
+ * a double free. The newest GUARD_RECENT blocks are checked on every call,
+ * and a new block is checked against the newest 256 for overlap.
+ *
+ * A failure prints ESPVIM-GUARD lines and aborts: the block, its heap header,
+ * the last 16 allocations, live blocks overlapping it, where else the bytes
+ * past it are found (two addresses reaching one memory would show as a
+ * distance that is a multiple of 64 KB), and the bytes around its end.
+ *
+ * This found the ESP32-S3 emulator's zero-overhead-loop defect
+ * (docs/PHASE5.md): the ROM's strcpy() copying past the NUL.
+ */
+#define HEAD_CANARY 0xC0DEFACEu
+#define TAIL_CANARY 0x5AFEB10Cu
+#define GUARD_TAIL  8
+#define GUARD_WALK_EVERY CONFIG_ESP_VIM_HEAP_GUARD_WALK
+#define FREED_BYTE  0xDD
+#define GUARD_RECENT 32
+#define GUARD_Q_BLOCKS 1024
+#define GUARD_Q_BYTES  (512 * 1024)
+#define FREED_MARK(b) ((struct vim_blk *)((uintptr_t)(b) ^ 0xF4EEDF4Eu))
+
+extern TaskHandle_t g_vim_task;
+static uint32_t s_seq;
+static struct { void *blk; uint32_t len, seq; } s_last[16];  /* recent allocations */
+
+static void guard_fail(const vim_blk_t *b, const char *what, const char *where)
+{
+    const uint8_t *t = (const uint8_t *)(b + 1) + b->size;
+    esp_rom_printf("\nESPVIM-GUARD %s at %s: block %p size %u caller %p freed_by %p seq %u"
+                   " head %08x %08x tail %02x%02x%02x%02x%02x%02x%02x%02x\n",
+                   what, where, b, (unsigned)b->size, b->caller, b->freed_by,
+                   (unsigned)b->seq, (unsigned)b->canary[0], (unsigned)b->canary[1],
+                   t[0], t[1], t[2], t[3], t[4], t[5], t[6], t[7]);
+    esp_rom_printf("ESPVIM-GUARD by %p\n", __builtin_return_address(0));
+    for (int k = 0; k < 16; k++) {
+        int i = (int)((s_seq - k) % 16);
+        if (s_last[i].blk != NULL)
+            esp_rom_printf("ESPVIM-GUARD recent seq %u: %p len %u\n", (unsigned)s_last[i].seq,
+                           s_last[i].blk, (unsigned)s_last[i].len);
+    }
+    /* Every live block that overlaps this one, with the heap's (TLSF) header
+     * words in front of each: prev_phys, then size | flags. */
+    uintptr_t lo = (uintptr_t)b, hi = lo + sizeof(vim_blk_t) + b->size + GUARD_TAIL;
+    const uint32_t *h = (const uint32_t *)b - 2;
+    esp_rom_printf("ESPVIM-GUARD this block's heap header %08x %08x\n",
+                   (unsigned)h[0], (unsigned)h[1]);
+    for (const vim_blk_t *o = s_blocks; o != NULL; o = o->next) {
+        uintptr_t olo = (uintptr_t)o, ohi = olo + sizeof(vim_blk_t) + o->size + GUARD_TAIL;
+        if (o != b && lo < ohi && olo < hi) {
+            const uint32_t *oh = (const uint32_t *)o - 2;
+            esp_rom_printf("ESPVIM-GUARD overlaps live block %p..%p size %u seq %u caller %p,"
+                           " heap header %08x %08x\n", (void *)olo, (void *)ohi,
+                           (unsigned)o->size, (unsigned)o->seq, o->caller,
+                           (unsigned)oh[0], (unsigned)oh[1]);
+        }
+    }
+    /* Where else is the text now past this block? A big live block holding
+     * the same 16 bytes, at a distance that is a multiple of the MMU's 64 KB
+     * page, would mean two addresses reach the same memory. */
+    const uint8_t *past = (const uint8_t *)(b + 1) + b->size;
+    for (const vim_blk_t *o = s_blocks; o != NULL; o = o->next) {
+        if (o == b || o->size < 256)
+            continue;
+        const uint8_t *op = (const uint8_t *)(o + 1);
+        for (size_t k = 0; k + 16 <= o->size; k++) {
+            if (op[k] == past[0] && memcmp(op + k, past, 16) == 0) {
+                intptr_t d = (intptr_t)past - (intptr_t)(op + k);
+                esp_rom_printf("ESPVIM-GUARD same bytes in live block %p (size %u, seq %u) at +%u:"
+                               " address %p, distance %s0x%x\n", o, (unsigned)o->size,
+                               (unsigned)o->seq, (unsigned)k, op + k, d < 0 ? "-" : "",
+                               (unsigned)(d < 0 ? -d : d));
+                break;
+            }
+        }
+    }
+    /* The payload's last 48 bytes and what follows it: overrun, or stray write? */
+    const uint8_t *p = (const uint8_t *)(b + 1);
+    size_t from = b->size > 48 ? b->size - 48 : 0;
+    for (int pass = 0; pass < 2; pass++) {
+        esp_rom_printf("ESPVIM-GUARD %s @%u:", pass ? "ascii" : "hex", (unsigned)from);
+        for (size_t k = from; k < b->size + GUARD_TAIL + 32; k++) {
+            if (k == b->size || k == b->size + GUARD_TAIL)
+                esp_rom_printf(" |");
+            if (pass)
+                esp_rom_printf("%c", p[k] >= 32 && p[k] < 127 ? p[k] : '.');
+            else
+                esp_rom_printf(" %02x", p[k]);
+        }
+        esp_rom_printf("\n");
+    }
+    abort();
+}
+
+static void guard_check(const vim_blk_t *b, const char *where)
+{
+    if (b->self == FREED_MARK(b))
+        guard_fail(b, "double free (or use of a freed block)", where);
+    if (b->self != b || b->canary[0] != HEAD_CANARY || b->canary[1] != HEAD_CANARY)
+        guard_fail(b, "head overwritten", where);
+    uint32_t t[2];
+    memcpy(t, (const uint8_t *)(b + 1) + b->size, sizeof t);
+    if (t[0] != TAIL_CANARY || t[1] != TAIL_CANARY)
+        guard_fail(b, "tail overwritten (buffer overrun)", where);
+}
+
+static void guard_set(vim_blk_t *b, void *caller)
+{
+    static const uint32_t tail[2] = { TAIL_CANARY, TAIL_CANARY };
+    b->caller = caller;
+    b->freed_by = NULL;
+    b->seq = ++s_seq;
+    s_last[s_seq % 16].blk = b;
+    s_last[s_seq % 16].len = sizeof(vim_blk_t) + b->size + GUARD_TAIL;
+    s_last[s_seq % 16].seq = s_seq;
+    b->canary[0] = b->canary[1] = HEAD_CANARY;
+    memcpy((uint8_t *)(b + 1) + b->size, tail, sizeof tail);
+}
+
+static void guard_task(const char *where)
+{
+    static TaskHandle_t reported[4];
+    TaskHandle_t me = xTaskGetCurrentTaskHandle();
+    if (g_vim_task == NULL || me == g_vim_task)
+        return;
+    for (int i = 0; i < 4; i++) {
+        if (reported[i] == me)
+            return;
+        if (reported[i] == NULL) {
+            reported[i] = me;
+            esp_rom_printf("\nESPVIM-GUARD Vim's %s() on task \"%s\", not the Vim task\n",
+                           where, pcTaskGetName(me));
+            return;
+        }
+    }
+}
+
+/* The quarantine: a ring of freed blocks, oldest first out. */
+static vim_blk_t *s_q[GUARD_Q_BLOCKS];
+static unsigned s_q_head, s_q_count;
+static size_t s_q_bytes;
+
+/* A block in quarantine: still marked, still filled, canaries intact? */
+static void q_verify(vim_blk_t *b, size_t upto, const char *where)
+{
+    if (b->self != FREED_MARK(b) || b->canary[0] != HEAD_CANARY || b->canary[1] != HEAD_CANARY)
+        guard_fail(b, "freed block's header overwritten", where);
+    const uint8_t *p = (const uint8_t *)(b + 1);
+    size_t n = upto < b->size ? upto : b->size;
+    for (size_t i = 0; i < n; i++) {
+        if (p[i] != FREED_BYTE) {
+            size_t j = i;
+            while (j < b->size && p[j] != FREED_BYTE && j - i < 32)
+                j++;
+            esp_rom_printf("\nESPVIM-GUARD written after free: offset %u, %u bytes:",
+                           (unsigned)i, (unsigned)(j - i));
+            for (size_t k = i; k < j; k++)
+                esp_rom_printf(" %02x", p[k]);
+            esp_rom_printf(" \"");
+            for (size_t k = i; k < j; k++)
+                esp_rom_printf("%c", p[k] >= 32 && p[k] < 127 ? p[k] : '.');
+            esp_rom_printf("\"\n");
+            guard_fail(b, "written after free", where);
+        }
+    }
+    uint32_t t[2];
+    memcpy(t, p + b->size, sizeof t);
+    if (t[0] != TAIL_CANARY || t[1] != TAIL_CANARY)
+        guard_fail(b, "freed block's tail overwritten", where);
+}
+
+static void q_release_oldest(const char *where)
+{
+    unsigned i = (s_q_head + GUARD_Q_BLOCKS - s_q_count) % GUARD_Q_BLOCKS;
+    vim_blk_t *b = s_q[i];
+    s_q[i] = NULL;
+    s_q_count--;
+    s_q_bytes -= b->size;
+    q_verify(b, SIZE_MAX, where);
+    b->self = NULL;
+    heap_caps_free(b);
+}
+
+/* Instead of heap_caps_free(): fill, mark, hold. */
+static void q_put(vim_blk_t *b, void *freed_by)
+{
+    b->self = FREED_MARK(b);
+    b->freed_by = freed_by;
+    memset(b + 1, FREED_BYTE, b->size);
+    while (s_q_count > 0 && (s_q_count == GUARD_Q_BLOCKS || s_q_bytes + b->size > GUARD_Q_BYTES))
+        q_release_oldest("free (quarantine)");
+    if (b->size > GUARD_Q_BYTES) {          /* too big to hold: check nothing later */
+        b->self = NULL;
+        heap_caps_free(b);
+        return;
+    }
+    s_q[s_q_head] = b;
+    s_q_head = (s_q_head + 1) % GUARD_Q_BLOCKS;
+    s_q_count++;
+    s_q_bytes += b->size;
+}
+
+/* All of it back to the heap (a new session). */
+static void q_drain(void)
+{
+    while (s_q_count > 0)
+        q_release_oldest("new session");
+}
+
+static void guard_walk(const char *where)
+{
+    for (const vim_blk_t *b = s_blocks; b != NULL; b = b->next)
+        guard_check(b, where);
+    for (unsigned k = 0; k < s_q_count; k++)
+        q_verify(s_q[(s_q_head + GUARD_Q_BLOCKS - 1 - k) % GUARD_Q_BLOCKS], 64, where);
+    if (!heap_caps_check_integrity_all(true)) {
+        esp_rom_printf("\nESPVIM-GUARD ESP-IDF heap corrupt at %s (seq %u), Vim's blocks intact\n",
+                       where, (unsigned)s_seq);
+        abort();
+    }
+}
+
+static void guard_tick(const char *where)
+{
+    static uint32_t calls;
+    guard_task(where);
+    /* An overrun is most likely in a block just allocated: check the newest
+     * few on every call, so it is caught before the heap trips over it. */
+    int n = 0;
+    for (const vim_blk_t *b = s_blocks; b != NULL && n < GUARD_RECENT; b = b->next, n++)
+        guard_check(b, where);
+    if (GUARD_WALK_EVERY > 0 && ++calls % GUARD_WALK_EVERY == 0)
+        guard_walk(where);
+}
+#define GUARD_EXTRA GUARD_TAIL
+#else
+#define GUARD_EXTRA 0
+#define q_drain()               ((void)0)
+#define guard_check(b, where)   ((void)0)
+#define guard_set(b, caller)    ((void)0)
+#define guard_tick(where)       ((void)0)
+#endif
+
 static inline vim_blk_t *our_block(void *ptr)
 {
     if (ptr == NULL)
         return NULL;
     vim_blk_t *b = (vim_blk_t *)ptr - 1;
+#if CONFIG_ESP_VIM_HEAP_GUARD
+    if (b->self == FREED_MARK(b))
+        guard_fail(b, "double free (or realloc of a freed block)", "free/realloc");
+#endif
     return b->self == b ? b : NULL;
 }
 
@@ -133,14 +401,32 @@ static bool over_budget(size_t more)
 
 void *esp_vim_malloc(size_t size)
 {
-    if (size > SIZE_MAX - sizeof(vim_blk_t) || over_budget(size))
+    guard_tick("malloc");
+    if (size > SIZE_MAX - sizeof(vim_blk_t) - GUARD_EXTRA || over_budget(size))
         return NULL;            /* Vim reports "out of memory" itself */
-    vim_blk_t *b = heap_caps_malloc(sizeof(vim_blk_t) + size, VIM_HEAP_CAPS);
+    vim_blk_t *b = heap_caps_malloc(sizeof(vim_blk_t) + size + GUARD_EXTRA, VIM_HEAP_CAPS);
     if (b == NULL)
-        b = heap_caps_malloc(sizeof(vim_blk_t) + size, MALLOC_CAP_DEFAULT);
+        b = heap_caps_malloc(sizeof(vim_blk_t) + size + GUARD_EXTRA, MALLOC_CAP_DEFAULT);
     if (b == NULL)
         return NULL;
+#if CONFIG_ESP_VIM_HEAP_GUARD
+    {   /* Does the heap hand out memory that overlaps a live block? */
+        uintptr_t lo = (uintptr_t)b, hi = lo + sizeof(vim_blk_t) + size + GUARD_EXTRA;
+        int n = 0;
+        for (const vim_blk_t *o = s_blocks; o != NULL && n < 256; o = o->next, n++) {
+            uintptr_t olo = (uintptr_t)o, ohi = olo + sizeof(vim_blk_t) + o->size + GUARD_EXTRA;
+            if (lo < ohi && olo < hi) {
+                esp_rom_printf("\nESPVIM-GUARD heap returned %p..%p (%u bytes) overlapping live"
+                               " block %p..%p (size %u, seq %u)\n", (void *)lo, (void *)hi,
+                               (unsigned)(hi - lo), (void *)olo, (void *)ohi,
+                               (unsigned)o->size, (unsigned)o->seq);
+                abort();
+            }
+        }
+    }
+#endif
     blk_link(b, size);
+    guard_set(b, __builtin_return_address(0));
     return b + 1;
 }
 
@@ -160,8 +446,14 @@ void esp_vim_free(void *ptr)
         return;
     vim_blk_t *b = our_block(ptr);
     if (b != NULL) {
+        guard_tick("free");
+        guard_check(b, "free");
         blk_unlink(b);
+#if CONFIG_ESP_VIM_HEAP_GUARD
+        q_put(b, __builtin_return_address(0));
+#else
         heap_caps_free(b);
+#endif
     } else {
         heap_caps_free(ptr);    /* not ours: allocated outside Vim */
     }
@@ -185,25 +477,41 @@ void *esp_vim_realloc(void *ptr, size_t size)
         }
         return n;
     }
+    guard_tick("realloc");
+    guard_check(b, "realloc");
     if (size > b->size && over_budget(size - b->size))
         return NULL;
-    if (size > SIZE_MAX - sizeof(vim_blk_t))
+    if (size > SIZE_MAX - sizeof(vim_blk_t) - GUARD_EXTRA)
         return NULL;
 
+#if CONFIG_ESP_VIM_HEAP_GUARD
+    {   /* always move, so the old block goes through the quarantine */
+        void *n = esp_vim_malloc(size);
+        if (n == NULL)
+            return NULL;
+        memcpy(n, ptr, b->size < size ? b->size : size);
+        ((vim_blk_t *)((uintptr_t)n - sizeof(vim_blk_t)))->caller = __builtin_return_address(0);
+        blk_unlink(b);
+        q_put(b, __builtin_return_address(0));
+        return n;
+    }
+#endif
     size_t old = b->size;
     blk_unlink(b);              /* the block may move */
-    vim_blk_t *nb = heap_caps_realloc(b, sizeof(vim_blk_t) + size, VIM_HEAP_CAPS);
+    vim_blk_t *nb = heap_caps_realloc(b, sizeof(vim_blk_t) + size + GUARD_EXTRA, VIM_HEAP_CAPS);
     if (nb == NULL) {
         blk_link(b, old);       /* realloc failed: the original is untouched */
         return NULL;
     }
     blk_link(nb, size);
+    guard_set(nb, __builtin_return_address(0));
     return nb + 1;
 }
 
 /* Free every block Vim still holds. Only for a new session. */
 static void vim_heap_release_all(void)
 {
+    q_drain();
     vim_blk_t *b = s_blocks;
     while (b != NULL) {
         vim_blk_t *next = b->next;

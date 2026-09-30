@@ -26,7 +26,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 PROJECT = HERE.parent
 RUN_EMU = PROJECT.parent / "scripts" / "run-emu.sh"
-EMU = PROJECT.parent / "build-deps" / "esp-emu" / "esp-emu"
+# ESPVIM_EMU=<path>: another esp-emu than the vendored one (as in run-emu.sh).
+EMU = Path(os.environ.get("ESPVIM_EMU") or PROJECT.parent / "build-deps" / "esp-emu" / "esp-emu")
 C6_IMAGE = PROJECT.parent / "build-deps" / "c6-coprocessor" / "build" / "merged.bin"
 
 # The build variant under test (scripts/vim-build.sh), the chip it runs on, and
@@ -148,8 +149,12 @@ class Session:
         else:
             args += ["--", "--uart-tcp", f"127.0.0.1:{port}", "--net", net, *extra]
         # stdin held open: an immediate EOF would reach the emulator's console.
-        self.proc = subprocess.Popen(args, stdin=subprocess.PIPE,
-                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        # ESPVIM_EMU_LOG=<file> keeps the emulator's own messages (a bus
+        # fault, a watchdog reset), which never reach the UART.
+        emu_log = os.environ.get("ESPVIM_EMU_LOG")
+        out = open(emu_log, "wb") if emu_log else subprocess.DEVNULL
+        self.proc = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=out,
+                                     stderr=subprocess.STDOUT if emu_log else subprocess.DEVNULL,
                                      start_new_session=True)
         try:
             self.sock = self._connect()

@@ -11,11 +11,14 @@
 #   scripts/run-emu.sh <project-dir> [--chip esp32p4] [--variant tab5] [--psram 32M]
 #                      [--save-state] [--reuse] [--exit-on STR] [--timeout 30s]
 #                      [-- <extra esp-emu args>]
+#
+# ESPVIM_EMU=<path> runs another esp-emu than the vendored one (to compare
+# emulator versions).
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-EMU="$REPO_ROOT/build-deps/esp-emu/esp-emu"
+EMU="${ESPVIM_EMU:-$REPO_ROOT/build-deps/esp-emu/esp-emu}"
 
 die() { printf 'run-emu: %s\n' "$*" >&2; exit 1; }
 
