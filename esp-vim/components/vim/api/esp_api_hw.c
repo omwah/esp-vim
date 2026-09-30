@@ -130,8 +130,9 @@ typedef bool (*i2c_found_cb)(void *ctx, i2c_master_bus_handle_t bus, int addr);
 /* Probe every 7-bit address on a bus built on {sda}/{scl} for the call. */
 static bool i2c_scan(int sda, int scl, i2c_found_cb cb, void *ctx, const char *fn)
 {
-    /* The touch panel's bus (the board's own, on the ES3C28P) is shared, not
-     * claimed a second time; its pins are otherwise reserved. */
+    /* The touch panel's bus (the board's own, on the ES3C28P), or the board
+     * layer's (the Tab5's internal bus), is shared, not claimed a second time;
+     * its pins are otherwise reserved. */
     i2c_master_bus_handle_t shared = esp_touch_i2c_bus(sda, scl);
     if (shared != NULL) {
         for (int a = 0x08; a < 0x78; a++)
@@ -215,8 +216,12 @@ static const struct {
     { 0x43, 0xff, 0x00, "PI4IOE5V6408 IO expander" },
     { 0x44, 0xff, 0x00, "PI4IOE5V6408 IO expander" },
     { 0x6d, 0xff, 0x00, "M5Stack Tab5 keyboard" },
-    { 0x40, 0xff, 0x00, "INA226 current / power monitor" },
-    { 0x51, 0xff, 0x00, "RTC (PCF8563 / RX8130)" },
+    { 0x40, 0xff, 0x00, "INA226 current monitor, or ES7210 microphone ADC" },
+    { 0x41, 0xff, 0x00, "INA226 current / power monitor" },
+    { 0x10, 0xff, 0x00, "ES8388 audio codec" },
+    { 0x55, 0xff, 0x00, "ST7123 / ST7121 touch controller" },
+    { 0x32, 0xff, 0x00, "RX8130 RTC" },
+    { 0x51, 0xff, 0x00, "RTC (PCF8563 / PCF85063)" },
 };
 
 static bool add_sensor(void *ctx, i2c_master_bus_handle_t bus, int addr)

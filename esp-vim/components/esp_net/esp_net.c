@@ -25,7 +25,11 @@
 #include "esp_eth.h"
 #endif
 #if CONFIG_ESP_VIM_WIFI
+#include "esp_timer.h"
 #include "esp_wifi.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#include "freertos/task.h"
 #include "nvs.h"
 #endif
 
@@ -115,8 +119,9 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 }
 
 static bool s_wifi_started;
+static SemaphoreHandle_t s_wifi_lock;   /* one start at a time: boot's, in the background, or a command's */
 
-static esp_err_t start_wifi(void)
+static esp_err_t start_wifi_locked(void)
 {
     if (s_wifi_started)
         return ESP_OK;
@@ -135,6 +140,31 @@ static esp_err_t start_wifi(void)
     s_wifi_started = err == ESP_OK;
     return err;
 }
+
+/* Through a co-processor (the Tab5's C6), the first start waits for its link:
+ * esp-hosted resets it and waits for it to come up, seconds, or longer if it
+ * never answers. */
+static esp_err_t start_wifi(void)
+{
+    if (s_wifi_lock)
+        xSemaphoreTake(s_wifi_lock, portMAX_DELAY);
+    esp_err_t err = start_wifi_locked();
+    if (s_wifi_lock)
+        xSemaphoreGive(s_wifi_lock);
+    return err;
+}
+
+#if CONFIG_ESP_VIM_NET_WIFI_REMOTE
+/* At boot, so waiting for the C6 doesn't hold up the console. */
+static void wifi_boot_task(void *arg)
+{
+    int64_t t0 = esp_timer_get_time();
+    esp_err_t err = start_wifi();
+    printf("ESPVIM-NET wifi through the co-processor: %s (%lld ms)\n", esp_err_to_name(err),
+           (long long)((esp_timer_get_time() - t0) / 1000));
+    vTaskDelete(NULL);
+}
+#endif
 
 /* Sleep: the radio off, and back on -- rejoining the stored network, as at
  * boot, if it was joined (or being joined) before. A driver never started
@@ -320,10 +350,16 @@ esp_err_t esp_net_init(void)
         ESP_LOGW(TAG, "ethernet: %s -- no network", esp_err_to_name(err));
 #elif CONFIG_ESP_VIM_WIFI
     s_iface = "wifi";
+    s_wifi_lock = xSemaphoreCreateMutex();
     if (wifi_configured()) {
+#if CONFIG_ESP_VIM_NET_WIFI_REMOTE
+        if (xTaskCreate(wifi_boot_task, "wifi_boot", 4096, NULL, 5, NULL) != pdPASS)
+            ESP_LOGW(TAG, "wifi: cannot start it in the background");
+#else
         err = start_wifi();
         if (err != ESP_OK)
             ESP_LOGW(TAG, "wifi: %s -- no network", esp_err_to_name(err));
+#endif
     }
 #endif
     return err;

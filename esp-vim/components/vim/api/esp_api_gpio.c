@@ -22,6 +22,10 @@
 # include "soc/usb_pins.h"
 # define CONSOLE_TX USBPHY_DM_NUM
 # define CONSOLE_RX USBPHY_DP_NUM
+#elif defined(CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG) && defined(CONFIG_IDF_TARGET_ESP32P4)
+# include "soc/io_mux_reg.h"                    /* the USB Serial/JTAG's PHY: GPIO24/25 */
+# define CONSOLE_TX USB_USJ_INT_PHY_DM_GPIO_NUM
+# define CONSOLE_RX USB_USJ_INT_PHY_DP_GPIO_NUM
 #elif defined(CONFIG_ESP_CONSOLE_UART_CUSTOM)
 # define CONSOLE_TX CONFIG_ESP_CONSOLE_UART_TX_GPIO
 # define CONSOLE_RX CONFIG_ESP_CONSOLE_UART_RX_GPIO

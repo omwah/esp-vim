@@ -23,16 +23,18 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "sdmmc_cmd.h"
+#if CONFIG_ESP_VIM_SD_SDMMC && CONFIG_ESP_VIM_SD_LDO_CHAN >= 0
+# include "sd_pwr_ctrl_by_on_chip_ldo.h"
+#endif
 
 static SemaphoreHandle_t s_lock;
 static sdmmc_card_t *s_card;
 static char s_err[96];
-static bool s_bus_ready;
-
 #if CONFIG_ESP_VIM_SD_SPI
-#define BUS_NAME "SPI"
+static bool s_bus_ready;
+static const char *s_bus_name = "SPI";
 #else
-#define BUS_NAME "SDMMC 4-bit"
+static const char *s_bus_name = "SDMMC 4-bit";
 #endif
 
 static void why(char *err, size_t errlen, esp_err_t e)
@@ -92,7 +94,19 @@ static esp_err_t mount(void)
     return esp_vfs_fat_sdspi_mount(ESP_SD_PATH, &host, &slot, &mc, &s_card);
 #else
     sdmmc_host_t host = SDMMC_HOST_DEFAULT();
+    host.slot = CONFIG_ESP_VIM_SD_MMC_SLOT;
     host.max_freq_khz = CONFIG_ESP_VIM_SD_MHZ * 1000;
+#if CONFIG_ESP_VIM_SD_LDO_CHAN >= 0
+    /* The slot's power, from the chip's own LDO: made once, kept. */
+    static sd_pwr_ctrl_handle_t pwr;
+    if (pwr == NULL) {
+        sd_pwr_ctrl_ldo_config_t ldo = { .ldo_chan_id = CONFIG_ESP_VIM_SD_LDO_CHAN };
+        esp_err_t e = sd_pwr_ctrl_new_on_chip_ldo(&ldo, &pwr);
+        if (e != ESP_OK)
+            return e;
+    }
+    host.pwr_ctrl_handle = pwr;
+#endif
     sdmmc_slot_config_t slot = SDMMC_SLOT_CONFIG_DEFAULT();
     slot.width = 4;
     slot.clk = CONFIG_ESP_VIM_SD_MMC_CLK;
@@ -102,7 +116,17 @@ static esp_err_t mount(void)
     slot.d2 = CONFIG_ESP_VIM_SD_MMC_D2;
     slot.d3 = CONFIG_ESP_VIM_SD_MMC_D3;
     slot.flags |= SDMMC_SLOT_FLAG_INTERNAL_PULLUP;
-    return esp_vfs_fat_sdmmc_mount(ESP_SD_PATH, &host, &slot, &mc, &s_card);
+    s_bus_name = "SDMMC 4-bit";
+    esp_err_t e = esp_vfs_fat_sdmmc_mount(ESP_SD_PATH, &host, &slot, &mc, &s_card);
+    if (e != ESP_OK && e != ESP_FAIL && e != ESP_ERR_NO_MEM) {
+        /* No answer on four lines: a card (or slot) that only manages one. */
+        slot.width = 1;
+        s_bus_name = "SDMMC 1-bit";
+        e = esp_vfs_fat_sdmmc_mount(ESP_SD_PATH, &host, &slot, &mc, &s_card);
+        if (e != ESP_OK)
+            s_bus_name = "SDMMC 4-bit";
+    }
+    return e;
 #endif
 }
 
@@ -172,7 +196,7 @@ void esp_sd_info(esp_sd_info_t *out)
 {
     memset(out, 0, sizeof *out);
     out->configured = true;
-    out->bus = BUS_NAME;
+    out->bus = s_bus_name;
     out->type = "";
     out->fs = "";
     if (s_lock == NULL)

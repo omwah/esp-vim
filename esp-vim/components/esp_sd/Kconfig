@@ -47,6 +47,25 @@ menu "esp-vim SD card"
         depends on ESP_VIM_SD_SPI
         default 10
 
+    config ESP_VIM_SD_MMC_SLOT
+        int "SDMMC slot"
+        depends on ESP_VIM_SD_SDMMC
+        range 0 1
+        default 1
+        help
+            The host controller's slot. On the ESP32-P4, slot 0 is the one
+            on fixed pins (CLK 43, CMD 44, D0-D3 39-42) and slot 1 is routed
+            through the GPIO matrix -- on the Tab5, the ESP32-C6's SDIO link
+            has slot 1, and the card slot 0. On the ESP32-S3 either will do.
+
+    config ESP_VIM_SD_LDO_CHAN
+        int "On-chip LDO channel powering the card (-1: none)"
+        depends on ESP_VIM_SD_SDMMC
+        default -1
+        help
+            ESP32-P4 boards may power the card's slot from one of the chip's
+            own LDOs; the Tab5's is channel 4.
+
     config ESP_VIM_SD_MMC_CLK
         int "CLK GPIO"
         depends on ESP_VIM_SD_SDMMC

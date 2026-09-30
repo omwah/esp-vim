@@ -25,6 +25,7 @@
 
 static StreamBufferHandle_t s_queue;
 static SemaphoreHandle_t s_lock;        /* the queue has one writer at a time */
+static SemaphoreHandle_t s_input_lock;  /* ... and the key state: USB, Bluetooth and the Tab5's keyboard each have a task */
 static esp_timer_handle_t s_repeat;
 static esp_kbd_keys_t s_prev;           /* the keys held, as of the last report */
 static esp_kbd_state_t s_state;         /* each report's keys (esp_kbd_merge) */
@@ -66,10 +67,8 @@ static bool holds(const esp_kbd_keys_t *k, uint8_t usage)
     return memchr(k->key, usage, k->n) != NULL;
 }
 
-void esp_kbd_input(uint16_t id, const esp_kbd_keys_t *report)
+static void input(uint16_t id, const esp_kbd_keys_t *report)
 {
-    if (s_queue == NULL)
-        return;
     esp_kbd_keys_t state, *now = &state;
     esp_kbd_merge(&s_state, id, report, &state);    /* with the other reports' keys */
     uint8_t newest = 0;
@@ -99,6 +98,15 @@ void esp_kbd_input(uint16_t id, const esp_kbd_keys_t *report)
     }
 }
 
+void esp_kbd_input(uint16_t id, const esp_kbd_keys_t *report)
+{
+    if (s_queue == NULL)
+        return;
+    xSemaphoreTake(s_input_lock, portMAX_DELAY);
+    input(id, report);
+    xSemaphoreGive(s_input_lock);
+}
+
 void esp_kbd_report(const uint8_t *r, size_t len)
 {
     esp_kbd_keys_t k;
@@ -117,11 +125,30 @@ static void on_repeat_timer(void *arg)
 
 void esp_kbd_release_all(void)
 {
+    if (s_input_lock)
+        xSemaphoreTake(s_input_lock, portMAX_DELAY);
     s_repeat_key = 0;
     if (s_repeat)
         esp_timer_stop(s_repeat);
     memset(&s_prev, 0, sizeof s_prev);
     memset(&s_state, 0, sizeof s_state);
+    if (s_input_lock)
+        xSemaphoreGive(s_input_lock);
+}
+
+static volatile unsigned s_wired;
+
+void esp_kbd_wired(unsigned which, bool attached)
+{
+    if (attached)
+        __atomic_or_fetch(&s_wired, which, __ATOMIC_RELAXED);
+    else
+        __atomic_and_fetch(&s_wired, ~which, __ATOMIC_RELAXED);
+}
+
+bool esp_kbd_wired_attached(void)
+{
+    return s_wired != 0;
 }
 
 bool esp_kbd_pending(void)
@@ -141,9 +168,10 @@ esp_err_t esp_kbd_init(void)
     if (s_queue != NULL)
         return ESP_OK;
     s_lock = xSemaphoreCreateMutex();
+    s_input_lock = xSemaphoreCreateMutex();
     s_queue = xStreamBufferCreateWithCaps(QUEUE_SIZE, 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     const esp_timer_create_args_t t = { .callback = on_repeat_timer, .name = "kbd_repeat" };
-    if (s_lock == NULL || s_queue == NULL || esp_timer_create(&t, &s_repeat) != ESP_OK)
+    if (s_lock == NULL || s_input_lock == NULL || s_queue == NULL || esp_timer_create(&t, &s_repeat) != ESP_OK)
         return ESP_ERR_NO_MEM;
     return ESP_OK;
 }

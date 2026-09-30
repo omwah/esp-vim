@@ -6,11 +6,17 @@
  * way the touch task sleeps until INT falls, then reads the first touch point
  * every 16 ms until the panel reports no touches, handing DOWN, MOVE... and UP
  * to the handler. Only the first point is used.
+ *
+ * The board's own controller (ESP_VIM_TOUCH_BOARD, the Tab5's) has no interrupt
+ * here: it is read every POLL_MS, and its points come in the panel's native
+ * orientation, turned the way the display turns the picture.
  */
 
 #include "esp_touch.h"
 
 #include "driver/gpio.h"
+#include "esp_board.h"
+#include "esp_board_rotate.h"
 #include "esp_log.h"
 #include "esp_private/esp_gpio_reserve.h"
 #include "freertos/FreeRTOS.h"
@@ -26,13 +32,16 @@ static const char *TAG = "esp_touch";
 #define GT_X_MAX      0x8048            /* GT911 configuration: the reported range */
 #define POLL_MS       16
 
+#if !CONFIG_ESP_VIM_TOUCH_BOARD
 static i2c_master_bus_handle_t s_bus;
 static i2c_master_dev_handle_t s_dev;
 static SemaphoreHandle_t s_irq;
+#endif
 static volatile esp_touch_handler_t s_handler;
 static void *volatile s_ctx;
 static bool s_ready;
 
+#if !CONFIG_ESP_VIM_TOUCH_BOARD
 static void on_int(void *arg)
 {
     BaseType_t woken = pdFALSE;
@@ -40,8 +49,28 @@ static void on_int(void *arg)
     if (woken)
         portYIELD_FROM_ISR();
 }
+#endif
 
-#if CONFIG_ESP_VIM_TOUCH_GT911
+#ifndef CONFIG_ESP_VIM_DISP_ROTATION
+# define CONFIG_ESP_VIM_DISP_ROTATION 0         /* no display to follow */
+#endif
+
+#if CONFIG_ESP_VIM_TOUCH_BOARD
+
+/* The point turned into the picture's coordinates here, so the swap and
+ * mirror settings (which read_point applies) are off for this controller. */
+static int read_raw(int *rx, int *ry)
+{
+    int nx, ny;
+    int r = esp_board_touch_read(&nx, &ny);
+    if (r <= 0)
+        return 0;
+    esp_board_rot_to_logical(CONFIG_ESP_VIM_DISP_ROTATION, CONFIG_ESP_VIM_TOUCH_WIDTH,
+                             CONFIG_ESP_VIM_TOUCH_HEIGHT, nx, ny, rx, ry);
+    return 1;
+}
+
+#elif CONFIG_ESP_VIM_TOUCH_GT911
 
 static int s_x_max = CONFIG_ESP_VIM_TOUCH_WIDTH, s_y_max = CONFIG_ESP_VIM_TOUCH_HEIGHT;
 
@@ -130,8 +159,12 @@ static void deliver(esp_touch_event_t ev, int x, int y)
 static void touch_task(void *arg)
 {
     for (;;) {
+#if CONFIG_ESP_VIM_TOUCH_BOARD
+        vTaskDelay(pdMS_TO_TICKS(POLL_MS));     /* no interrupt: look */
+#else
         /* Wait for a touch; also look now and then, in case an edge was missed. */
         xSemaphoreTake(s_irq, pdMS_TO_TICKS(1000));
+#endif
         int x, y;
         if (!read_point(&x, &y))
             continue;
@@ -145,9 +178,28 @@ static void touch_task(void *arg)
             deliver(ESP_TOUCH_MOVE, x, y);
         }
         deliver(ESP_TOUCH_UP, lx, ly);
+#if !CONFIG_ESP_VIM_TOUCH_BOARD
         xSemaphoreTake(s_irq, 0);       /* edges from this touch are done with */
+#endif
     }
 }
+
+#if CONFIG_ESP_VIM_TOUCH_BOARD
+
+esp_err_t esp_touch_init(void)
+{
+    esp_err_t e = esp_board_touch_init();
+    if (e != ESP_OK)
+        return e;
+    if (xTaskCreatePinnedToCoreWithCaps(touch_task, "touch", 3072, NULL, 4, NULL, 1,
+                                        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS)
+        return ESP_ERR_NO_MEM;
+    s_ready = true;
+    ESP_LOGI(TAG, "the board's touch controller, read every %d ms", POLL_MS);
+    return ESP_OK;
+}
+
+#else
 
 esp_err_t esp_touch_init(void)
 {
@@ -245,6 +297,8 @@ esp_err_t esp_touch_init(void)
     return ESP_OK;
 }
 
+#endif
+
 bool esp_touch_available(void)
 {
     return s_ready;
@@ -259,5 +313,9 @@ void esp_touch_set_handler(esp_touch_handler_t handler, void *ctx)
 
 i2c_master_bus_handle_t esp_touch_i2c_bus(int sda, int scl)
 {
-    return s_ready && sda == CONFIG_ESP_VIM_TOUCH_SDA && scl == CONFIG_ESP_VIM_TOUCH_SCL ? s_bus : NULL;
+#if !CONFIG_ESP_VIM_TOUCH_BOARD
+    if (s_ready && sda == CONFIG_ESP_VIM_TOUCH_SDA && scl == CONFIG_ESP_VIM_TOUCH_SCL)
+        return s_bus;
+#endif
+    return esp_board_i2c_bus(sda, scl);         /* the board's (the Tab5's), if these are its pins */
 }

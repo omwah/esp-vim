@@ -10,4 +10,4 @@ else()
 endif()
 idf_component_register(SRCS ${srcs} INCLUDE_DIRS "include"
                        REQUIRES esp_driver_i2c
-                       PRIV_REQUIRES esp_driver_gpio esp_hw_support log freertos)
+                       PRIV_REQUIRES esp_driver_gpio esp_hw_support log freertos esp_board)

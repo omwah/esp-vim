@@ -7,6 +7,7 @@
 #include "version.h"          /* VIM_VERSION_SHORT */
 #include "esp_vim_api.h"
 #include "esp_vim_port.h"
+#include "esp_board.h"
 #include "esp_display.h"
 #include "esp_power.h"
 #include "esp_time.h"
@@ -57,6 +58,11 @@ void f_esp_info(typval_T *argvars UNUSED, typval_T *rettv)
     char buf[48];
 
     dict_add_string(d, "chip", (char_u *)ESP_VIM_CHIP);
+    if (esp_board_name() != NULL) {                     /* a board with a board layer */
+        dict_add_string(d, "board", (char_u *)esp_board_name());
+        if (*esp_board_panel_name())
+            dict_add_string(d, "panel", (char_u *)esp_board_panel_name());
+    }
     snprintf(buf, sizeof buf, "v%d.%d", ci.revision / 100, ci.revision % 100);
     dict_add_string(d, "revision", (char_u *)buf);
     dict_add_number(d, "cores", ci.cores);

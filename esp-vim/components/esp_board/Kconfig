@@ -1,0 +1,15 @@
+menu "esp-vim board layer"
+
+    config ESP_VIM_BOARD_TAB5
+        bool "M5Stack Tab5"
+        depends on IDF_TARGET_ESP32P4
+        default n
+        help
+            The Tab5's own hardware, through Espressif's board support
+            package (m5stack_tab5_noglib): the internal I2C bus (GPIO31/32)
+            and its two PI4IOE5V6408 IO expanders, which switch the ESP32-C6's
+            power, the USB-A port's 5 V, the LCD, touch and speaker; and the
+            MIPI-DSI panel, whichever of the three fitted revisions it is
+            (ILI9881C + GT911, ST7123, ST7121).
+
+endmenu

@@ -1,0 +1,10 @@
+# On the Tab5 (WiFi through the C6, ESP_VIM_NET_WIFI_REMOTE), Bluetooth goes
+# through the C6 too: esp-hosted carries NimBLE's HCI to its controller, and
+# esp_ble enables that controller (esp_hosted_misc.h). Required here only so
+# the header is found; the version is esp_net's, which the two ends must match.
+dependencies:
+  espressif/esp_hosted:
+    version: "2.12.13"
+    rules:
+      - if: "target in [esp32p4]"
+      - if: "$CONFIG{ESP_VIM_NET_WIFI_REMOTE} == True"

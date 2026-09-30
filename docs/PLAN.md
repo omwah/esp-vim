@@ -18,10 +18,10 @@
 | 6 — `:Esp*` commands, file manager, transports, web | **done** (2026-09-29), see [PHASE6.md](PHASE6.md): 6a–6e 2026-09-24, 6f 2026-09-25 (serial, I2C, ADC, sensors; S3 WiFi and BLE scan; Tab5 WiFi via the C6 built, its run-time check in Phase 9 since esp-emu cannot run esp-hosted). `:EspUsbMsc` needs the Tab5's USB-C port and moves to Phase 9 |
 | 7 — MicroPython | **done, first cut** (2026-09-29): MicroPython 1.29 in every build, on the Vim task; `:EspPy`, `:EspPyRun`, `:EspPyReset`, `:EspPyRepl`, the `vim` and `esp` modules; emulator gate `py.py` green on the P4. See Phase 7 |
 | 8 — Git | **done, first cut** (2026-09-28): on libgit2 (the stage 6z gate), 18 `esp_git_*()` builtins and 19 `:EspGit*` commands in every build; emulator gate `git.py` green on the P4; clone, push, fast-forward and merge pulls tested on a real ESP32-S3 (Freenove FNK0115) over WiFi, HTTPS and the LAN. See Phase 8 |
-| 9 — Tab5 hardware over UART | not started |
-| 10 — Tab5 display console | not started |
+| 9 — Tab5 hardware over UART | **written, not yet run** (2026-09-30), see [PHASE9.md](PHASE9.md): the board layer (`components/esp_board`: the IO expanders and internal I2C through Espressif's BSP), the C6's SDIO pins, microSD on slot 0, the RX8130 clock, the battery through the INA226, the console on USB-C; the first-flash checklist is there |
+| 10 — Tab5 display console | **written, not yet run** (2026-09-30): the MIPI-DSI panel of each Tab5 revision (ILI9881C, ST7123, ST7121) through the BSP, drawn turned to landscape (106x30 cells in Terminus 12x24), touch through the panel's controller; the keyboard accessory and USB-A keyboards (see PHASE9.md) |
 | 10b — ESP32-S3 CYD display console | **in progress, pulled forward** (2026-09-25): Vim on the Hosyond ES3C28P's panel and the Freenove FNK0115Q's 5" RGB panel; see Phase 10b |
-| 11 — Bluetooth keyboards (late-stage goal) | **in progress, pulled forward** (2026-09-25): on the ES3C28P a BLE keyboard pairs by command or by touch (the overlay) and types into Vim. 2026-09-29: any keyboard's reports decoded from its report map (N-key rollover too), xterm modifier keys, several bonded keyboards, forget one, a "Paired" notice; typing, Ctrl-arrows and many keys held tested on the Freenove with a BLE keyboard; see Phase 11 |
+| 11 — Bluetooth keyboards (late-stage goal) | **in progress, pulled forward** (2026-09-25): on the ES3C28P a BLE keyboard pairs by command or by touch (the overlay) and types into Vim. 2026-09-29: any keyboard's reports decoded from its report map (N-key rollover too), xterm modifier keys, several bonded keyboards, forget one, a "Paired" notice; typing, Ctrl-arrows and many keys held tested on the Freenove with a BLE keyboard; see Phase 11. 2026-09-30: the Tab5 build has NimBLE through the C6 (esp-hosted HCI), not yet run |
 
 Toolchain: ESP-IDF **v5.5.5**, riscv32-esp-elf 14.2.0, emulator esp-emu 0.43.0.
 
@@ -1293,7 +1293,7 @@ after a restart. The touch pairing overlay is still to come.
   (`nimble_port_init` failed with `ESP_ERR_NO_MEM`). WiFi now starts only when a network
   is stored, or on the first scan or connect. With the keyboard connected, about
   31 KB of internal RAM is free.
-- **Still to do:** Tab5 (esp-hosted HCI).
+- **Still to do:** Tab5 (esp-hosted HCI): written 2026-09-30, not yet run (PHASE9.md).
 
 ### Keyboard follow-ups (2026-09-29)
 

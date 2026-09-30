@@ -21,6 +21,27 @@ menu "esp-vim power"
             computer is there), the board knows when it's on battery, and only
             then sleeps by itself. The RLCD-4.2's is 4.
 
+    config ESP_VIM_BAT_INA226
+        bool "Battery voltage from an INA226 on the board's I2C bus"
+        default n
+        help
+            Instead of an ADC pin: the INA226 current monitor's bus voltage,
+            on the I2C bus of :EspI2cScan (ESP_VIM_I2C_SDA/SCL), as the
+            M5Stack Tab5 has it (0x41).
+
+    config ESP_VIM_BAT_INA226_ADDR
+        hex "INA226 address"
+        depends on ESP_VIM_BAT_INA226
+        default 0x41
+
+    config ESP_VIM_BAT_CELLS
+        int "Lithium cells in series"
+        range 1 4
+        default 1
+        help
+            For the charge estimate. The Tab5's NP-F550 battery is two
+            (7.4 V); set ESP_VIM_SLEEP_LOW_MV for the whole battery too.
+
     config ESP_VIM_BAT_DIVIDER
         int "Battery divider: battery mV per 1000 mV at the pin"
         default 3000

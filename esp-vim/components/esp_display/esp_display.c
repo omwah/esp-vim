@@ -8,12 +8,16 @@
  * sent to the panel as a single SPI transfer -- or, on an RGB panel, copied
  * into its frame buffer in PSRAM, which the LCD peripheral streams out by
  * itself. A monochrome ST7305 has a 1-bit frame buffer here, in the panel's own
- * layout, sent whole once a burst of damage is painted. libvterm is only ever
- * touched by the display task.
+ * layout, sent whole once a burst of damage is painted. A MIPI-DSI panel (the
+ * Tab5's, set up by esp_board) has its frame buffer in PSRAM too, in its own
+ * portrait orientation: cells are written into it turned, and the rows they
+ * touched written back from the cache once a burst is painted. libvterm is
+ * only ever touched by the display task.
  */
 
 #include "esp_display.h"
 
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,6 +28,11 @@
 #include "esp_lcd_panel_ops.h"
 #if CONFIG_ESP_VIM_DISP_RGB
 # include "esp_lcd_panel_rgb.h"
+#elif CONFIG_ESP_VIM_DISP_DSI
+# include "esp_board.h"
+# include "esp_board_rotate.h"
+# include "esp_cache.h"
+# include "esp_lcd_mipi_dsi.h"
 #elif CONFIG_ESP_VIM_DISP_ST7305
 # include "driver/spi_master.h"
 #else
@@ -38,6 +47,7 @@
 #include "freertos/idf_additions.h"
 #include "nvs.h"
 #include "sdkconfig.h"
+#include "soc/soc_caps.h"
 #include "vterm.h"
 
 #include "esp_display_font.h"
@@ -96,10 +106,10 @@ static int s_cols, s_rows, s_x0, s_y0;
 # define DISP_MONO  0
 #endif
 
-/* An SPI panel takes each pixel's high byte first; an RGB panel's frame buffer
- * is plain little-endian RGB565, and a monochrome one's line buffer only tells
+/* An SPI panel takes each pixel's high byte first; an RGB or DSI panel's frame
+ * buffer is plain little-endian RGB565, and a monochrome one's line buffer only tells
  * ink (0) from paper. */
-#if CONFIG_ESP_VIM_DISP_RGB || DISP_MONO
+#if CONFIG_ESP_VIM_DISP_RGB || CONFIG_ESP_VIM_DISP_DSI || DISP_MONO
 # define PIXEL(v)   ((uint16_t)(v))
 #else
 # define PIXEL(v)   ((uint16_t)((v) >> 8 | (v) << 8))
@@ -211,7 +221,7 @@ static __attribute__((unused)) uint16_t rgb565(VTermColor *c)
     return PIXEL(v);
 }
 
-#if !CONFIG_ESP_VIM_DISP_RGB
+#if !CONFIG_ESP_VIM_DISP_RGB && !CONFIG_ESP_VIM_DISP_DSI
 static bool on_color_done(esp_lcd_panel_io_handle_t io, esp_lcd_panel_io_event_data_t *e, void *ctx)
 {
     BaseType_t woken = pdFALSE;
@@ -290,6 +300,56 @@ static void draw(int x0, int y0, int x1, int y1)
         for (int x = x0; x < x1; x++)
             fb_set(x, y, *p++ != INK);
     s_fb_dirty = true;
+}
+
+#elif CONFIG_ESP_VIM_DISP_DSI
+
+#if CONFIG_ESP_VIM_DISP_ROTATION % 90 != 0 || CONFIG_ESP_VIM_DISP_ROTATION > 270
+# error "ESP_VIM_DISP_ROTATION must be 0, 90, 180 or 270"
+#endif
+
+static uint16_t *s_fb;                  /* the panel's frame buffer, native orientation */
+static int s_native_w, s_native_h;
+static int s_dirty_y0 = INT_MAX, s_dirty_y1;    /* its rows written since the last flush */
+
+/* The picture's turn on the panel: the configured one, and upside down. */
+static int rotation(void)
+{
+    return (CONFIG_ESP_VIM_DISP_ROTATION + (s_flip ? 180 : 0)) % 360;
+}
+
+/* Write the rows drawn into back from the cache, where the DSI's DMA reads. */
+static void flush(void)
+{
+    if (s_dirty_y0 >= s_dirty_y1)
+        return;
+    esp_cache_msync(s_fb + (size_t)s_dirty_y0 * s_native_w,
+                    (size_t)(s_dirty_y1 - s_dirty_y0) * s_native_w * sizeof(uint16_t),
+                    ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
+    s_dirty_y0 = INT_MAX;
+    s_dirty_y1 = 0;
+}
+
+/* Draw from the line buffer into the frame buffer, turned; flush() makes it
+ * visible. */
+static void draw(int x0, int y0, int x1, int y1)
+{
+    const int rot = rotation();
+    const uint16_t *p = s_line;
+    for (int y = y0; y < y1; y++)
+        for (int x = x0; x < x1; x++) {
+            int nx, ny;
+            esp_board_rot_to_native(rot, CONFIG_ESP_VIM_DISP_WIDTH, CONFIG_ESP_VIM_DISP_HEIGHT,
+                                    x, y, &nx, &ny);
+            s_fb[(size_t)ny * s_native_w + nx] = *p++;
+        }
+    int nx0, ny0, nx1, ny1;
+    esp_board_rot_rect(rot, CONFIG_ESP_VIM_DISP_WIDTH, CONFIG_ESP_VIM_DISP_HEIGHT,
+                       x0, y0, x1, y1, &nx0, &ny0, &nx1, &ny1);
+    if (ny0 < s_dirty_y0)
+        s_dirty_y0 = ny0;
+    if (ny1 > s_dirty_y1)
+        s_dirty_y1 = ny1;
 }
 
 #else
@@ -380,7 +440,7 @@ static void go_to_sleep(const esp_display_sleep_t *req);
 static void apply_flip(bool on)
 {
     s_flip = on;
-#if !DISP_MONO
+#if !DISP_MONO && !CONFIG_ESP_VIM_DISP_DSI
     esp_lcd_panel_mirror(s_panel, DISP_MIRROR_X ^ on, DISP_MIRROR_Y ^ on);
 #endif
 }
@@ -651,10 +711,12 @@ static void hold_pins(bool on)
         else
             gpio_hold_dis(s_hold_pins[i]);
     }
+#if !SOC_GPIO_SUPPORT_HOLD_SINGLE_IO_IN_DSLP     /* where each pin's hold doesn't do it alone */
     if (on)
         gpio_deep_sleep_hold_en();
     else
         gpio_deep_sleep_hold_dis();
+#endif
 }
 
 /* ESP-IDF isolates every GPIO in light sleep (ESP_SLEEP_GPIO_RESET_WORKAROUND:
@@ -670,7 +732,9 @@ static void keep_pins_in_light_sleep(void)
 
 static void backlight(bool on)
 {
-#if CONFIG_ESP_VIM_DISP_BACKLIGHT >= 0
+#if CONFIG_ESP_VIM_DISP_DSI
+    esp_board_backlight(on ? 100 : 0);
+#elif CONFIG_ESP_VIM_DISP_BACKLIGHT >= 0
     gpio_set_level(CONFIG_ESP_VIM_DISP_BACKLIGHT,
                    on ? CONFIG_ESP_VIM_DISP_BACKLIGHT_ON_LEVEL : !CONFIG_ESP_VIM_DISP_BACKLIGHT_ON_LEVEL);
 #endif
@@ -901,6 +965,30 @@ static esp_err_t panel_init_core1(void)
     return job.result;
 }
 
+#elif CONFIG_ESP_VIM_DISP_DSI
+
+/* The board sets the panel up, whichever it is; the picture must fit it
+ * turned. */
+static esp_err_t panel_init(void)
+{
+    esp_err_t e = esp_board_panel_new(&s_panel, &s_native_w, &s_native_h);
+    if (e != ESP_OK)
+        return e;
+    bool sideways = CONFIG_ESP_VIM_DISP_ROTATION == 90 || CONFIG_ESP_VIM_DISP_ROTATION == 270;
+    int want_w = sideways ? CONFIG_ESP_VIM_DISP_HEIGHT : CONFIG_ESP_VIM_DISP_WIDTH;
+    int want_h = sideways ? CONFIG_ESP_VIM_DISP_WIDTH : CONFIG_ESP_VIM_DISP_HEIGHT;
+    if (s_native_w != want_w || s_native_h != want_h) {
+        ESP_LOGE(TAG, "the panel is %dx%d; %dx%d turned %d wants %dx%d", s_native_w, s_native_h,
+                 CONFIG_ESP_VIM_DISP_WIDTH, CONFIG_ESP_VIM_DISP_HEIGHT,
+                 CONFIG_ESP_VIM_DISP_ROTATION, want_w, want_h);
+        return ESP_ERR_INVALID_SIZE;
+    }
+    void *fb = NULL;
+    e = esp_lcd_dpi_panel_get_frame_buffer(s_panel, 1, &fb);
+    s_fb = fb;
+    return e;
+}
+
 #elif DISP_MONO
 
 /* The ST7305's set-up, as Waveshare's driver sends it: {command, data length,
@@ -1056,7 +1144,9 @@ static void clear_panel(void)
 
 static void backlight_on(void)
 {
-#if CONFIG_ESP_VIM_DISP_BACKLIGHT >= 0          /* -1: none (a reflective panel) */
+#if CONFIG_ESP_VIM_DISP_DSI
+    esp_board_backlight(100);
+#elif CONFIG_ESP_VIM_DISP_BACKLIGHT >= 0          /* -1: none (a reflective panel) */
     gpio_config_t g = { .pin_bit_mask = 1ULL << CONFIG_ESP_VIM_DISP_BACKLIGHT,
                         .mode = GPIO_MODE_OUTPUT };
     gpio_config(&g);
@@ -1133,7 +1223,8 @@ esp_err_t esp_display_init(void)
      * streaming the frame buffer out of -- unless the LCD streams from bounce
      * buffers, when PSRAM will do and the internal RAM is better spent. */
     s_line = heap_caps_malloc(s_line_px * sizeof(uint16_t),
-#if (CONFIG_ESP_VIM_DISP_RGB && CONFIG_ESP_VIM_DISP_BOUNCE_LINES > 0) || DISP_MONO
+#if (CONFIG_ESP_VIM_DISP_RGB && CONFIG_ESP_VIM_DISP_BOUNCE_LINES > 0) || DISP_MONO \
+        || CONFIG_ESP_VIM_DISP_DSI
                               MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 #else
                               MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);

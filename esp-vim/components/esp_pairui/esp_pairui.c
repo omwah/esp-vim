@@ -31,6 +31,7 @@
 
 #include "esp_ble.h"
 #include "esp_display.h"
+#include "esp_kbd.h"
 #include "esp_timer.h"
 #include "esp_touch.h"
 #include "freertos/FreeRTOS.h"
@@ -302,7 +303,7 @@ static void pairui_task(void *arg)
         esp_ble_kbd_status_t st;
         esp_ble_kbd_status(&st);
         int64_t now = esp_timer_get_time();
-        if (st.connected) {
+        if (st.connected || esp_kbd_wired_attached()) {    /* or a keyboard on a wire */
             ever = true;
             last_seen = now;
             dismissed = false;                  /* a later disconnect may show it */

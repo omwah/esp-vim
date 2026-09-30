@@ -18,6 +18,15 @@ menu "esp-vim touch"
         bool "FT6336G / FT6x06"
     config ESP_VIM_TOUCH_GT911
         bool "GT911"
+    config ESP_VIM_TOUCH_BOARD
+        bool "The board's own (esp_board: M5Stack Tab5)"
+        depends on ESP_VIM_BOARD_TAB5
+        help
+            Whichever controller goes with the fitted panel (GT911, or the
+            ST7123/ST7121's own), through Espressif's board support package,
+            polled. Its points are turned the way the display turns the
+            picture (ESP_VIM_DISP_ROTATION); the pins, address and
+            swap/mirror settings below don't apply.
     endchoice
 
     config ESP_VIM_TOUCH_SDA
@@ -46,10 +55,12 @@ menu "esp-vim touch"
 
     config ESP_VIM_TOUCH_WIDTH
         int "Screen width, as mounted"
+        default 1280 if ESP_VIM_TOUCH_BOARD
         default 800 if ESP_VIM_TOUCH_GT911
         default 320
     config ESP_VIM_TOUCH_HEIGHT
         int "Screen height, as mounted"
+        default 720 if ESP_VIM_TOUCH_BOARD
         default 480 if ESP_VIM_TOUCH_GT911
         default 240
 
@@ -57,11 +68,11 @@ menu "esp-vim touch"
     # USB port on the right (as esp_display draws it): swap, then mirror X.
     config ESP_VIM_TOUCH_SWAP_XY
         bool "Swap X and Y"
-        default n if ESP_VIM_TOUCH_GT911
+        default n if ESP_VIM_TOUCH_GT911 || ESP_VIM_TOUCH_BOARD
         default y
     config ESP_VIM_TOUCH_MIRROR_X
         bool "Mirror X (after swapping)"
-        default n if ESP_VIM_TOUCH_GT911
+        default n if ESP_VIM_TOUCH_GT911 || ESP_VIM_TOUCH_BOARD
         default y
     config ESP_VIM_TOUCH_MIRROR_Y
         bool "Mirror Y (after swapping)"

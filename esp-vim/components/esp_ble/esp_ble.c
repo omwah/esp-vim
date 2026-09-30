@@ -25,6 +25,10 @@
 #include "host/util/util.h"
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
+#if CONFIG_ESP_HOSTED_ENABLE_BT_NIMBLE
+# include "esp_hosted.h"
+# include "esp_hosted_misc.h"
+#endif
 
 #define MAX_DEVICES 64
 
@@ -84,7 +88,17 @@ int esp_ble__start(char *err, size_t errlen)
         esp_log_level_set("NimBLE", ESP_LOG_NONE);
         esp_log_level_set("NIMBLE_HIDH", ESP_LOG_NONE);
         esp_log_level_set("ESP_HIDH", ESP_LOG_NONE);
-        esp_err_t e = nimble_port_init();   /* also initialises the controller */
+#if CONFIG_ESP_HOSTED_ENABLE_BT_NIMBLE
+        /* The controller is the C6's, through esp-hosted (the Tab5): its link
+         * up first (it waits for the C6), then the controller started there. */
+        esp_hosted_connect_to_slave();
+        esp_err_t c = esp_hosted_bt_controller_init();
+        if (c == ESP_OK)
+            c = esp_hosted_bt_controller_enable();
+        if (c != ESP_OK)
+            return snprintf(err, errlen, "the co-processor's Bluetooth: %s", esp_err_to_name(c)), -1;
+#endif
+        esp_err_t e = nimble_port_init();   /* also initialises a controller of the chip's own */
         if (e != ESP_OK)
             return snprintf(err, errlen, "Bluetooth start: %s", esp_err_to_name(e)), -1;
         ble_hs_cfg.sync_cb = on_sync;

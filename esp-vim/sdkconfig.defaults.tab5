@@ -1,6 +1,99 @@
 # M5Stack Tab5 (ESP32-P4 + ESP32-C6): layered on sdkconfig.defaults and
-# sdkconfig.defaults.esp32p4 by scripts/vim-build.sh tab5.
+# sdkconfig.defaults.esp32p4 by scripts/vim-build.sh tab5. Pin map: Espressif's
+# board support package (m5stack_tab5_noglib 1.3.1) and M5Stack's M5Unified;
+# summarised in docs/PHASE9.md, which also has the first-flash checklist.
+
+# The console on the USB-C port: the P4's own USB Serial/JTAG. UART0's pins
+# (GPIO37/38) only reach the M5-Bus connector, so :EspSerial gets them.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+CONFIG_ESP_VIM_SERIAL_TX=37
+CONFIG_ESP_VIM_SERIAL_RX=38
+
+# The board layer (components/esp_board): the internal I2C bus (GPIO31/32,
+# already the P4 default for :EspI2cScan) and its two IO expanders, which power
+# the C6, the USB-A port, the LCD and touch; the panel, whichever revision.
+CONFIG_ESP_VIM_BOARD_TAB5=y
 
 # WiFi through the C6 over SDIO. The P4's Ethernet is unused on this board, and
 # leaving it out frees the EMAC pins (GPIO31/32 are the Tab5's internal I2C).
 CONFIG_ESP_VIM_NET_WIFI_REMOTE=y
+# The Tab5's wiring (M5Stack's: CLK 12, CMD 13, D0-D3 11/10/9/8), on the
+# SDMMC controller's slot 1 (the GPIO matrix one; the SD card has slot 0), and
+# the C6's reset on GPIO15, active low. esp-hosted's defaults are Espressif's
+# P4 function board's. (Its settable pin options are the per-slot ones;
+# ESP_HOSTED_SDIO_PIN_* follow from them.)
+CONFIG_ESP_HOSTED_SDIO_SLOT_1=y
+CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_CLK_SLOT_1=12
+CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_CMD_SLOT_1=13
+CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_D0_SLOT_1=11
+CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_D1_4BIT_BUS_SLOT_1=10
+CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_D2_4BIT_BUS_SLOT_1=9
+CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_D3_4BIT_BUS_SLOT_1=8
+CONFIG_ESP_HOSTED_SDIO_GPIO_RESET_SLAVE=15
+CONFIG_ESP_HOSTED_SDIO_RESET_ACTIVE_LOW=y
+
+# Bluetooth LE keyboards through the C6 as well: NimBLE's host here, the
+# controller on the C6, its HCI carried by esp-hosted (no controller of the
+# P4's own, no HCI UART). The rest as the ESP32-S3's (sdkconfig.defaults.esp32s3).
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+CONFIG_BT_CONTROLLER_DISABLED=y
+CONFIG_BT_NIMBLE_TRANSPORT_UART=n
+CONFIG_ESP_HOSTED_ENABLE_BT_NIMBLE=y
+CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y
+CONFIG_BT_NIMBLE_ROLE_OBSERVER=y
+CONFIG_BT_NIMBLE_ROLE_CENTRAL=y
+CONFIG_BT_NIMBLE_ROLE_PERIPHERAL=y
+CONFIG_BT_NIMBLE_GATT_CLIENT=y
+CONFIG_BT_NIMBLE_SECURITY_ENABLE=y
+CONFIG_BT_NIMBLE_SM_LEGACY=y
+CONFIG_BT_NIMBLE_SM_SC=y
+CONFIG_BT_NIMBLE_NVS_PERSIST=y
+CONFIG_BT_NIMBLE_MAX_BONDS=4
+CONFIG_BT_NIMBLE_MAX_CONNECTIONS=1
+CONFIG_BT_NIMBLE_GATT_SERVER=y
+CONFIG_BT_NIMBLE_HID_SERVICE=y
+
+# The console on the 5" 1280x720 MIPI-DSI panel (esp_display), turned to
+# landscape: 106x30 cells in Terminus 12x24; :EspFont switches to 128x36
+# (10x20), 80x22 (16x32) or 160x45 (Spleen 8x16). The frame buffer (1.8 MB) is
+# in PSRAM. :EspFlip if it comes up upside down.
+CONFIG_ESP_VIM_DISPLAY=y
+CONFIG_ESP_VIM_DISP_DSI=y
+
+# Touch: the panel's own controller (GT911 or the ST712x's), polled.
+CONFIG_ESP_VIM_TOUCH=y
+CONFIG_ESP_VIM_TOUCH_BOARD=y
+
+# The keyboard accessory (esp_kbd, ESP_VIM_KBD_TAB5): I2C on Ext.Port1 (SDA 0,
+# SCL 1, INT 50), found whenever it's clipped on.
+CONFIG_ESP_VIM_KBD_TAB5=y
+
+# USB keyboards on the USB-A port (esp_usbkbd), whose 5 V esp_board switches on.
+CONFIG_ESP_VIM_USB_KBD=y
+
+# The microSD slot: SDMMC slot 0 (CLK 43, CMD 44, D0-D3 39-42), powered by the
+# P4's LDO channel 4, 40 MHz as the BSP runs it; mounted at /sd.
+CONFIG_ESP_VIM_SD_SDMMC=y
+CONFIG_ESP_VIM_SD_MMC_SLOT=0
+CONFIG_ESP_VIM_SD_LDO_CHAN=4
+CONFIG_ESP_VIM_SD_MHZ=40
+CONFIG_ESP_VIM_SD_MMC_CLK=43
+CONFIG_ESP_VIM_SD_MMC_CMD=44
+CONFIG_ESP_VIM_SD_MMC_D0=39
+CONFIG_ESP_VIM_SD_MMC_D1=40
+CONFIG_ESP_VIM_SD_MMC_D2=41
+CONFIG_ESP_VIM_SD_MMC_D3=42
+
+# The RX8130CE clock chip (0x32) keeps the time while the Tab5 is off.
+CONFIG_ESP_VIM_RTC_RX8130=y
+
+# The battery (NP-F550, two cells, 7.4 V) through the INA226 at 0x41; below
+# 6.9 V (3.45 V a cell) with nothing unsaved, deep sleep.
+CONFIG_ESP_VIM_BAT_INA226=y
+CONFIG_ESP_VIM_BAT_CELLS=2
+CONFIG_ESP_VIM_SLEEP_LOW_MV=6900
+
+# The BSP's own storage helpers are not used (components/esp_sd mounts the
+# card); its display comes up without LVGL.
+CONFIG_BSP_I2C_NUM=1

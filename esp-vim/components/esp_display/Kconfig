@@ -25,10 +25,28 @@ menu "esp-vim display"
         help
             Black on white: reverse video and cells with a background
             colour are drawn inverted, bold is drawn a pixel heavier.
+    config ESP_VIM_DISP_DSI
+        bool "The board's MIPI-DSI panel (esp_board: M5Stack Tab5)"
+        depends on ESP_VIM_BOARD_TAB5
+        help
+            Set up by the board layer, whichever panel revision is fitted.
+            Cells are drawn straight into its frame buffer in PSRAM, turned
+            by ESP_VIM_DISP_ROTATION; the backlight is the board's.
     endchoice
+
+    config ESP_VIM_DISP_ROTATION
+        int "Picture turned on the panel, clockwise (0, 90, 180, 270)"
+        depends on ESP_VIM_DISP_DSI
+        default 90
+        help
+            The Tab5's panel is portrait, 720 x 1280; 90 or 270 gives Vim a
+            landscape screen. Which of the two is the right way up depends on
+            how the Tab5 stands: :EspFlip turns it over at run time (kept in
+            NVS), and the touch controller follows either way.
 
     config ESP_VIM_DISP_FONTS
         string "Fonts"
+        default "terminus-12x24 terminus-10x20 terminus-16x32 spleen-8x16" if ESP_VIM_DISP_DSI
         default "terminus-10x20 terminus-11x22 spleen-8x16" if ESP_VIM_DISP_RGB
         default "spleen-6x12 spleen-5x8 terminus-8x14 spleen-8x16" if ESP_VIM_DISP_ST7305
         default "spleen-6x12"
@@ -39,13 +57,14 @@ menu "esp-vim display"
             terminus-WxH / terminus-bold-WxH (6x12, 8x14, 8x16, 10x18, 10x20,
             11x22, 12x24, 14x28, 16x32). On the 800x480 panel, 10x20 is 80x24
             cells, 11x22 72x21 and 8x16 100x30; on the 400x300 ST7305, 6x12
-            is 66x25. Each font's glyphs take
+            is 66x25; on the Tab5's 1280x720, 12x24 is 106x30, 10x20 128x36,
+            16x32 80x22 and 8x16 160x45. Each font's glyphs take
             flash: about 20 KB for Spleen 8x16, 60 KB for Terminus 10x20 --
             and as much PSRAM, where the program runs from a copy there.
 
     choice ESP_VIM_DISP_OVERLAY_FONT
         prompt "Overlay font (the Bluetooth pairing screen)"
-        default ESP_VIM_DISP_OVERLAY_16X32 if ESP_VIM_DISP_RGB
+        default ESP_VIM_DISP_OVERLAY_16X32 if ESP_VIM_DISP_RGB || ESP_VIM_DISP_DSI
         default ESP_VIM_DISP_OVERLAY_12X24
     config ESP_VIM_DISP_OVERLAY_12X24
         bool "Spleen 12x24"
@@ -55,20 +74,22 @@ menu "esp-vim display"
 
     config ESP_VIM_DISP_WIDTH
         int "Width in pixels, as mounted"
+        default 1280 if ESP_VIM_DISP_DSI
         default 800 if ESP_VIM_DISP_RGB
         default 400 if ESP_VIM_DISP_ST7305
         default 320
 
     config ESP_VIM_DISP_HEIGHT
         int "Height in pixels, as mounted"
+        default 720 if ESP_VIM_DISP_DSI
         default 480 if ESP_VIM_DISP_RGB
         default 300 if ESP_VIM_DISP_ST7305
         default 240
 
     config ESP_VIM_DISP_BACKLIGHT
-        int "Backlight GPIO (-1: none)"
+        int "Backlight GPIO (-1: none, or the board's)"
         default 2 if ESP_VIM_DISP_RGB
-        default -1 if ESP_VIM_DISP_ST7305
+        default -1 if ESP_VIM_DISP_ST7305 || ESP_VIM_DISP_DSI
         default 45
     config ESP_VIM_DISP_BACKLIGHT_ON_LEVEL
         int "Backlight on level"

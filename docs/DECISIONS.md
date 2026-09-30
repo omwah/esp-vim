@@ -831,3 +831,36 @@ check); 0.43.0 stays vendored.
 
 **The heap guard stays**, as a debug option (`CONFIG_ESP_VIM_HEAP_GUARD`), off in every
 build: it is what caught this, and the next heap bug will want it too.
+
+
+## 2026-09-30 — The Tab5: Espressif's board support package underneath, written before the board
+
+The Tab5 support was written before the board arrived (PHASE9.md), so its choices lean
+towards code that others have run on the hardware.
+
+**The panel through the BSP, not panel code of our own.** Three revisions of the Tab5
+are sold: ILI9881C with GT911 touch, then ST7123, then ST7121. Each needs its own
+power-up sequence and DSI timing. Espressif's `m5stack_tab5_noglib` (1.3.1) has all
+three, picks between them the way M5Stack's own library does (the touch controller's
+address and firmware version), and brings up the I2C bus and the IO expanders the panel
+depends on. It is a managed component, fetched for the `tab5` build only, like the
+panel drivers of the other boards. `components/esp_board` wraps it, so nothing else
+includes it. What we still do ourselves: the drawing, straight into its frame buffer
+turned to landscape; the expander pins the BSP leaves alone (antenna, charging); and
+the ST7121's lane rate, which the BSP picks only in its LVGL path.
+
+**One rotation function for display and touch** (`esp_board_rotate.h`, host-tested).
+The picture is turned in software because DSI panels can't turn it. A second copy of
+the mapping in the touch driver could drift from the first; so could the swap and
+mirror settings the other boards use.
+
+**The keyboard accessory in normal mode, turned into HID reports.** The keyboard's
+firmware can also send characters or HID reports itself. Its character mode would take
+Sym and Aa for itself, and leave no way to make F-keys (the plan's reason). Row and
+column events are turned into the same reports a USB keyboard sends, so every keyboard
+shares one path to Vim's bytes. The layout comes from M5Stack's demo; F-keys,
+PgUp/Home/PgDn/End and Insert are ours, on Sym.
+
+**Assumptions to check on the first flash**: that USB-C is the P4's USB Serial/JTAG
+port (the console is put there), which way up the picture is (`:EspFlip`, or
+`ESP_VIM_DISP_ROTATION`), and which esp-hosted version the C6 runs.

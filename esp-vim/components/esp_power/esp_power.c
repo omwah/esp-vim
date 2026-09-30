@@ -37,11 +37,17 @@
 #include "esp_ble.h"
 #include "esp_display.h"
 #include "esp_net.h"
+#include "esp_touch.h"
 
 static const char *TAG = "esp_power";
 
 #define KEY         CONFIG_ESP_VIM_WAKE_KEY_GPIO
 #define BAT         CONFIG_ESP_VIM_BAT_ADC_GPIO
+#if BAT >= 0 || CONFIG_ESP_VIM_BAT_INA226
+# define HAVE_BAT   1
+#else
+# define HAVE_BAT   0
+#endif
 #define NVS_NS      "esp_power"
 #define POLL_MS     100
 #define BAT_EVERY_US (30 * 1000000LL)
@@ -69,7 +75,28 @@ static const char *s_last_wake = "";
 
 /* ------------------------------------------------------------- battery -- */
 
-#if BAT >= 0
+#if CONFIG_ESP_VIM_BAT_INA226
+
+/* The battery's voltage, mV, from the INA226 on the board's I2C bus (the
+ * Tab5's): its bus voltage register, 1.25 mV a step. */
+static int battery_mv(void)
+{
+    i2c_master_bus_handle_t bus = esp_touch_i2c_bus(CONFIG_ESP_VIM_I2C_SDA, CONFIG_ESP_VIM_I2C_SCL);
+    if (bus == NULL)
+        return -1;
+    i2c_device_config_t dc = { .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+                               .device_address = CONFIG_ESP_VIM_BAT_INA226_ADDR,
+                               .scl_speed_hz = 100000 };
+    i2c_master_dev_handle_t dev;
+    if (i2c_master_bus_add_device(bus, &dc, &dev) != ESP_OK)
+        return s_mv;
+    uint8_t reg = 0x02, v[2];
+    esp_err_t e = i2c_master_transmit_receive(dev, &reg, 1, v, 2, 50);
+    i2c_master_bus_rm_device(dev);
+    return e == ESP_OK ? (int)((v[0] << 8 | v[1]) * 125 / 100) : -1;
+}
+
+#elif BAT >= 0
 
 /* The battery's voltage, mV, through its divider; the last one if the ADC is
  * busy (:EspAdc has it). */
@@ -125,9 +152,12 @@ static int measure(void)
     return s_mv;
 }
 
-/* A lithium cell's charge from its resting voltage, roughly. */
+/* A lithium battery's charge from its resting voltage, roughly: per cell, for
+ * ESP_VIM_BAT_CELLS in series. */
 static int percent(int mv)
 {
+    if (mv > 0)
+        mv /= CONFIG_ESP_VIM_BAT_CELLS;
     static const int curve[][2] = {
         { 4200, 100 }, { 4100, 90 }, { 4000, 80 }, { 3900, 66 }, { 3800, 50 },
         { 3700, 32 }, { 3600, 18 }, { 3500, 9 }, { 3400, 4 }, { 3300, 0 },
@@ -360,7 +390,7 @@ static void reader_sleep(int wake_s, bool unsaved)
             t = wake_s * 1000000LL - asleep;
         else if (s_deep_min > 0 && !unsaved)
             t = s_deep_min * US_PER_MIN - asleep;
-        if (BAT >= 0 && wake_s == 0 && (t <= 0 || t > 15 * US_PER_MIN))
+        if (HAVE_BAT && wake_s == 0 && (t <= 0 || t > 15 * US_PER_MIN))
             t = 15 * US_PER_MIN;        /* look at the battery now and then */
         if (t > 0)
             esp_sleep_enable_timer_wakeup(t < 1000000 ? 1000000 : t);
@@ -452,7 +482,7 @@ static void power_task(void *arg)
             want = false;
         }
 #endif
-        if (BAT >= 0 && now - s_mv_at >= BAT_EVERY_US)
+        if (HAVE_BAT && now - s_mv_at >= BAT_EVERY_US)
             measure();
 #if KEY >= 0
         if (gpio_get_level(KEY) == 0) {
@@ -511,10 +541,10 @@ void esp_power_vim_waiting(bool waiting, bool unsaved)
 
 void esp_power_status(esp_power_status_t *st)
 {
-    if (BAT >= 0 && esp_timer_get_time() - s_mv_at > 2000000)
+    if (HAVE_BAT && esp_timer_get_time() - s_mv_at > 2000000)
         measure();                      /* asked for: a fresh reading */
     memset(st, 0, sizeof *st);
-    st->battery = BAT >= 0;
+    st->battery = HAVE_BAT;
     st->source = source();
     st->battery_mv = s_mv;
     st->battery_pct = percent(s_mv);

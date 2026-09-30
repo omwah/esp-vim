@@ -124,6 +124,10 @@ function! esp#Info() abort
         \ s:Row('%-10s %s', 'Flash', s:Size(get(i, 'flash', 0))),
         \ s:Row('%-10s %s', 'PSRAM', i.psram ? s:Size(i.psram) : 'none'),
         \ ]
+  if has_key(i, 'board')
+    call insert(lines, s:Row('%-10s %s', 'Board', i.board
+          \ . (has_key(i, 'panel') ? ', display ' . i.panel : '')), 1)
+  endif
   if has_key(i, 'mac')
     call add(lines, s:Row('%-10s %s', 'MAC', i.mac))
   endif

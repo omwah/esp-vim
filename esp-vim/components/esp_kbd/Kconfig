@@ -1,0 +1,27 @@
+menu "esp-vim keyboards"
+
+    config ESP_VIM_KBD_TAB5
+        bool "M5Stack Tab5 keyboard accessory (I2C 0x6D)"
+        default n
+        help
+            The Tab5's clip-on keyboard: an STM32 on Ext.Port1, read in its
+            "normal" mode (each key's row and column) on its interrupt line,
+            and typed as esp_kbd_tab5.h describes -- Sym for the second
+            legends, F1-F12 and PgUp/Home/PgDn/End. Found when attached,
+            also after boot. Its two LEDs show Sym, Aa (and Caps Lock),
+            Ctrl and Alt.
+
+    config ESP_VIM_KBD_TAB5_SDA
+        int "SDA GPIO"
+        depends on ESP_VIM_KBD_TAB5
+        default 0
+    config ESP_VIM_KBD_TAB5_SCL
+        int "SCL GPIO"
+        depends on ESP_VIM_KBD_TAB5
+        default 1
+    config ESP_VIM_KBD_TAB5_INT
+        int "Interrupt GPIO"
+        depends on ESP_VIM_KBD_TAB5
+        default 50
+
+endmenu

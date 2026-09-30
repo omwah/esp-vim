@@ -1,0 +1,14 @@
+menu "esp-vim USB keyboards"
+
+    config ESP_VIM_USB_KBD
+        bool "USB keyboards (USB host)"
+        depends on SOC_USB_OTG_SUPPORTED
+        default n
+        help
+            Keyboards on the chip's USB host port -- the Tab5's USB-A --
+            typed as Bluetooth ones are (components/esp_kbd). Boot-protocol
+            keyboards are asked for their boot reports; others are read
+            through their report descriptors. Hubs and several keyboards at
+            once work as the USB Host Library allows.
+
+endmenu

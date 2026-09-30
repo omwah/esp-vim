@@ -62,7 +62,7 @@ if(CONFIG_ESP_VIM_DISPLAY)
              "${VTERM}/src/state.c" "${VTERM}/src/unicode.c" "${VTERM}/src/vterm.c"
         INCLUDE_DIRS "include"
         PRIV_INCLUDE_DIRS "${VTERM}/include" "${VTERM}/src"
-        PRIV_REQUIRES esp_lcd esp_driver_spi esp_driver_gpio heap log esp_kbd esp_touch esp_timer nvs_flash
+        PRIV_REQUIRES esp_lcd esp_driver_spi esp_driver_gpio heap log esp_kbd esp_touch esp_timer nvs_flash esp_board esp_mm
     )
     # The overlay's (the Bluetooth pairing screen): big enough to tap.
     add_custom_command(
@@ -84,5 +84,5 @@ else()
     # The same requirements as above: ESP-IDF works them out before the
     # configuration is known.
     idf_component_register(SRCS "esp_display_stub.c" INCLUDE_DIRS "include"
-        PRIV_REQUIRES esp_lcd esp_driver_spi esp_driver_gpio heap log esp_kbd esp_touch esp_timer nvs_flash)
+        PRIV_REQUIRES esp_lcd esp_driver_spi esp_driver_gpio heap log esp_kbd esp_touch esp_timer nvs_flash esp_board esp_mm)
 endif()

@@ -153,12 +153,21 @@ void esp_time_bus_unlock(void)
         xSemaphoreGive(s_bus_lock);
 }
 
-#if CONFIG_ESP_VIM_RTC_PCF85063
+#if CONFIG_ESP_VIM_RTC_PCF85063 || CONFIG_ESP_VIM_RTC_RX8130
 
-#define RTC_NAME    "PCF85063"
-#define RTC_ADDR    0x51
-#define RTC_SECONDS 0x04                /* then minutes, hours, days, weekdays, months, years */
-#define OS_FLAG     0x80                /* in seconds: the oscillator stopped, the time is lost */
+#if CONFIG_ESP_VIM_RTC_PCF85063
+# define RTC_NAME    "PCF85063"
+# define RTC_ADDR    0x51
+# define RTC_SECONDS 0x04               /* then minutes, hours, days, weekdays, months, years */
+# define OS_FLAG     0x80               /* in seconds: the oscillator stopped, the time is lost */
+#else
+# define RTC_NAME    "RX8130"
+# define RTC_ADDR    0x32
+# define RTC_SECONDS 0x10               /* then minutes, hours, weekday (a bit each), days, months, years */
+# define RX_FLAG     0x1D               /* bit 1, VLF: the supply dropped too low, the time is lost */
+# define RX_VLF      0x02
+# define RX_CTRL1    0x1F               /* bits 4-5: the backup battery's switch-over and charging */
+#endif
 
 /* One transfer with the chip at {reg}: on the touch panel's bus if it has
  * these pins, else on a bus built for it, as :EspI2cScan does. */
@@ -217,6 +226,8 @@ static int64_t days_from_civil(int y, int m, int d)
     return era * 146097 + doe - 719468;
 }
 
+#if CONFIG_ESP_VIM_RTC_PCF85063
+
 /* The chip's time (kept in UTC), or -1: no answer, or it stopped. */
 static time_t rtc_read(void)
 {
@@ -244,6 +255,52 @@ static void rtc_write(time_t t)
     if (e != ESP_OK)
         ESP_LOGW(TAG, RTC_NAME ": %s", esp_err_to_name(e));
 }
+
+#else   /* RX8130 */
+
+/* The chip's time (kept in UTC), or -1: no answer, or its supply failed. */
+static time_t rtc_read(void)
+{
+    uint8_t flag, r[7];
+    if (rtc_xfer(RX_FLAG, &flag, 1, false) != ESP_OK || rtc_xfer(RTC_SECONDS, r, sizeof r, false) != ESP_OK)
+        return -1;
+    s_rtc_ok = true;
+    if (flag & RX_VLF)
+        return -1;
+    int64_t days = days_from_civil(2000 + bcd(r[6]), bcd(r[5] & 0x1F), bcd(r[4] & 0x3F));
+    return (time_t)(days * 86400 + bcd(r[2] & 0x3F) * 3600 + bcd(r[1] & 0x7F) * 60 + bcd(r[0] & 0x7F));
+}
+
+static void rtc_write(time_t t)
+{
+    struct tm u;
+    gmtime_r(&t, &u);
+    uint8_t r[7] = {
+        to_bcd(u.tm_sec), to_bcd(u.tm_min), to_bcd(u.tm_hour), (uint8_t)(1u << u.tm_wday),
+        to_bcd(u.tm_mday), to_bcd(u.tm_mon + 1), to_bcd(u.tm_year % 100),
+    };
+    uint8_t ctrl1 = 0, flag = 0;
+    esp_err_t e = rtc_xfer(RTC_SECONDS, r, sizeof r, true);
+    /* The backup battery switched in and charged, as M5Stack's library sets
+     * it; then VLF cleared: the time is good again. */
+    if (e == ESP_OK)
+        e = rtc_xfer(RX_CTRL1, &ctrl1, 1, false);
+    if (e == ESP_OK) {
+        ctrl1 |= 0x30;
+        e = rtc_xfer(RX_CTRL1, &ctrl1, 1, true);
+    }
+    if (e == ESP_OK)
+        e = rtc_xfer(RX_FLAG, &flag, 1, false);
+    if (e == ESP_OK) {
+        flag &= ~RX_VLF;
+        e = rtc_xfer(RX_FLAG, &flag, 1, true);
+    }
+    s_rtc_ok = e == ESP_OK;
+    if (e != ESP_OK)
+        ESP_LOGW(TAG, RTC_NAME ": %s", esp_err_to_name(e));
+}
+
+#endif
 
 #else
 

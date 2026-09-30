@@ -1,0 +1,17 @@
+# The M5Stack Tab5's board support package (Espressif, Apache-2.0), without
+# LVGL: the IO expanders, the internal I2C bus, and the MIPI-DSI panel and touch
+# controller of each Tab5 revision. Only for the tab5 build. The target rule
+# comes first: ESP_VIM_BOARD_TAB5 exists only on the ESP32-P4 (see
+# components/esp_net/idf_component.yml).
+dependencies:
+  espressif/m5stack_tab5_noglib:
+    version: "1.3.1"
+    rules:
+      - if: "target in [esp32p4]"
+      - if: "$CONFIG{ESP_VIM_BOARD_TAB5} == True"
+  # The BSP's touch.h includes it without making it a public requirement.
+  espressif/esp_lcd_touch:
+    version: "^1.2"
+    rules:
+      - if: "target in [esp32p4]"
+      - if: "$CONFIG{ESP_VIM_BOARD_TAB5} == True"

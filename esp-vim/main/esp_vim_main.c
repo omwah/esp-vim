@@ -20,6 +20,7 @@
 #include "esp_system.h"
 #include "esp_vfs_fat.h"
 #include "nvs_flash.h"
+#include "esp_board.h"
 #include "esp_fs.h"
 #include "esp_sd.h"
 #include "esp_net.h"
@@ -28,6 +29,7 @@
 #include "esp_display.h"
 #include "esp_ble.h"
 #include "esp_kbd.h"
+#include "esp_usbkbd.h"
 #include "esp_touch.h"
 #include "esp_pairui.h"
 #include "esp_power.h"
@@ -396,12 +398,19 @@ void app_main(void)
      * interrupt 12", in a loop) in the emulator. The network returns at once;
      * DHCP carries on in the background.
      */
+    esp_board_init();                   /* the board's power switches (the Tab5's C6) first */
     nvs_init();
     esp_net_init();
     if (esp_time_init() != ESP_OK)      /* the RTC chip, NTP, the time zone */
         ESP_LOGE(TAG, "time: not available");
     console_init();
     esp_kbd_init();                     /* keyboards and touch feed console input */
+    esp_err_t kb = esp_kbd_tab5_start();    /* the Tab5's keyboard accessory, when attached */
+    if (kb != ESP_OK && kb != ESP_ERR_NOT_SUPPORTED)
+        ESP_LOGE(TAG, "Tab5 keyboard: %s", esp_err_to_name(kb));
+    kb = esp_usbkbd_start();            /* USB keyboards, on a USB host port */
+    if (kb != ESP_OK && kb != ESP_ERR_NOT_SUPPORTED)
+        ESP_LOGE(TAG, "USB keyboards: %s", esp_err_to_name(kb));
 #if CONFIG_ESP_VIM_DISPLAY
     if (esp_display_init() != ESP_OK)   /* each session hooks it up (vim_task) */
         ESP_LOGE(TAG, "display: not available -- the console is serial only");

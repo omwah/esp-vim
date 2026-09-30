@@ -1,0 +1,9 @@
+# The USB HID host class driver (Espressif, Apache-2.0), for USB keyboards
+# (ESP_VIM_USB_KBD). The target rule comes first: the Kconfig symbol exists only
+# where the chip has USB OTG (see components/esp_net/idf_component.yml).
+dependencies:
+  espressif/usb_host_hid:
+    version: "1.2.1"
+    rules:
+      - if: "target in [esp32p4, esp32s3]"
+      - if: "$CONFIG{ESP_VIM_USB_KBD} == True"

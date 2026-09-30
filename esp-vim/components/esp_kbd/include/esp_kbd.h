@@ -44,6 +44,17 @@ void esp_kbd_push(const char *bytes, size_t len);
 /* All keys released (the keyboard went away): stop any repeat. */
 void esp_kbd_release_all(void);
 
+/* Wired keyboards say when they come and go (the ESP_KBD_WIRED_* bit, on or
+ * off), so the Bluetooth pairing screen stays away while one is there. */
+#define ESP_KBD_WIRED_TAB5  0x01
+#define ESP_KBD_WIRED_USB   0x02
+void esp_kbd_wired(unsigned which, bool attached);
+bool esp_kbd_wired_attached(void);
+
+/* The Tab5 keyboard accessory (ESP_VIM_KBD_TAB5): start looking for it; its
+ * keys then arrive as any keyboard's. ESP_ERR_NOT_SUPPORTED in other builds. */
+esp_err_t esp_kbd_tab5_start(void);
+
 /* For the console: is a key waiting, and take up to {len} bytes of keys. */
 bool esp_kbd_pending(void);
 int esp_kbd_read(void *buf, size_t len);

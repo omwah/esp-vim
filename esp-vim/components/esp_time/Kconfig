@@ -10,6 +10,8 @@ menu "esp-vim time"
         bool "None"
     config ESP_VIM_RTC_PCF85063
         bool "PCF85063 (0x51; the Waveshare ESP32-S3-RLCD-4.2's)"
+    config ESP_VIM_RTC_RX8130
+        bool "RX8130CE (0x32; the M5Stack Tab5's)"
     endchoice
 
     config ESP_VIM_NTP_SERVER
