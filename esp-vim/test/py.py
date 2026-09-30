@@ -145,6 +145,24 @@ def main():
             check(got == "['/fat/pyt', 5, ['out.txt', 'pymod.py']]:from python",
                   "open(), os and import work from Vim's current directory", f"got {got!r}")
 
+            # -- vim and esp are frozen; /fat/python comes first ---------
+            # (A frozen module's __file__ is its bare name.)
+            got = probe("Z1", "esp_py_eval(" + vstr(
+                "' '.join([vim.__file__, esp.__file__] + __import__('sys').path)") + ")")
+            check(got == "vim.py esp.py  /fat/python .frozen",
+                  "vim and esp are built into the firmware; sys.path", f"got {got!r}")
+            s.type(":call mkdir('/fat/python', 'p')"
+                   " | call writefile(['WHO = \"fat\"'], '/fat/python/esp.py')"
+                   " | call esp_py_reset()\r")
+            s.quiet(1.0)
+            got = probe("Z2", "esp_py_eval('esp.WHO + str(hasattr(esp, \"Pin\"))')")
+            check(got == "fatFalse", "an esp.py in /fat/python is used instead of the built-in one",
+                  f"got {got!r}")
+            s.type(":call delete('/fat/python/esp.py') | call esp_py_reset()\r")
+            s.quiet(1.0)
+            got = probe("Z3", "esp_py_eval('hasattr(esp, \"Pin\")')")
+            check(got == "v:true", "without it, the built-in esp is back", f"got {got!r}")
+
             # -- :EspPyRun: output window, traceback to quickfix ----------
             s.type(":enew | call setline(1, ['print(\"line\", 1)', 'vim.current.buffer.append(\"added\")',"
                    " 'def f():', '    return 1 / 0', 'f()'])\r")

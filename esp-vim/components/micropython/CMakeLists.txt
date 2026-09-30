@@ -98,3 +98,35 @@ list(APPEND MICROPY_CPP_INC_EXTRA ${config_dir})
 list(APPEND MICROPY_CPP_DEF_EXTRA "ESP_PLATFORM")
 
 include(${MICROPY_DIR}/py/mkrules.cmake)
+
+# Frozen modules (manifest.py): vim.py and esp.py compiled to bytecode, and the
+# bytecode to C, run from flash. mkrules.cmake's own frozen step is not used:
+# it insists on micropython-lib, which is not vendored and not needed. The
+# same tools are: mpy-cross, built for the host into the build directory
+# (from the vendored source), then tools/makemanifest.py, which reads the
+# qstrs generated above so the frozen ones are only those they don't have.
+set(ESP_PY_MPYCROSS_DIR "${CMAKE_BINARY_DIR}/mpy-cross")
+set(ESP_PY_MPYCROSS "${ESP_PY_MPYCROSS_DIR}/mpy-cross")
+set(ESP_PY_FROZEN_C "${CMAKE_BINARY_DIR}/frozen_content.c")
+file(GLOB ESP_PY_MPYCROSS_SRC ${MICROPY_DIR}/mpy-cross/*.c ${MICROPY_DIR}/mpy-cross/*.h)
+add_custom_command(
+    OUTPUT ${ESP_PY_MPYCROSS}
+    # The host compiler, not the target's: IDF's environment exports CC.
+    COMMAND env -u CC -u CFLAGS -u LDFLAGS make -s -C ${MICROPY_DIR}/mpy-cross
+            BUILD=${ESP_PY_MPYCROSS_DIR} USER_C_MODULES= FROZEN_MANIFEST=
+    DEPENDS ${ESP_PY_MPYCROSS_SRC}
+    VERBATIM
+)
+file(GLOB ESP_PY_FROZEN_SRC ${CMAKE_CURRENT_LIST_DIR}/modules/*.py)
+add_custom_command(
+    OUTPUT ${ESP_PY_FROZEN_C}
+    COMMAND ${CMAKE_COMMAND} -E env MICROPY_MPYCROSS=${ESP_PY_MPYCROSS}
+            ${Python3_EXECUTABLE} ${MICROPY_DIR}/tools/makemanifest.py
+            -o ${ESP_PY_FROZEN_C} -b ${CMAKE_BINARY_DIR}
+            -v MPY_DIR=${MICROPY_DIR} -v PORT_DIR=${CMAKE_CURRENT_LIST_DIR}
+            ${CMAKE_CURRENT_LIST_DIR}/manifest.py
+    DEPENDS ${CMAKE_CURRENT_LIST_DIR}/manifest.py ${ESP_PY_FROZEN_SRC}
+            ${ESP_PY_MPYCROSS} ${MICROPY_QSTRDEFS_GENERATED} ${MICROPY_ROOT_POINTERS}
+    VERBATIM
+)
+target_sources(${COMPONENT_LIB} PRIVATE ${ESP_PY_FROZEN_C})

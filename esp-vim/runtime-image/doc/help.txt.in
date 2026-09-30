@@ -559,8 +559,9 @@ os.listdir(), os.chdir() -- with relative names from Vim's current directory.
 A file is closed when you close it (or leave a "with open(...) as f:" block),
 not when the last reference goes: write with "with", or what you wrote may not
 be there yet when Vim reads the file.
-"import name" finds name.py in the current directory, /fat/python, then
-/vimrt/python.
+"import name" finds name.py in the current directory, then /fat/python, then
+the modules built into the firmware (vim and esp): a vim.py in /fat/python is
+used instead of the built-in one.
 
 The vim module (named as in Vim's own Python interface):
 	vim.command(cmd)	run an Ex command

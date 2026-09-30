@@ -943,12 +943,12 @@ on the device. DECISIONS.md (2026-09-29) has the reasoning.
   own Python interface runs them, so a Vim error is `vim.error`.
   - Values convert both ways: Number/int, Float/float, String/str, Blob/bytes,
     List/list, Tuple/tuple, Dict/dict, booleans, v:none/None.
-  - `vim.py` and `esp.py` (in `/vimrt/python`) build the rest on Vim's own functions:
+  - `vim.py` and `esp.py` (frozen into the firmware) build the rest on Vim's own functions:
     buffers as lists of lines (with undo), windows and their cursors, `vim.vars`,
     `vim.options`.
   - `esp.<name>()` is every `esp_<name>()`, plus a `Pin` class.
 - **Files and imports.** Through a `VfsPosix` at `/`: relative paths follow Vim's
-  working directory. `sys.path` is `''`, `/fat/python`, `/vimrt/python`.
+  working directory. `sys.path` is `''`, `/fat/python`, `.frozen` (the built-in modules).
 - **`:EspPyRun`.** Output goes to a `[Python]` window, and a traceback goes to quickfix,
   innermost call first, for an unsaved buffer too (`<buffer N>`). A range keeps the
   buffer's line numbers.
@@ -991,8 +991,23 @@ lines, and the completions, come from MicroPython's own REPL helpers
 (`mp_repl_continue_with_input`, `mp_repl_autocomplete`) through `esp_py_more()` and
 `esp_py_complete()`, so it behaves as MicroPython's prompt does. `py.py` covers it.
 
+**Frozen modules (2026-09-30).** `vim.py` and `esp.py` are compiled to bytecode at build
+time and built into the firmware, instead of being read and compiled from `/vimrt/python`
+each time Python starts.
+- They live in `components/micropython/modules/`, listed in `manifest.py`. The build compiles
+  MicroPython's `mpy-cross` for the host (now in the vendored archive), then runs its
+  `tools/makemanifest.py`. `mkrules.cmake`'s own frozen step isn't used: it requires
+  micropython-lib, which isn't vendored.
+- `sys.path` is `''`, `/fat/python`, `.frozen`, so a `vim.py` or `esp.py` in
+  `/fat/python` still replaces the built-in one.
+- Measured in the P4 emulator, with `vim` and `esp` imported: a restart of Python went from
+  25 ms to 1 ms, and the Python heap it uses from 12.0 KB to 3.7 KB, because the bytecode
+  stays in flash. The P4 app grew by 4.4 KB. `/vimrt/python` is gone.
+- `py.py` checks that the modules are the built-in ones, and that a file in `/fat/python`
+  takes their place.
+
 Not yet: `vim.options` for window- and buffer-local values (it sets global and local
-together, as `:let &opt` does); `sys.stdin`; frozen `.mpy` modules.
+together, as `:let &opt` does); `sys.stdin`.
 
 ### The design (2026-09-23)
 

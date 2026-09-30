@@ -21,6 +21,7 @@
 #include "py/mperrno.h"
 #include "py/mphal.h"
 #include "py/objexcept.h"
+#include "py/objlist.h"
 #include "py/objstr.h"
 #include "py/parse.h"
 #include "py/repl.h"
@@ -291,7 +292,7 @@ static mp_obj_t take_py(void *v) {
 }
 
 /* ---------------------------------------------------------------------- */
-/*  The _vim module (runtime-image/python/vim.py builds `vim` on it)        */
+/*  The _vim module (modules/vim.py builds `vim` on it)                     */
 /* ---------------------------------------------------------------------- */
 
 MP_DEFINE_CONST_OBJ_TYPE(mp_type_vim_error, MP_QSTR_error, MP_TYPE_FLAG_NONE,
@@ -398,7 +399,8 @@ static void add_path(const char *dir) {
 }
 
 /* Import vim and esp into __main__, so :EspPy vim.eval('&ts') just works.
- * They live in /vimrt/python; a runtime without them still has _vim. */
+ * They are frozen into the firmware (modules/, manifest.py); a vim.py or
+ * esp.py in /fat/python comes first in sys.path, and is used instead. */
 static const char s_prelude[] =
     "try:\n"
     " import vim, esp\n"
@@ -432,9 +434,12 @@ int esp_py_start(const esp_py_host_t *host, char *err, size_t errlen) {
 
     nlr_buf_t nlr;
     if (nlr_push(&nlr) == 0) {
+        /* mp_init() starts it as ['', '.frozen']: /fat/python goes between,
+         * so a module there is used instead of a frozen one. */
+        mp_obj_list_set_len(mp_sys_path, 0);
         mp_obj_list_append(mp_sys_path, MP_OBJ_NEW_QSTR(MP_QSTR_));
         add_path("/fat/python");
-        add_path("/vimrt/python");
+        mp_obj_list_append(mp_sys_path, MP_OBJ_NEW_QSTR(MP_QSTR__dot_frozen));
         mp_obj_t args[2] = {
             MP_OBJ_TYPE_GET_SLOT(&mp_type_vfs_posix, make_new)(&mp_type_vfs_posix, 0, 0, NULL),
             MP_OBJ_NEW_QSTR(MP_QSTR__slash_),

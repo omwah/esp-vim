@@ -40,6 +40,10 @@
 #define MICROPY_NLR_SETJMP                  (1)
 #endif
 #define MICROPY_PERSISTENT_CODE_LOAD        (1)     /* import a .mpy */
+/* vim and esp are frozen into the firmware (manifest.py): bytecode and its
+ * qstrs in flash, found through ".frozen" in sys.path. */
+#define MICROPY_MODULE_FROZEN_MPY           (1)
+#define MICROPY_QSTR_EXTRA_POOL             mp_qstr_frozen_const_pool
 #define MICROPY_MODULE_GETATTR              (1)     /* esp.<anything> */
 #define MICROPY_CAN_OVERRIDE_BUILTINS       (1)
 #define MICROPY_ENABLE_EXTERNAL_IMPORT      (1)

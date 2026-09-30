@@ -708,14 +708,21 @@ avoids a dependency cycle between the two components, and puts all the Vim-inter
 in one file. It is the same shape as `if_py_both.h`, down to how a Vim error becomes a
 Python exception (`++trylevel`, then read `msg_list` or `current_exception`).
 
-**The Python-side modules are Python, in the runtime.** `vim.py` and `esp.py` live in
-`/vimrt/python`, on top of a four-function C module (`_vim`). Buffers, windows, `vars` and
-`options` are a few lines each over Vim's own `getbufline()`, `setbufline()`, `win_execute()`
-and `:let`, so they get Vim's undo, redraw and checks for free, and they can change
-without a reflash. `esp.<name>()` is a module `__getattr__` that calls `esp_<name>()`:
-every device function, present and future, with one implementation. The cost is a parse
-of both files when Python starts (0.5 s on the Freenove, 1.4 s in the emulated P4, then
-never again in that session).
+**The Python-side modules are Python, frozen into the firmware.** `vim.py` and `esp.py`
+sit on top of a four-function C module (`_vim`). Buffers, windows, `vars` and `options` are
+a few lines each over Vim's own `getbufline()`, `setbufline()`, `win_execute()` and `:let`,
+so they get Vim's undo, redraw and checks for free. `esp.<name>()` is a module
+`__getattr__` that calls `esp_<name>()`: every device function, present and future, with
+one implementation.
+
+They first lived in `/vimrt/python`, to be changed without a reflash, at the cost of a
+parse and compile each time Python started. Since 2026-09-30 they are frozen: compiled to
+bytecode at build time, run from flash. A Python restart went from 25 ms to 1 ms in the
+emulated P4, and 8 KB of bytecode left the Python heap, for 4.4 KB of app. The flexibility
+is kept: `/fat/python` comes before the frozen modules in `sys.path`, so a changed
+`vim.py` there is used instead. The compiler, `mpy-cross`, is built for the host from the
+vendored MicroPython archive, and `tools/makemanifest.py` is called from our CMake:
+`mkrules.cmake`'s own frozen step requires micropython-lib, which this build doesn't use.
 
 **Double floats.** Vim's Float is a double, and a value passed through Python should keep
 its digits. MicroPython's ESP32 port uses single precision; the cost here is speed in
