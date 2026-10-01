@@ -198,7 +198,8 @@ bool esp_vim__any_modified(void)
 /*
  * esp_power([{settings}]) -> Dict: source ("usb", "battery", "unknown"),
  * battery (the board has a battery input), battery_mv and battery_pct (-1:
- * none; measured afresh when the last reading is over 2 s old), reader (reader mode available),
+ * none; battery_pct -1 too when the reading is too low for a battery: none
+ * fitted; measured afresh when the last reading is over 2 s old), reader (reader mode available),
  * idle_min, deep_min, idle_s, sleeps, deep_sleeps, last_wake ("key", "timer",
  * ""). {settings}: idle_min and/or deep_min to change, kept in NVS.
  */

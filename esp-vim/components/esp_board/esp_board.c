@@ -28,10 +28,13 @@ static const char *TAG = "esp_board";
  *   0x44 P7  CHG_EN, high: the battery charges
  *   0x44 P5  nCHG_QC_EN, high: no fast charging (500 mA)
  *   0x44 P4  PWROFF_PULSE: pulsed, it switches the Tab5 off (not used here)
+ *   0x44 P6  USB_DET, an input: high while the USB-C port has power (a
+ *            computer or a charger)
  */
 #define IOE0_ANTENNA    IO_EXPANDER_PIN_NUM_0
 #define IOE1_CHG_EN     IO_EXPANDER_PIN_NUM_7
 #define IOE1_NQC_EN     IO_EXPANDER_PIN_NUM_5
+#define IOE1_USB_DET    IO_EXPANDER_PIN_NUM_6
 
 /* The Tab5's pins the board owns: the internal I2C bus, touch INT, the C6's
  * SDIO lines and reset, the SD slot, the audio codec's I2S and the camera's
@@ -47,6 +50,7 @@ static const char *TAG = "esp_board";
 static bool s_i2c_ok, s_ioe_ok, s_c6_ok;
 static const char *s_panel_name = "";
 static esp_lcd_touch_handle_t s_touch;
+static esp_io_expander_handle_t s_ioe1;
 
 /* One expander pin as a push-pull output at this level. */
 static esp_err_t ioe_out(esp_io_expander_handle_t ioe, uint32_t pin, int level)
@@ -94,6 +98,10 @@ esp_err_t esp_board_init(void)
         other = ioe_out(ioe1, IOE1_NQC_EN, 1);
         if (other == ESP_OK)
             other = ioe_out(ioe1, IOE1_CHG_EN, 1);
+        /* The driver's reset leaves every pin a high-impedance output, and
+         * one doesn't read its pin: USB_DET an input, pulled down. */
+        esp_io_expander_set_dir(ioe1, IOE1_USB_DET, IO_EXPANDER_INPUT);
+        esp_io_expander_set_pullupdown(ioe1, IOE1_USB_DET, IO_EXPANDER_PULL_DOWN);
     }
     if (ioe0) {
         touch = bsp_feature_enable(BSP_FEATURE_TOUCH, true);
@@ -104,6 +112,7 @@ esp_err_t esp_board_init(void)
             other = ant;
     }
     s_ioe_ok = ioe0 && ioe1;
+    s_ioe1 = ioe1;
     s_c6_ok = wifi == ESP_OK;
     printf("ESPVIM-BOARD tab5: expander 0x43 %s, 0x44 %s; C6 power %s, USB-A 5V %s, touch %s,"
            " charging %s\n",
@@ -249,6 +258,14 @@ bool esp_board_coprocessor_powered(void)
     return s_c6_ok;
 }
 
+int esp_board_usb_c_powered(void)
+{
+    uint32_t level;
+    if (s_ioe1 == NULL || esp_io_expander_get_level(s_ioe1, IOE1_USB_DET, &level) != ESP_OK)
+        return -1;
+    return level != 0;
+}
+
 #else   /* no board layer */
 
 esp_err_t esp_board_init(void) { return ESP_OK; }
@@ -265,5 +282,6 @@ esp_err_t esp_board_touch_init(void) { return ESP_ERR_NOT_SUPPORTED; }
 int esp_board_touch_read(int *x, int *y) { (void)x; (void)y; return -1; }
 esp_err_t esp_board_usb_power(bool on) { (void)on; return ESP_ERR_NOT_SUPPORTED; }
 bool esp_board_coprocessor_powered(void) { return true; }
+int esp_board_usb_c_powered(void) { return -1; }
 
 #endif

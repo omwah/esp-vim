@@ -239,15 +239,18 @@ window at the bottom: "R" refreshes it, "q" closes it.
 		when it wakes.
 
 :EspBattery						*:EspBattery*
-		On boards with a battery (the RLCD-4.2): its charge, roughly,
-		from its voltage; the voltage; and whether USB is connected.
-		"Connected" means a computer on the USB port -- a plain
-		charger can't be seen, and shows as "not detected".  With no
-		battery fitted the reading is the charger's, about 4.1 V.
+		On boards with a battery: its charge, roughly, from its
+		voltage; the voltage; and whether USB powers the board.
+		Boards with a pin for USB power see a charger too; others
+		see only a computer on the port, and a plain charger shows as
+		"not detected".  With no battery fitted the reading is the
+		charger's (about 4.1 V on a one-cell board), or "none fitted"
+		when it is too low for any battery.
 
 :EspPower						*:EspPower*
-		The power source (USB when a computer is on the USB port,
-		else battery), the battery's voltage, and when the board
+		The power source (USB when it powers the board, as far as
+		the board can tell, else battery), the battery's voltage,
+		and when the board
 		sleeps by itself.  On battery, with nothing typed for a
 		while, it goes to reader mode, then after longer to deep
 		sleep if nothing is unsaved; also when the battery runs low.

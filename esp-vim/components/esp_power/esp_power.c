@@ -35,6 +35,7 @@
 #endif
 
 #include "esp_ble.h"
+#include "esp_board.h"
 #include "esp_display.h"
 #include "esp_net.h"
 #include "esp_touch.h"
@@ -52,6 +53,9 @@ static const char *TAG = "esp_power";
 #define POLL_MS     100
 #define BAT_EVERY_US (30 * 1000000LL)
 #define US_PER_MIN  (60 * 1000000LL)
+/* Below this the board can't be running on its battery: there's none, and
+ * the monitor reads what leaks past the charger. */
+#define BAT_ABSENT_MV (2500 * CONFIG_ESP_VIM_BAT_CELLS)
 
 static SemaphoreHandle_t s_sleep_lock;  /* one sleep at a time */
 /* Sleep is always entered on the power task: its stack is in internal RAM,
@@ -77,6 +81,12 @@ static const char *s_last_wake = "";
 
 #if CONFIG_ESP_VIM_BAT_INA226
 
+/* The battery's current too, as the INA226's shunt voltage (2.5 uV a step):
+ * positive discharging, negative charging. Over this, it's what runs the
+ * board; at about 0 the battery is full or missing, and USB does. */
+#define DISCHARGING 50
+static int s_shunt;
+
 /* The battery's voltage, mV, from the INA226 on the board's I2C bus (the
  * Tab5's): its bus voltage register, 1.25 mV a step. */
 static int battery_mv(void)
@@ -90,7 +100,10 @@ static int battery_mv(void)
     i2c_master_dev_handle_t dev;
     if (i2c_master_bus_add_device(bus, &dc, &dev) != ESP_OK)
         return s_mv;
-    uint8_t reg = 0x02, v[2];
+    uint8_t reg = 0x01, v[2];
+    if (i2c_master_transmit_receive(dev, &reg, 1, v, 2, 50) == ESP_OK)
+        s_shunt = (int16_t)(v[0] << 8 | v[1]);
+    reg = 0x02;
     esp_err_t e = i2c_master_transmit_receive(dev, &reg, 1, v, 2, 50);
     i2c_master_bus_rm_device(dev);
     return e == ESP_OK ? (int)((v[0] << 8 | v[1]) * 125 / 100) : -1;
@@ -173,11 +186,27 @@ static int percent(int mv)
     return 0;
 }
 
+static bool battery_absent(void)
+{
+    return HAVE_BAT && s_mv >= 0 && s_mv < BAT_ABSENT_MV;
+}
+
 /* Where the power comes from. The USB port powers the board whenever it's
- * plugged in, but only a computer on it can be seen (by its USB traffic); a
- * charger can't, and counts as battery. */
+ * plugged in. A board with a pin for that (the Tab5) sees any USB power,
+ * and its battery's current says too; otherwise only a computer on it can be
+ * seen (by its USB traffic), and a charger counts as battery. With no battery
+ * at all, it's USB, whatever is on it. */
 static const char *source(void)
 {
+    if (battery_absent())
+        return "usb";
+    int usb_c = esp_board_usb_c_powered();
+#if CONFIG_ESP_VIM_BAT_INA226
+    if (s_mv > 0 && s_shunt <= DISCHARGING)
+        usb_c = 1;                      /* not running on it */
+#endif
+    if (usb_c >= 0)
+        return usb_c ? "usb" : s_mv > 0 ? "battery" : "unknown";
 #if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
     if (usb_serial_jtag_is_connected())
         return "usb";
@@ -316,7 +345,7 @@ static void deep_sleep(int wake_s)
         : s_quips[esp_random() % (sizeof s_quips / sizeof s_quips[0])];
     char foot[64];
     snprintf(foot, sizeof foot, "%s", KEY >= 0 ? "KEY wakes me." : "RESET wakes me.");
-    if (mv > 0)
+    if (mv > 0 && !battery_absent())
         snprintf(foot + strlen(foot), sizeof foot - strlen(foot), "   Battery %d.%02d V",
                  mv / 1000, mv % 1000 / 10);
     /* When it went to sleep, if the clock has been set (esp_time). */
@@ -547,7 +576,7 @@ void esp_power_status(esp_power_status_t *st)
     st->battery = HAVE_BAT;
     st->source = source();
     st->battery_mv = s_mv;
-    st->battery_pct = percent(s_mv);
+    st->battery_pct = battery_absent() ? -1 : percent(s_mv);
     st->reader = KEY >= 0;
     st->idle_min = s_idle_min;
     st->deep_min = s_deep_min;
@@ -604,6 +633,9 @@ esp_err_t esp_power_init(void)
         return ESP_ERR_NO_MEM;
     s_last_input = esp_timer_get_time();
     measure();
+    if (HAVE_BAT)
+        ESP_LOGI(TAG, "battery %d mV%s, USB-C power %d, source %s", s_mv,
+                 battery_absent() ? " (none)" : "", esp_board_usb_c_powered(), source());
     s_req_done = xSemaphoreCreateBinary();
     if (s_req_done == NULL)
         return ESP_ERR_NO_MEM;

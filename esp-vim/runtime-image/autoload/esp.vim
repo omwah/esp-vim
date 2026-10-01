@@ -335,19 +335,21 @@ function! esp#Sleep(bang, ...) abort
   call esp_sleep(deep, secs)
 endfunction
 
-" :EspBattery: charge, voltage, and whether a computer is on the USB port.
+" :EspBattery: charge, voltage, and whether the USB port powers the board.
 function! esp#Battery() abort
   let p = esp_power()
   let lines = ['Battery   (R refresh, q close)']
   if p.battery_mv < 0
     call add(lines, s:Row('%-8s %s', 'Battery', 'no reading'))
+  elseif p.battery_pct < 0
+    call add(lines, s:Row('%-8s %s', 'Battery', 'none fitted'))
   else
     call extend(lines, [
           \ s:Row('%-8s %d%%', 'Charge', p.battery_pct),
           \ s:Row('%-8s %d.%02d V', 'Voltage', p.battery_mv / 1000, p.battery_mv % 1000 / 10)])
   endif
-  call add(lines, s:Row('%-8s %s', 'USB', p.source ==# 'usb'
-        \ ? 'connected to a computer' : 'not detected (a charger can''t be seen)'))
+  call add(lines, s:Row('%-8s %s', 'USB', p.source ==# 'usb' ? 'powering the board'
+        \ : 'not detected (on some boards a charger can''t be seen)'))
   call s:Show('Battery', lines, 0, function('esp#Battery'))
 endfunction
 
@@ -368,9 +370,10 @@ function! esp#Power(...) abort
   endif
   let p = esp_power()
   let bat = p.battery_mv < 0 ? 'none measured'
+        \ : p.battery_pct < 0 ? 'none fitted'
         \ : printf('%d.%02d V, about %d%%', p.battery_mv / 1000, p.battery_mv % 1000 / 10, p.battery_pct)
   let lines = ['Power   (R refresh, q close)',
-        \ s:Row('%-8s %s', 'Source', p.source ==# 'usb' ? 'USB (a computer is connected)'
+        \ s:Row('%-8s %s', 'Source', p.source ==# 'usb' ? 'USB'
         \           : p.source ==# 'battery' ? 'battery' : 'unknown'),
         \ s:Row('%-8s %s', 'Battery', bat),
         \ s:Row('%-8s %s', 'Reader', !p.reader ? 'no wake button: :EspSleep is a deep sleep'

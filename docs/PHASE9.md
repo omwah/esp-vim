@@ -55,7 +55,8 @@ build uses), M5Stack's M5Unified and M5GFX libraries, and M5Stack's Tab5 page.
 - **Clock**: an RX8130 driver in `esp_time`. The supply-failed flag marks the time as
   lost; setting the time clears it and turns on the backup battery's charging.
 - **Battery**: the INA226's bus voltage in `esp_power`, with the charge estimate for
-  two cells. Below 6.9 V with nothing unsaved, the Tab5 goes into deep sleep.
+  two cells. Below 6.9 V on battery with nothing unsaved, the Tab5 goes into deep
+  sleep. USB power is expander 0x44 P6, or the battery not discharging.
 - **`:EspInfo`** shows the board and its display controller.
 - **The C6's firmware** (`:EspC6`, `esp_net_cp.c`). `:EspC6` shows esp-hosted's
   version on each side. `:EspC6 update {file}` sends the C6 a new app image over the
@@ -174,12 +175,24 @@ It arrived on 2026-09-30. `esptool flash_id` in download mode: an ESP32-P4,
   to be set for the Tab5 (D1's pin, the slave chip). See DECISIONS.md, 2026-09-30.
   With a keyboard bonded, Bluetooth starts at boot and connects to the C6 there;
   the saved network is joined at boot too.
-- Open: with no battery in the back and only USB power, the Tab5 goes into deep
-  sleep straight after boot (the sleep screen shows, then black). Probably the
-  INA226 reading near 0 V with no battery, which `esp_power` takes for a flat one
-  (below 6.9 V, nothing unsaved: deep sleep). It needs to tell "no battery, on
-  USB" from "battery low": a reading near 0 V, or the charger's status line
-  (expander 0x44 P6) or the USB input.
+- No battery in the back and only USB power (a charger): the Tab5 went into deep
+  sleep straight after boot. `esp_power` saw no computer on the USB port, so it
+  took the board for running on its battery, and the INA226's reading with none
+  fitted for a flat one (below 6.9 V, nothing unsaved: deep sleep). Fixed: the
+  source is USB when expander 0x44 P6 (USB_DET, an input, pulled down) is high --
+  a computer or a charger -- or when the battery isn't discharging (INA226 shunt
+  register at most 50, about 25 mA through its 5 mOhm); and a reading under
+  2.5 V a cell is no battery, never a low one. Measured: on battery P6 0, shunt
+  450-490; on USB P6 1, shunt about -400 to -900 charging, about 0 full or with
+  no battery.
+- Checklist, 2026-10-01: 32 MB PSRAM, revision v1.3, 360 MHz, Vim's budget 16 MB,
+  162 KB internal heap free with WiFi up (lowest 125 KB). The microSD card (4-bit,
+  40 MHz) and WiFi together: five HTTPS downloads of a 621 KB file straight to `/sd`,
+  all whole. `:EspSensors` finds everything expected, and something at 0x28 it
+  doesn't know. The clock, set by NTP, reads the same from the RX8130.
+- Open: once, just after one of those downloads finished (its file whole), the
+  Tab5 restarted with a watchdog reset. Not seen again in four tries, with no
+  panic output caught.
 - The USB console doesn't always come back after a reset: the port can vanish
   until the cable is replugged. Download mode (BOOT held, RESET pressed) brings
   it back every time.

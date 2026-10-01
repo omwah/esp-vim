@@ -64,6 +64,11 @@ esp_err_t esp_board_usb_power(bool on);
  * on boards without one, where nothing asks. */
 bool esp_board_coprocessor_powered(void);
 
+/* Whether the USB-C port has power, from whatever is on it -- a computer or a
+ * charger (the Tab5 has a pin for it on an expander): 1 or 0, -1 when the
+ * board can't tell. */
+int esp_board_usb_c_powered(void);
+
 #ifdef __cplusplus
 }
 #endif
