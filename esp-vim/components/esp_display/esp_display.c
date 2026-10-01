@@ -808,7 +808,8 @@ void esp_display_wake(void)
 
 /* Runs on the touch task; only it touches this state. */
 static enum { G_IDLE, G_PENDING, G_SCROLL, G_DRAG } s_gesture;
-static int s_x0, s_y0, s_wheel_y, s_row0, s_col0, s_row, s_col;
+/* Where the touch started: not s_x0/s_y0, which are X0/Y0, the grid's offset. */
+static int s_tx0, s_ty0, s_wheel_y, s_row0, s_col0, s_row, s_col;
 static int64_t s_t0;
 
 static void cell_at(int x, int y, int *row, int *col)
@@ -840,12 +841,12 @@ void esp_display_touch(int ev, int x, int y, void *ctx)
     switch (ev) {
     case ESP_TOUCH_DOWN:
         s_gesture = G_PENDING;
-        s_x0 = x, s_y0 = y, s_t0 = now;
+        s_tx0 = x, s_ty0 = y, s_t0 = now;
         s_row0 = s_row = row, s_col0 = s_col = col;
         break;
     case ESP_TOUCH_MOVE:
         if (s_gesture == G_PENDING) {
-            int dx = abs(x - s_x0), dy = abs(y - s_y0);
+            int dx = abs(x - s_tx0), dy = abs(y - s_ty0);
             bool moved = dx > SLOP_PX || dy > SLOP_PX;
             if (now - s_t0 >= HOLD_US || (moved && dx >= dy)) {
                 /* Held still first, or moving sideways: a drag, pressing
@@ -854,7 +855,7 @@ void esp_display_touch(int ev, int x, int y, void *ctx)
                 mouse(0, s_row0, s_col0, false);
             } else if (moved) {                 /* up or down, straight away */
                 s_gesture = G_SCROLL;
-                s_wheel_y = s_y0;
+                s_wheel_y = s_ty0;
             }
         }
         if (s_gesture == G_SCROLL) {

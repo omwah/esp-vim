@@ -38,14 +38,19 @@ fi
 
 # Target chip, and the PSRAM the emulated board is given: the Tab5's 32 MB for
 # the P4, a typical N16R8 module's 8 MB for the S3.
+# tab5uart: the Tab5 build with its console on UART0, which esp-emu shows
+# (the Tab5's own console is USB Serial/JTAG, which it doesn't); run with none
+# of the Tab5's hardware, it checks that the build copes without it.
 CHIP="${ESPVIM_TARGET:-esp32p4}"
+VARIANT=()
 case "$CHIP" in
     esp32p4) PSRAM=32M ;;
     esp32s3) PSRAM=8M ;;
+    tab5uart) CHIP=esp32p4 PSRAM=32M VARIANT=(--variant tab5uart) ;;
     *) echo "roundtrip: unsupported ESPVIM_TARGET '$CHIP'" >&2; exit 2 ;;
 esac
-EMU_TARGET=(--chip "$CHIP" --psram "$PSRAM")
-echo "target: $CHIP (PSRAM $PSRAM)"
+EMU_TARGET=(--chip "$CHIP" --psram "$PSRAM" "${VARIANT[@]}")
+echo "target: $CHIP${VARIANT:+ ${VARIANT[1]}} (PSRAM $PSRAM)"
 OUT="$(mktemp -d)"
 trap 'rm -rf "$OUT"' EXIT
 

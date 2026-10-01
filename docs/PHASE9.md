@@ -40,7 +40,7 @@ build uses), M5Stack's M5Unified and M5GFX libraries, and M5Stack's Tab5 page.
   from the touch controller, the way the BSP does: firmware 1 at 0x55 is an ST7121, 3
   is an ST7123, a GT911 at 0x14 is the ILI9881C. The BSP then brings the panel up; the
   ST7121 gets its slower lane rate, 965 Mbit/s. `esp_display` draws cells straight into
-  the frame buffer, turned 90° by default (`ESP_VIM_DISP_ROTATION`), and writes the
+  the frame buffer, turned 270° by default (`ESP_VIM_DISP_ROTATION`; 90° was upside down on the first board), and writes the
   rows it touched back from the cache after each burst. Fonts: Terminus 12x24 (106x30
   cells) by default, 10x20, 16x32 and Spleen 8x16 with `:EspFont`.
 - **Touch** (`ESP_VIM_TOUCH_BOARD`): the BSP's driver for whichever controller is
@@ -57,6 +57,14 @@ build uses), M5Stack's M5Unified and M5GFX libraries, and M5Stack's Tab5 page.
 - **Battery**: the INA226's bus voltage in `esp_power`, with the charge estimate for
   two cells. Below 6.9 V with nothing unsaved, the Tab5 goes into deep sleep.
 - **`:EspInfo`** shows the board and its display controller.
+- **The C6's firmware** (`:EspC6`, `esp_net_cp.c`). `:EspC6` shows esp-hosted's
+  version on each side. `:EspC6 update {file}` sends the C6 a new app image over the
+  link (esp-hosted's own update: `esp_hosted_slave_ota_begin`/`write`/`end`, then
+  `activate`), then restarts the Tab5. The image is `pixi run c6-build`'s
+  `network_adapter.bin`, copied to /sd or /fat, not the merged image. It checks
+  the image first: an ESP32-C6 app with an app description. The C6 writes it to its
+  other slot and checks it before it boots it, so a stopped or failed transfer
+  leaves it on the firmware it had.
 
 ### Keyboards
 
@@ -94,6 +102,75 @@ build uses), M5Stack's M5Unified and M5GFX libraries, and M5Stack's Tab5 page.
 - The pairing screen stays away while the keyboard accessory or a USB keyboard is
   attached (`esp_kbd_wired()`).
 
+## In the emulator, without the board
+
+The `tab5uart` variant (`scripts/vim-build.sh tab5uart`) is the Tab5 build with its
+console on UART0: esp-emu shows UART0 and not USB Serial/JTAG. Run with none of the
+Tab5's hardware, it checks that the build copes when parts are missing, the way a
+board with a fault would.
+
+- Boot: `ESPVIM-BOARD tab5: expander 0x43 missing, 0x44 missing; ...`, then the
+  display, touch and SD card each report that they're not there, and `ESPVIM-READY`.
+  Vim runs over serial.
+  - Before this, a missing expander restarted the chip: the BSP's
+    `ESP_ERROR_CHECK`, now off (`CONFIG_BSP_ERROR_CHECK=n`).
+  - Then the USB host driver asserted with no USB controller. USB keyboards now
+    start only once the board has switched the USB-A port's power on.
+  - With no keyboard on Ext.Port1, the I2C driver logged an error every two
+    seconds, onto Vim's screen. Its log is now off during that probe.
+- `esp_info`, `esp_display`, `esp_sd`, `esp_i2c_scan`, `esp_sensors`, `esp_power`,
+  `esp_time`, `esp_heap`, `esp_net_status` and `esp_bt_keyboard_list` all return,
+  with the parts reported missing.
+- The round trip, interactive, peripheral and Python tests pass
+  (`ESPVIM_TARGET=tab5uart`).
+- Not testable here: WiFi, Bluetooth and `:EspC6`. The harness starts an emulated C6
+  as well, and the C6 now gets as far as receiving the P4's init message. But then
+  the emulated P4 stops altogether. esp-emu's SDIO bridge still can't carry an
+  esp-hosted session (PHASE6.md, 6f part 3).
+
+## The first board
+
+It arrived on 2026-09-30. `esptool flash_id` in download mode: an ESP32-P4,
+**revision v1.3**, 16 MB flash, its USB-C the P4's USB Serial/JTAG (`303a:1001`).
+
+- The revision decided the build. ESP-IDF builds for P4s before v3.0 or from v3.0
+  on, never both. Its default, v3.01 at least, would have had the bootloader refuse
+  this chip. So `sdkconfig.defaults.tab5` selects revisions before v3, from v1.0.
+  `tab5uart` sets v3 back for the emulator, whose P4 is v3.1, so it doesn't boot on
+  this board. A v3 Tab5 would need a variant of its own.
+- The factory firmware, all 16 MB, is backed up outside the repository. One
+  `read_flash` of the whole chip failed part way ("Corrupt data"): USB through the
+  development VM drops data now and then. Reading in 256 KB pieces, each after a
+  reset into download mode, and then `verify_flash` against the chip's own MD5,
+  works.
+- First boots, and what each needed:
+  - A boot loop before `app_main`: `assert failed: sdio_mempool_create`.
+    esp-hosted allocates its SDIO buffers (about 47 KB of DMA-capable RAM) in a C
+    constructor. On a pre-v3 P4 the large internal region (178 KiB) joins the heap
+    only after start-up. The pool now goes in PSRAM
+    (`CONFIG_ESP_HOSTED_MEMPOOL_PREFER_SPIRAM`), falling back to internal RAM.
+  - `panel unknown`: nothing answered at 0x55 or 0x14. The ST7121's touch
+    controller is part of the display chip and stays silent while the display is
+    held in reset. `esp_board_panel_new()` now does what the BSP and M5Stack do:
+    the display out of reset, a touch reset pulse, then the probe.
+  - Upside down at 90°: the default is now 270°.
+  - A tap crashed it, and later so did typing (the interrupt watchdog, the screen
+    blue). The touch handler's start point had the same names as the grid's
+    offset (`s_x0`/`s_y0`), so C merged them into one variable. Each tap moved the
+    picture's origin, and the next redraw wrote past the frame buffer. Found with
+    a core dump to flash: the USB console didn't survive the crash.
+- Working: the display (ST7121, 106x30 in Terminus 12x24), touch (tap, scroll,
+  drag), the keyboard accessory (firmware 0x01) and a USB keyboard on USB-A.
+  Internal RAM free at the prompt: about 186 KB.
+- Open: the C6 doesn't answer our firmware. After esp-hosted resets it, every
+  SDIO CMD5 times out (`sdmmc_init_ocr: send_op_cond (1) returned 0x107`), so
+  WiFi, Bluetooth and `:EspC6` have no link. M5Stack's factory firmware
+  (M5Tab5-UserDemo, esp-hosted 1.4.0) reaches it on the same pins, slot, clock
+  and reset: the C6 is fine, and the difference is ours.
+- The USB console doesn't always come back after a reset: the port can vanish
+  until the cable is replugged. Download mode (BOOT held, RESET pressed) brings
+  it back every time.
+
 ## First flash: the checklist
 
 Do the steps in order. Each gives the next one something to stand on.
@@ -128,18 +205,23 @@ Do the steps in order. Each gives the next one something to stand on.
 6. **Touch.** Tap a word: the cursor should go there. Drag up: the text should scroll
    down. If taps land in the wrong place, the touch rotation doesn't match the
    display's, which the host test says can't happen. Look at the raw points first.
-7. **Memory.** In `:EspInfo`, check 32 MB PSRAM, and that the chip revision is v1.x or
-   v3.x. Pre-v3 P4s need their own build variant. In `:EspHeap`, Vim's budget should
+7. **Memory.** In `:EspInfo`, check 32 MB PSRAM, and that the chip revision is v1.x:
+   the `tab5` build is for revisions before v3 (see below). In `:EspHeap`, Vim's budget should
    be 16 MB.
 8. **The C6.**
    - The boot log shows esp-hosted's `Identified slave [esp32c6]` and the slave's
      firmware version. Our side is 2.12.13. A different major version may not talk to
      us.
    - `:EspWifiScan`, then `:EspWifiConnect`, then `:EspGet` of a small file.
+   - `:EspC6` shows both versions. If the C6 runs another esp-hosted (M5Stack ships
+     its own), update it: copy `build-deps/c6-coprocessor/build/network_adapter.bin`
+     to the SD card, `:EspC6 update /sd/network_adapter.bin`, and after the restart
+     `:EspC6` again. This needs a link, so it works only if the C6's firmware talks
+     to ours at all.
    - If the link never comes up, the `ESPVIM-NET` line says so after esp-hosted's
-     retries. First check the C6's power (expander 0x44 P0). Then find out what the
-     C6 runs: M5Stack's C6 firmware may need replacing with `pixi run c6-build`'s
-     image. How M5Stack flashes the C6 is still to be found out.
+     retries. First check the C6's power (expander 0x44 P0). With no link,
+     `:EspC6 update` can't help: the C6 then needs flashing through its own pins,
+     which M5Stack doesn't bring out as a port. That is still to be found out.
 9. **microSD.** With a FAT or exFAT card in, `:EspSd` should show it mounted, with
    the bus (4-bit or 1-bit) and the clock. Also check that WiFi still works with the
    card mounted: the two share the SDMMC controller.

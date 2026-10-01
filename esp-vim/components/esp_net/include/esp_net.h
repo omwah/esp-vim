@@ -82,6 +82,39 @@ int esp_net_wifi_forget(char *err, size_t errlen);
 int esp_net_wifi_saved(char *ssid, size_t n, char *err, size_t errlen);
 
 /*
+ * The radio co-processor: the Tab5's ESP32-C6, reached through esp-hosted
+ * (ESP_VIM_NET_WIFI_REMOTE builds; others have none: present false).
+ */
+typedef struct {
+    bool present;               /* this build talks to one */
+    bool link;                  /* it answered */
+    char host[16];              /* esp-hosted on this side, "2.12.13" */
+    char version[16];           /* esp-hosted on the co-processor */
+    char chip[16];              /* "esp32c6" */
+} esp_net_cp_info_t;
+
+typedef struct {
+    char from[16], to[32];      /* its firmware before; the image's version */
+    char project[32];           /* the image's project, "network_adapter" */
+    uint64_t bytes;             /* sent */
+    bool activated;             /* it boots the new firmware now (else at its next reset) */
+} esp_net_cp_update_t;
+
+/* Called after each chunk sent; return false to stop. */
+typedef bool (*esp_net_cp_progress_cb)(void *ctx, uint64_t bytes, uint64_t total);
+
+/* Brings the link up if it isn't (esp-hosted resets the co-processor and
+ * waits for it). -1 with {err} if it doesn't answer. */
+int esp_net_cp_info(esp_net_cp_info_t *info, char *err, size_t errlen);
+
+/* Update its firmware from {path}, an ESP32-C6 app image (the co-processor
+ * build's network_adapter.bin; validated by esp_fs_check). Blocks for the
+ * transfer. The link doesn't survive the co-processor restarting into the
+ * new firmware: restart this chip afterwards. */
+int esp_net_cp_update(const char *path, esp_net_cp_progress_cb progress, void *ctx,
+                      esp_net_cp_update_t *out, char *err, size_t errlen);
+
+/*
  * GET {url} (http or https; certificates checked against ESP-IDF's CA bundle;
  * up to 5 redirects followed), passing the body to {sink}. Only a 200 response
  * is a success. Returns 0, or -1 with a message in {err}.

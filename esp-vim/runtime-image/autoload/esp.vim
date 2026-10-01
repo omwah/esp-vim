@@ -207,6 +207,66 @@ function! esp#Sd(...) abort
         \ 0, function('esp#Sd'))
 endfunction
 
+" --------------------------------------------------------------- :EspC6 --
+
+" :EspC6                    the radio co-processor (the Tab5's C6): esp-hosted
+"                           on each side, which must agree
+" :EspC6[!] update {file}   update its firmware from {file}, the co-processor
+"                           build's network_adapter.bin, then restart. Refused
+"                           with unsaved changes, without !
+function! esp#C6Complete(lead, line, pos) abort
+  if a:line[: a:pos - 1] =~# '\<update\s'
+    return getcompletion(a:lead, 'file')
+  endif
+  return filter(['update'], 'v:val =~# "^" . a:lead')
+endfunction
+
+function! esp#C6(bang, ...) abort
+  if a:0 == 2 && a:1 ==# 'update'
+    let modified = getbufinfo({'bufmodified': 1})
+    if !a:bang && !empty(modified)
+      echohl ErrorMsg
+      echomsg 'EspC6 update: it restarts when done, and ' . len(modified)
+            \ . ' buffer(s) have unsaved changes, e.g. "'
+            \ . (empty(modified[0].name) ? '[No Name]' : fnamemodify(modified[0].name, ':~:.'))
+            \ . '" (add ! to go ahead anyway)'
+      echohl None
+      return
+    endif
+    echo 'C6 firmware: ' . a:2 . '...'
+    redraw
+    let r = esp_c6_update(a:2)
+    if empty(r)
+      return
+    endif
+    echo 'C6 firmware ' . r.from . ' -> ' . r.to . ' (' . s:Size(r.bytes) . ' sent): restarting...'
+    redraw
+    call esp_reboot()
+    return
+  elseif a:0
+    echoerr 'Usage: :EspC6 [update {file}]'
+    return
+  endif
+  echo 'Asking the co-processor...'
+  redraw
+  let c = esp_c6()
+  if !c.present
+    echo 'This board has no radio co-processor'
+    return
+  endif
+  let rows = [['esp-hosted', c.host . ' (here)']]
+  if c.link
+    call add(rows, ['Co-processor', c.version . (empty(c.chip) ? '' : '  ' . c.chip)])
+    if matchstr(c.version, '^\d\+') !=# matchstr(c.host, '^\d\+')
+      call add(rows, ['Note', 'major versions differ: update it (:EspC6 update)'])
+    endif
+  else
+    call add(rows, ['Co-processor', 'no answer' . (empty(c.error) ? '' : ': ' . c.error)])
+  endif
+  call s:Show('C6', ['Radio co-processor   (R refresh, q close)']
+        \ + map(rows, 's:Row("%-13s %s", v:val[0], v:val[1])'), 0, function('esp#C6', [0]))
+endfunction
+
 " ------------------------------------------------------------ :EspTasks --
 
 function! esp#Tasks() abort

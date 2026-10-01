@@ -35,9 +35,9 @@ C6_IMAGE = PROJECT.parent / "build-deps" / "c6-coprocessor" / "build" / "merged.
 # ESP32-C6 co-processor, emulated as a second esp-emu linked by esp-hosted's
 # SDIO bridge (scripts/c6-build.sh makes the C6 firmware).
 VARIANT = os.environ.get("ESPVIM_TARGET", "esp32p4")
-TARGET = {"tab5": "esp32p4", "es3c28p": "esp32s3", "fnk0115": "esp32s3",
+TARGET = {"tab5": "esp32p4", "tab5uart": "esp32p4", "es3c28p": "esp32s3", "fnk0115": "esp32s3",
           "rlcd42": "esp32s3"}.get(VARIANT, VARIANT)
-COPROCESSOR = VARIANT == "tab5"
+COPROCESSOR = VARIANT in ("tab5", "tab5uart")
 PSRAM = {"esp32p4": "32M", "esp32s3": "8M"}
 
 # A real board instead of the emulator: ESPVIM_DEVICE=<serial port>, with the
@@ -254,6 +254,11 @@ class Session:
             self.type(f":echo '{tag}' . '=' . {expr} . '|'\r")
             return self.expect(rf"{tag}=([^|]*)\|".encode(), 60).group(1).decode()
 
+        # The Tab5 build's WiFi is the C6's, through esp-hosted, and esp-emu's
+        # SDIO bridge can't carry an esp-hosted session yet: trying stops the
+        # emulated P4 altogether (docs/PHASE9.md). So no network there.
+        if COPROCESSOR and not DEVICE:
+            return False
         iface = probe("WI", "esp_net_status().iface")
         if iface == "none":
             return False

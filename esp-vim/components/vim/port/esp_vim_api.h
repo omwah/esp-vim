@@ -20,6 +20,10 @@ void f_esp_bt_keyboard_list(typval_T *argvars, typval_T *rettv);
 void f_esp_bt_keyboard_notice(typval_T *argvars, typval_T *rettv);
 void f_esp_bt_keyboard_pair(typval_T *argvars, typval_T *rettv);
 
+/* api/esp_api_net.c: the radio co-processor */
+void f_esp_c6(typval_T *argvars, typval_T *rettv);
+void f_esp_c6_update(typval_T *argvars, typval_T *rettv);
+
 /* api/esp_api_sys.c: the serial console's output */
 void f_esp_console_output(typval_T *argvars, typval_T *rettv);
 void f_esp_display(typval_T *argvars, typval_T *rettv);

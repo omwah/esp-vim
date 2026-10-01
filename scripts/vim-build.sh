@@ -4,6 +4,9 @@
 #
 #   scripts/vim-build.sh            # esp32p4, with Ethernet (the emulator's P4)
 #   scripts/vim-build.sh tab5       # esp32p4, WiFi through the ESP32-C6 (Tab5)
+#   scripts/vim-build.sh tab5uart   # the same with its console on UART0 (M5-Bus
+#                                   #   G37/38): for esp-emu, which shows no USB
+#                                   #   Serial/JTAG, and if USB-C isn't the console
 #   scripts/vim-build.sh esp32s3    # the S3 build variant
 #   scripts/vim-build.sh es3c28p    # esp32s3, console on USB (Hosyond ES3C28P CYD)
 #   scripts/vim-build.sh fnk0115    # esp32s3, 5" RGB panel (Freenove FNK0115)
@@ -19,9 +22,9 @@ set -euo pipefail
 VARIANT="${1:-${ESPVIM_TARGET:-esp32p4}}"
 case "$VARIANT" in
     esp32p4|esp32s3) TARGET="$VARIANT" ;;
-    tab5)            TARGET=esp32p4 ;;
+    tab5|tab5uart)   TARGET=esp32p4 ;;
     es3c28p|fnk0115|rlcd42) TARGET=esp32s3 ;;
-    *) echo "vim-build: unsupported variant '$VARIANT' (esp32p4, tab5, esp32s3, es3c28p, fnk0115, rlcd42)" >&2; exit 1 ;;
+    *) echo "vim-build: unsupported variant '$VARIANT' (esp32p4, tab5, tab5uart, esp32s3, es3c28p, fnk0115, rlcd42)" >&2; exit 1 ;;
 esac
 
 PROJECT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../esp-vim" && pwd)"
@@ -29,6 +32,10 @@ BUILD="build-$VARIANT"
 # ESP-IDF also loads <file>.<target> for each listed file, so the chip's own
 # defaults come in with sdkconfig.defaults.
 DEFAULTS="sdkconfig.defaults"
+# A variant of a variant (tab5uart) layers its file on its parent's.
+PARENT=""
+[ "$VARIANT" = tab5uart ] && PARENT=tab5
+[ -z "$PARENT" ] || DEFAULTS="$DEFAULTS;sdkconfig.defaults.$PARENT"
 [ "$VARIANT" = "$TARGET" ] || DEFAULTS="$DEFAULTS;sdkconfig.defaults.$VARIANT"
 
 cd "$PROJECT"
@@ -40,7 +47,7 @@ python3 "$PROJECT/../scripts/check-builtins.py"
 # ESP-IDF prefers it, so an edit to the defaults would silently never apply.
 # Nothing hand-made lives in it (menuconfig changes belong in the defaults), so
 # regenerate it whenever a defaults file is newer.
-for d in sdkconfig.defaults sdkconfig.defaults."$TARGET" sdkconfig.defaults."$VARIANT"; do
+for d in sdkconfig.defaults sdkconfig.defaults."$TARGET" ${PARENT:+sdkconfig.defaults."$PARENT"} sdkconfig.defaults."$VARIANT"; do
     if [ -f "$BUILD/sdkconfig" ] && [ "$d" -nt "$BUILD/sdkconfig" ]; then
         echo "vim-build: $d changed; regenerating $BUILD/sdkconfig"
         rm -f "$BUILD/sdkconfig"

@@ -864,3 +864,14 @@ PgUp/Home/PgDn/End and Insert are ours, on Sym.
 **Assumptions to check on the first flash**: that USB-C is the P4's USB Serial/JTAG
 port (the console is put there), which way up the picture is (`:EspFlip`, or
 `ESP_VIM_DISP_ROTATION`), and which esp-hosted version the C6 runs.
+
+## 2026-09-30 — The Tab5 build is for P4 revisions before v3
+
+The first Tab5 is an ESP32-P4 revision v1.3. ESP-IDF 5.5 supports P4s before v3.0 and
+from v3.0 on only in separate builds (`ESP32P4_SELECTS_REV_LESS_V3`: the silicon
+changed too much), and its default needs v3.01, so the bootloader would refuse this
+board. `sdkconfig.defaults.tab5` therefore selects revisions before v3, minimum v1.0,
+the board in hand. Keeping v3 as the default with a `tab5v1` variant was the
+alternative, but the only Tab5 we have would then need the variant. esp-emu's P4 is
+v3.1, so `tab5uart`, the emulator build, sets v3 back and doesn't boot on this
+board. A v3 Tab5 gets a variant of its own when one turns up.

@@ -37,12 +37,13 @@ menu "esp-vim display"
     config ESP_VIM_DISP_ROTATION
         int "Picture turned on the panel, clockwise (0, 90, 180, 270)"
         depends on ESP_VIM_DISP_DSI
-        default 90
+        default 270
         help
             The Tab5's panel is portrait, 720 x 1280; 90 or 270 gives Vim a
-            landscape screen. Which of the two is the right way up depends on
-            how the Tab5 stands: :EspFlip turns it over at run time (kept in
-            NVS), and the touch controller follows either way.
+            landscape screen. 270 is the right way up on the first Tab5
+            (ST7121 panel); 90 showed it upside down.
+            :EspFlip turns it over at run time (kept in NVS), and the touch
+            controller follows either way.
 
     config ESP_VIM_DISP_FONTS
         string "Fonts"

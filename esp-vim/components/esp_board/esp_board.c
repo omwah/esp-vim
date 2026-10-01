@@ -42,7 +42,7 @@ static const char *TAG = "esp_board";
                    | BIT64(39) | BIT64(40) | BIT64(41) | BIT64(42) | BIT64(43) | BIT64(44) \
                    | BIT64(26) | BIT64(27) | BIT64(28) | BIT64(29) | BIT64(30) | BIT64(36))
 
-static bool s_i2c_ok;
+static bool s_i2c_ok, s_ioe_ok;
 static const char *s_panel_name = "";
 static esp_lcd_touch_handle_t s_touch;
 
@@ -61,27 +61,37 @@ static esp_err_t ioe_out(esp_io_expander_handle_t ioe, uint32_t pin, int level)
 
 esp_err_t esp_board_init(void)
 {
-    esp_gpio_reserve(TAB5_PINS);
     esp_err_t e = bsp_i2c_init();
+    esp_gpio_reserve(TAB5_PINS);        /* after: the I2C driver won't take reserved pins */
     s_i2c_ok = e == ESP_OK;
     if (!s_i2c_ok) {
         printf("ESPVIM-BOARD tab5: internal I2C bus: %s\n", esp_err_to_name(e));
         return e;
     }
+    /* With ESP_BSP_ERROR_CHECK off, a missing expander is NULL here, not a
+     * restart; the BSP's feature switches must then not be asked to use it. */
     esp_io_expander_handle_t ioe0 = bsp_io_expander_init(), ioe1 = bsp_io_expander1_init();
     /* The C6 first: esp-hosted resets it and waits for it once the network
      * starts. Then the USB-A port, the touch controller (which the panel's
      * revision is read from), and the speaker off: nothing plays sound. */
-    esp_err_t wifi = bsp_feature_enable(BSP_FEATURE_WIFI, true);
-    esp_err_t usb = bsp_feature_enable(BSP_FEATURE_USB, true);
-    esp_err_t touch = bsp_feature_enable(BSP_FEATURE_TOUCH, true);
-    bsp_feature_enable(BSP_FEATURE_SPEAKER, false);
-    bsp_feature_enable(BSP_FEATURE_CAMERA, false);
-    esp_err_t other = ioe_out(ioe0, IOE0_ANTENNA, 0);
-    if (other == ESP_OK)
+    esp_err_t wifi = ESP_ERR_NOT_FOUND, usb = ESP_ERR_NOT_FOUND, touch = ESP_ERR_NOT_FOUND;
+    esp_err_t other = ESP_ERR_NOT_FOUND;
+    if (ioe1) {
+        wifi = bsp_feature_enable(BSP_FEATURE_WIFI, true);
+        usb = bsp_feature_enable(BSP_FEATURE_USB, true);
         other = ioe_out(ioe1, IOE1_NQC_EN, 1);
-    if (other == ESP_OK)
-        other = ioe_out(ioe1, IOE1_CHG_EN, 1);
+        if (other == ESP_OK)
+            other = ioe_out(ioe1, IOE1_CHG_EN, 1);
+    }
+    if (ioe0) {
+        touch = bsp_feature_enable(BSP_FEATURE_TOUCH, true);
+        bsp_feature_enable(BSP_FEATURE_SPEAKER, false);
+        bsp_feature_enable(BSP_FEATURE_CAMERA, false);
+        esp_err_t ant = ioe_out(ioe0, IOE0_ANTENNA, 0);
+        if (other == ESP_OK)
+            other = ant;
+    }
+    s_ioe_ok = ioe0 && ioe1;
     printf("ESPVIM-BOARD tab5: expander 0x43 %s, 0x44 %s; C6 power %s, USB-A 5V %s, touch %s,"
            " charging %s\n",
            ioe0 ? "ok" : "missing", ioe1 ? "ok" : "missing", esp_err_to_name(wifi),
@@ -137,8 +147,21 @@ static int detect_panel(void)
 
 esp_err_t esp_board_panel_new(esp_lcd_panel_handle_t *panel, int *width, int *height)
 {
-    if (!s_i2c_ok)
+    if (!s_ioe_ok)                      /* the panel's power and reset are on the expanders */
         return ESP_ERR_INVALID_STATE;
+    /* M5Stack's order, and the BSP's: the panel out of reset first -- on the
+     * ST7123/ST7121 the touch controller is part of the display chip and stays
+     * silent while it's held -- then a touch reset pulse, with TP INT high
+     * (the GT911's address select: 0x14), and a moment before asking. */
+    bsp_feature_enable(BSP_FEATURE_LCD, true);
+    gpio_set_direction(BSP_LCD_TOUCH_INT, GPIO_MODE_OUTPUT);
+    gpio_set_level(BSP_LCD_TOUCH_INT, 1);
+    bsp_feature_enable(BSP_FEATURE_TOUCH, false);
+    vTaskDelay(pdMS_TO_TICKS(10));
+    bsp_feature_enable(BSP_FEATURE_TOUCH, true);
+    vTaskDelay(pdMS_TO_TICKS(10));
+    gpio_set_direction(BSP_LCD_TOUCH_INT, GPIO_MODE_INPUT);
+    vTaskDelay(pdMS_TO_TICKS(100));
     int kind = detect_panel();
     static const char *const names[] = { "", "ILI9881C", "ST7123", "ST7121" };
     if (kind == PANEL_UNKNOWN) {
@@ -180,8 +203,9 @@ esp_err_t esp_board_backlight(int percent)
 
 esp_err_t esp_board_touch_init(void)
 {
-    if (!s_i2c_ok)
-        return ESP_ERR_INVALID_STATE;
+    /* Only for a panel found: the BSP asserts on a board it can't tell. */
+    if (!*s_panel_name)
+        return ESP_ERR_NOT_FOUND;
     esp_err_t e = bsp_touch_new(NULL, &s_touch);
     printf("ESPVIM-BOARD tab5: touch: %s\n", esp_err_to_name(e));
     return e;
@@ -202,6 +226,8 @@ int esp_board_touch_read(int *x, int *y)
 
 esp_err_t esp_board_usb_power(bool on)
 {
+    if (!s_ioe_ok)
+        return ESP_ERR_INVALID_STATE;
     return bsp_feature_enable(BSP_FEATURE_USB, on);
 }
 

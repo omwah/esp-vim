@@ -60,6 +60,8 @@ CONFIG_BT_NIMBLE_HID_SERVICE=y
 # in PSRAM. :EspFlip if it comes up upside down.
 CONFIG_ESP_VIM_DISPLAY=y
 CONFIG_ESP_VIM_DISP_DSI=y
+# 270: the right way up on the first board (90 was upside down).
+CONFIG_ESP_VIM_DISP_ROTATION=270
 
 # Touch: the panel's own controller (GT911 or the ST712x's), polled.
 CONFIG_ESP_VIM_TOUCH=y
@@ -95,5 +97,21 @@ CONFIG_ESP_VIM_BAT_CELLS=2
 CONFIG_ESP_VIM_SLEEP_LOW_MV=6900
 
 # The BSP's own storage helpers are not used (components/esp_sd mounts the
-# card); its display comes up without LVGL.
+# card); its display comes up without LVGL. Its errors are returned, not
+# aborted on: by default a missing IO expander restarts the chip, in a loop
+# (seen under esp-emu, which has none). esp_board carries on without it.
 CONFIG_BSP_I2C_NUM=1
+CONFIG_BSP_ERROR_CHECK=n
+
+# The chip's revision. ESP-IDF builds for P4s before v3.0 or from v3.0 on, never
+# both: the two differ too much. The Tab5 this was first run on is v1.3, so this
+# build is for v1.x (and won't boot on a v3 Tab5). The emulator's P4 is v3.1,
+# so tab5uart sets it back.
+CONFIG_ESP32P4_SELECTS_REV_LESS_V3=y
+CONFIG_ESP32P4_REV_MIN_100=y
+
+# esp-hosted's SDIO buffers (about 47 KB) in PSRAM. It allocates them in a C
+# constructor, and on a pre-v3 P4 the large internal RAM region joins the heap
+# only after start-up: from internal RAM the pool failed and the Tab5
+# boot-looped (assert in sdio_mempool_create). Falls back to internal RAM.
+CONFIG_ESP_HOSTED_MEMPOOL_PREFER_SPIRAM=y

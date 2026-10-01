@@ -54,7 +54,9 @@ esp_err_t esp_board_backlight(int percent);
 esp_err_t esp_board_touch_init(void);
 int esp_board_touch_read(int *x, int *y);
 
-/* The USB-A port's 5 V (the Tab5 switches it through an expander). */
+/* The USB-A port's 5 V (the Tab5 switches it through an expander).
+ * ESP_ERR_INVALID_STATE when the expander isn't there: then neither is the
+ * port's power, and the USB host is better not started. */
 esp_err_t esp_board_usb_power(bool on);
 
 #ifdef __cplusplus

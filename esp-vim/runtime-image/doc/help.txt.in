@@ -327,6 +327,23 @@ a separate radio chip.  Elsewhere they say the build has no WiFi.
 		The same as |:EspNet|, including the network's name and
 		signal strength.
 
+:EspC6							*:EspC6*
+		The radio co-processor, on boards that reach WiFi and
+		Bluetooth through one (an ESP32-C6): the esp-hosted
+		version on this side, and the one the co-processor runs.
+		The two must agree; a different major version may not talk
+		to this one at all.  Asking brings the link up, which can
+		take some seconds.
+:EspC6[!] update {file}
+		Update the co-processor's firmware from {file}: the app image
+		of the co-processor build, network_adapter.bin (not a merged
+		image), copied to /sd or /fat.  It goes over the link, and the
+		co-processor checks it before it boots it; stopped part way
+		(CTRL-C), it keeps the firmware it has.  Then the device
+		restarts, so it is refused while buffers have unsaved
+		changes, unless ! is given.
+		Scripts: esp_c6(), esp_c6_update({file}).
+
 :EspBleScan [{seconds}]					*:EspBleScan*
 		Bluetooth LE devices in range, strongest first: name,
 		address, address type, signal, and whether it accepts

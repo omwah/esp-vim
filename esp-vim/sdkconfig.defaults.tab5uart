@@ -1,0 +1,12 @@
+# The Tab5 build with its console on UART0 (GPIO37 TX, 38 RX, on the M5-Bus
+# connector) instead of USB-C: layered on sdkconfig.defaults.tab5 by
+# scripts/vim-build.sh tab5uart. For esp-emu, which shows UART0 but not the
+# USB Serial/JTAG port (ESPVIM_TARGET=tab5uart runs the harness against it).
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+# esp-emu's P4 is revision v3.1, the Tab5's build is for v1.x: back to v3.
+# (So this build doesn't boot on a v1.x Tab5.)
+CONFIG_ESP32P4_SELECTS_REV_LESS_V3=n
+CONFIG_ESP32P4_REV_MIN_301=y
+# :EspSerial moves off the console's pins, to two M5-Bus GPIOs.
+CONFIG_ESP_VIM_SERIAL_TX=16
+CONFIG_ESP_VIM_SERIAL_RX=17

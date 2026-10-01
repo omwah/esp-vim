@@ -23,6 +23,7 @@ command! -bar -bang -nargs=* -complete=customlist,esp#NvsComplete EspNvs call es
 command! -bar -nargs=* -complete=dir EspFiles call espfiles#Open(<f-args>)
 command! -bar -nargs=? -complete=customlist,esp#SdComplete EspSd call esp#Sd(<f-args>)
 command! -bar EspNet call esp#Net()
+command! -bar -bang -nargs=* -complete=customlist,esp#C6Complete EspC6 call esp#C6(<bang>0, <f-args>)
 command! -bar -nargs=* -complete=customlist,esp#TimeComplete EspTime call esp#Time(<f-args>)
 command! -bar -bang -nargs=+ EspGet call esp#Get(<bang>0, <f-args>)
 command! -bar -bang EspSshKeygen call esp#ssh#Keygen(<bang>0)

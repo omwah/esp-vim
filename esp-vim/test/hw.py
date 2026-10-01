@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from uart_session import Session, TARGET, DEVICE  # noqa: E402
+from uart_session import Session, TARGET, VARIANT, DEVICE  # noqa: E402
 
 failures = 0
 # An ADC-capable pin, and one that is not, per chip.
@@ -23,7 +23,11 @@ NOT_ADC = {"esp32p4": 5, "esp32s3": 21}[TARGET]
 # Free pins for an I2C bus in the emulator build. (The P4 default, GPIO31/32,
 # is the Tab5's internal bus -- but the emulator build enables the Ethernet
 # MAC, whose RMII pins include GPIO31, so it is correctly refused there.)
+# The Tab5 build has no I2C controller to spare (its internal bus and the
+# keyboard's port take both), so it scans the internal bus, which it shares.
 I2C_PINS = {"esp32p4": "7, 8", "esp32s3": "8, 9"}[TARGET]
+if VARIANT.startswith("tab5"):
+    I2C_PINS = "31, 32"
 
 
 def check(ok, label, detail=""):

@@ -97,10 +97,22 @@ static void leds(unsigned ind)
     wr(REG_LED2, b, 3);
 }
 
+/* Whether it answers. Asked every two seconds while it's away, and the I2C
+ * driver logs an error for each probe that times out (as it does with nothing
+ * on the port to pull the lines up): that would land on Vim's screen. */
+static bool answers(void)
+{
+    esp_log_level_t was = esp_log_level_get("i2c.master");
+    esp_log_level_set("i2c.master", ESP_LOG_NONE);
+    esp_err_t e = i2c_master_probe(s_bus, ADDR, 50);
+    esp_log_level_set("i2c.master", was);
+    return e == ESP_OK;
+}
+
 /* It answers: set it up. */
 static bool attach(void)
 {
-    if (i2c_master_probe(s_bus, ADDR, 50) != ESP_OK)
+    if (!answers())
         return false;
     uint8_t ver = 0;
     esp_err_t e = rd(REG_VERSION, &ver);
@@ -112,7 +124,12 @@ static bool attach(void)
         e = wr1(REG_INT_STA, 0);
     if (e == ESP_OK)
         e = wr1(REG_LED_MODE, 1);       /* ours to set */
-    printf("ESPVIM-KBD tab5 keyboard: firmware 0x%02x, %s\n", ver, esp_err_to_name(e));
+    /* A failure once, not at every retry: something answering at 0x6D that
+     * then won't talk would print a line every two seconds. */
+    static esp_err_t s_failed = ESP_OK;
+    if (e == ESP_OK || e != s_failed)
+        printf("ESPVIM-KBD tab5 keyboard: firmware 0x%02x, %s\n", ver, esp_err_to_name(e));
+    s_failed = e;
     if (e != ESP_OK)
         return false;
     esp_kbd_tab5_reset(&s_st);

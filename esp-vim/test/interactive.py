@@ -282,7 +282,7 @@ def main():
                   "/".join(g.decode() for g in m.groups()))
             s.type(":EspInfo\r")
             s.quiet(1.0)
-            s.type(":echo 'X' . '=' . get(b:, 'esp_view', '') . '|' . (getline(2) =~# '" + CHIP + "') . '|'\r")
+            s.type(":echo 'X' . '=' . get(b:, 'esp_view', '') . '|' . ((getline(2) . getline(3)) =~# '" + CHIP + "') . '|'\r")
             m = s.expect(rb"X=([^|]*)\|(\d)\|", 30)
             check(m.groups() == (b"Info", b"1"), ":EspInfo opens its view with the chip",
                   "/".join(g.decode() for g in m.groups()))

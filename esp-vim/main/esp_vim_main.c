@@ -408,9 +408,14 @@ void app_main(void)
     esp_err_t kb = esp_kbd_tab5_start();    /* the Tab5's keyboard accessory, when attached */
     if (kb != ESP_OK && kb != ESP_ERR_NOT_SUPPORTED)
         ESP_LOGE(TAG, "Tab5 keyboard: %s", esp_err_to_name(kb));
-    kb = esp_usbkbd_start();            /* USB keyboards, on a USB host port */
-    if (kb != ESP_OK && kb != ESP_ERR_NOT_SUPPORTED)
-        ESP_LOGE(TAG, "USB keyboards: %s", esp_err_to_name(kb));
+    /* USB keyboards, on a USB host port -- on a board that switches the
+     * port's power, once it's on (under esp-emu, with no expanders and no USB
+     * controller, it isn't, and the host driver would assert). */
+    if (esp_board_name() == NULL || esp_board_usb_power(true) == ESP_OK) {
+        kb = esp_usbkbd_start();
+        if (kb != ESP_OK && kb != ESP_ERR_NOT_SUPPORTED)
+            ESP_LOGE(TAG, "USB keyboards: %s", esp_err_to_name(kb));
+    }
 #if CONFIG_ESP_VIM_DISPLAY
     if (esp_display_init() != ESP_OK)   /* each session hooks it up (vim_task) */
         ESP_LOGE(TAG, "display: not available -- the console is serial only");

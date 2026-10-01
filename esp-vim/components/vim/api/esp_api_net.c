@@ -1,12 +1,14 @@
 /*
  * esp_net_status(), esp_http_get(): Vim script access to components/esp_net.
  * Behind :EspNet, :EspGet, and netrw's http:// and https:// reads (patch 0009),
- * which is also how spell files are downloaded.
+ * which is also how spell files are downloaded. And the radio co-processor
+ * (the Tab5's C6): esp_c6(), esp_c6_update(), behind :EspC6.
  */
 
 #include "vim.h"
 #include "esp_vim_api.h"
 #include "esp_net.h"
+#include "esp_timer.h"
 
 #define BODY_MAX (4 * 1024 * 1024)      /* esp_http_get() without a file */
 
@@ -169,4 +171,79 @@ void f_esp_http_get(typval_T *argvars, typval_T *rettv)
         ga_clear(&ga);
     }
     vim_free(url);
+}
+
+/* esp_c6() -> Dict: present (this build has a co-processor), link (it
+ * answered), host (esp-hosted here), version (esp-hosted on the C6), chip,
+ * error (why it didn't answer). Brings the link up if it isn't: that can take
+ * some seconds. */
+void f_esp_c6(typval_T *argvars UNUSED, typval_T *rettv)
+{
+    if (rettv_dict_alloc(rettv) == FAIL)
+        return;
+    esp_net_cp_info_t i;
+    char err[96] = "";
+    esp_net_cp_info(&i, err, sizeof err);
+    dict_T *d = rettv->vval.v_dict;
+    dict_add_bool(d, "present", i.present);
+    dict_add_bool(d, "link", i.link);
+    dict_add_string(d, "host", (char_u *)i.host);
+    dict_add_string(d, "version", (char_u *)i.version);
+    dict_add_string(d, "chip", (char_u *)i.chip);
+    dict_add_string(d, "error", (char_u *)err);
+}
+
+typedef struct {
+    int64_t last;
+} cp_progress_t;
+
+/* On the command line, four times a second at most; CTRL-C stops it. */
+static bool cp_progress(void *ctx, uint64_t bytes, uint64_t total)
+{
+    cp_progress_t *p = ctx;
+    int64_t now = esp_timer_get_time();
+    if (now - p->last >= 250000 || bytes == total) {
+        p->last = now;
+        if (msg_silent == 0) {
+            char s[80];
+            vim_snprintf(s, sizeof s, "C6 firmware: %llu of %llu KB (%d%%)",
+                         (unsigned long long)(bytes / 1024), (unsigned long long)(total / 1024),
+                         total ? (int)(bytes * 100 / total) : 0);
+            msg_start();
+            msg_puts(s);
+            msg_clr_eos();
+            out_flush();
+        }
+        ui_breakcheck();
+    }
+    return !got_int;
+}
+
+/* esp_c6_update({file}) -> Dict: from, to (versions), project, bytes,
+ * activated; or {} after an error. {file} is the C6's app image (the
+ * co-processor build's network_adapter.bin), made absolute against the
+ * working directory. Restart afterwards: the link doesn't survive the C6
+ * restarting (:EspC6 update does both). */
+void f_esp_c6_update(typval_T *argvars, typval_T *rettv)
+{
+    if (rettv_dict_alloc(rettv) == FAIL)
+        return;
+    char_u *file = tv_get_string_chk(&argvars[0]);
+    char_u *full = file == NULL ? NULL : FullName_save(file, TRUE);
+    if (full == NULL)
+        return;
+    char err[160];
+    esp_net_cp_update_t u;
+    cp_progress_t p = {0};
+    if (esp_net_cp_update((char *)full, cp_progress, &p, &u, err, sizeof err) == 0) {
+        dict_T *d = rettv->vval.v_dict;
+        dict_add_string(d, "from", (char_u *)u.from);
+        dict_add_string(d, "to", (char_u *)u.to);
+        dict_add_string(d, "project", (char_u *)u.project);
+        dict_add_number(d, "bytes", (varnumber_T)u.bytes);
+        dict_add_bool(d, "activated", u.activated);
+    } else {
+        semsg("esp_c6_update(): %s", err);
+    }
+    vim_free(full);
 }
