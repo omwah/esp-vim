@@ -25,9 +25,18 @@
 #include <sys/stat.h>
 #include "esp_app_desc.h"
 #include "esp_app_format.h"
+#include "esp_board.h"
 #include "esp_fs.h"
 #include "esp_hosted.h"
 #include "esp_log.h"
+
+/* esp-hosted 2.x has the piecewise update and the version macros; 1.x
+ * (M5Stack's firmware's) updates only from a URL, and names no version. */
+#if __has_include("esp_hosted_misc.h")
+# define HOSTED_2X 1
+#else
+# define HOSTED_2X 0
+#endif
 
 static const char *TAG = "esp_net_cp";
 
@@ -44,8 +53,12 @@ static int fail(char *err, size_t errlen, const char *fmt, ...)
 
 static void host_version(esp_net_cp_info_t *info)
 {
+#if HOSTED_2X
     snprintf(info->host, sizeof info->host, "%d.%d.%d", ESP_HOSTED_VERSION_MAJOR_1,
              ESP_HOSTED_VERSION_MINOR_1, ESP_HOSTED_VERSION_PATCH_1);
+#else
+    snprintf(info->host, sizeof info->host, "1.x");
+#endif
 }
 
 /* The link, brought up if it isn't: esp-hosted resets the C6 and waits for
@@ -53,15 +66,25 @@ static void host_version(esp_net_cp_info_t *info)
 static int cp_query(esp_net_cp_info_t *info, esp_hosted_coprocessor_fwver_t *ver,
                     char *err, size_t errlen)
 {
+    if (!esp_board_coprocessor_powered())
+        return snprintf(err, errlen, "the co-processor has no power"), -1;
+#if HOSTED_2X
     esp_hosted_connect_to_slave();
+#else
+    esp_hosted_slave_reset();           /* 1.x's way to bring the link up */
+#endif
     if (esp_hosted_get_coprocessor_fwversion(ver) != ESP_OK)
         return snprintf(err, errlen, "no answer from the co-processor"), -1;
     info->link = true;
     snprintf(info->version, sizeof info->version, "%" PRIu32 ".%" PRIu32 ".%" PRIu32,
              ver->major1, ver->minor1, ver->patch1);
+#if HOSTED_2X
     uint32_t id = 0;
     if (esp_hosted_get_cp_info(&id, info->chip, sizeof info->chip) != ESP_OK)
         info->chip[0] = 0;
+#else
+    snprintf(info->chip, sizeof info->chip, "%s", CONFIG_ESP_HOSTED_IDF_SLAVE_TARGET);
+#endif
     return 0;
 }
 
@@ -103,6 +126,10 @@ int esp_net_cp_update(const char *path, esp_net_cp_progress_cb progress, void *c
                       esp_net_cp_update_t *out, char *err, size_t errlen)
 {
     memset(out, 0, sizeof *out);
+#if !HOSTED_2X
+    (void)path; (void)progress; (void)ctx; (void)check_image;
+    return fail(err, errlen, "esp-hosted 1.x updates the co-processor only from a URL");
+#else
     char full[256];
     esp_fs_err_t ferr;
     if (esp_fs_check(path, false, full, sizeof full, &ferr) != 0)
@@ -183,6 +210,7 @@ done:
     free(buf);
     fclose(f);
     return rc;
+#endif
 }
 
 #else   /* no co-processor */

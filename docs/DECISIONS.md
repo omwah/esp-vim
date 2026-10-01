@@ -523,6 +523,8 @@ which hasn't been measured on hardware yet.
 
 ## 2026-09-25 — The Tab5 talks to its C6 with esp-hosted 2.12.13
 
+*Superseded on 2026-09-30: 1.4.0, see below.*
+
 esp-hosted 3.0 (July 2026) restructured the project: new Kconfig names, a new
 co-processor example (`wifi/sta/cp`), and software-aggregated SDIO by default. 2.12.x
 is the long-running line that `esp_wifi_remote` was written against (it asks for
@@ -875,3 +877,47 @@ the board in hand. Keeping v3 as the default with a `tab5v1` variant was the
 alternative, but the only Tab5 we have would then need the variant. esp-emu's P4 is
 v3.1, so `tab5uart`, the emulator build, sets v3 back and doesn't boot on this
 board. A v3 Tab5 gets a variant of its own when one turns up.
+
+## 2026-09-30 — esp-hosted 1.4.0 on the Tab5, to match the C6 it ships with
+
+On the board, esp-hosted 2.12.13 never got an answer from the C6: every SDIO
+CMD5 timed out after the reset. M5Stack's factory firmware (M5Tab5-UserDemo,
+esp-hosted 1.4.0 on ESP-IDF 5.4) reaches it on the same pins, slot, clock and
+reset. Ruled out on our side, one by one: the SD card's slot 0 on the same
+controller (no mount at boot changed nothing), the pads' pull-ups, the reset
+sequence, the C6's power switch. Built against 1.4.0 with esp_wifi_remote 0.8.5,
+the pair M5Stack ships, the link comes up at once: the C6 runs 1.4.1, and WiFi
+scans and Bluetooth LE scans work.
+
+Why 2.x failed, found afterwards: the C6's reset line. On the Tab5, GPIO15 low
+holds the C6 in reset and high lets it run. M5Stack's config says "active low",
+but 1.4 ignores that: its `#ifdef H_RESET_ACTIVE_HIGH` is always true, since the
+macro is defined as 0 or 1. So 1.4 always ends its reset pulse high. 2.x honours
+the setting, ends it low, and leaves the C6 held in reset, so nothing answers
+CMD5. A 2.x build for the Tab5 would want `ESP_HOSTED_SDIO_RESET_ACTIVE_HIGH`.
+
+Two of 1.4's defaults are wrong for the Tab5, and both crash it, so
+`sdkconfig.defaults.tab5` sets them:
+- D1 in 4-bit mode (`ESP_HOSTED_SDIO_PRIV_PIN_D1_4BIT_BUS`) defaults to 15 on a
+  P4, the C6's reset line here. SDIO traffic then reset the C6 under the link,
+  and the read task retried without end, starving everything else.
+- The slave target from esp_wifi_remote 0.8 defaults to an ESP32. esp-hosted
+  asserts when the chip it finds isn't the configured one, so every connection
+  attempt restarted the Tab5.
+
+The board layer also holds the C6 in reset from its power-on until esp-hosted
+connects. Otherwise a C6 still linked from before a restart of ours answers
+with stale state.
+
+What 1.x costs:
+- `:EspC6 update {file}`: 1.x updates the co-processor only from a URL. The
+  command says so; serving the file from the Tab5's own web server is a way
+  back to it.
+- 1.x aborts (`ESP_ERROR_CHECK`) when the C6 never answers. Nothing asks it
+  unless the board switched the C6's power on (`esp_board_coprocessor_powered()`),
+  which also keeps the emulator, with no expanders, away from it.
+- `scripts/c6-build.sh` now builds the 1.4.0 slave, to match.
+
+2.x stays possible: `esp_ble` and `esp_net_cp.c` keep their 2.x paths, chosen
+by which headers esp-hosted provides. Moving to it means updating the C6 too,
+over a link that works first.

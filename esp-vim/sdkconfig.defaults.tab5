@@ -17,19 +17,23 @@ CONFIG_ESP_VIM_BOARD_TAB5=y
 # WiFi through the C6 over SDIO. The P4's Ethernet is unused on this board, and
 # leaving it out frees the EMAC pins (GPIO31/32 are the Tab5's internal I2C).
 CONFIG_ESP_VIM_NET_WIFI_REMOTE=y
-# The Tab5's wiring (M5Stack's: CLK 12, CMD 13, D0-D3 11/10/9/8), on the
-# SDMMC controller's slot 1 (the GPIO matrix one; the SD card has slot 0), and
-# the C6's reset on GPIO15, active low. esp-hosted's defaults are Espressif's
-# P4 function board's. (Its settable pin options are the per-slot ones;
-# ESP_HOSTED_SDIO_PIN_* follow from them.)
-CONFIG_ESP_HOSTED_SDIO_SLOT_1=y
-CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_CLK_SLOT_1=12
-CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_CMD_SLOT_1=13
-CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_D0_SLOT_1=11
-CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_D1_4BIT_BUS_SLOT_1=10
-CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_D2_4BIT_BUS_SLOT_1=9
-CONFIG_ESP_HOSTED_PRIV_SDIO_PIN_D3_4BIT_BUS_SLOT_1=8
+# esp-hosted 1.4.0, as M5Stack's own firmware: the C6 they ship runs 1.4.1,
+# and 2.x never got an answer from it (see docs/DECISIONS.md). The Tab5's
+# wiring, which 1.4's defaults for the P4 already are: CLK 12, CMD 13, D0-D3
+# 11/10/9/8 (slot 1, through the GPIO matrix; the SD card has slot 0), and the
+# C6's reset on GPIO15, "active low" in esp-hosted's terms.
+CONFIG_ESP_HOSTED_SDIO_PIN_CLK=12
+CONFIG_ESP_HOSTED_SDIO_PIN_CMD=13
+CONFIG_ESP_HOSTED_SDIO_PIN_D0=11
+# D1's own setting in 4-bit mode (ESP_HOSTED_SDIO_PIN_D1 follows from it). Its
+# P4 default is 15, the C6's reset here: SDIO traffic then reset the C6.
+CONFIG_ESP_HOSTED_SDIO_PRIV_PIN_D1_4BIT_BUS=10
+CONFIG_ESP_HOSTED_SDIO_PIN_D2=9
+CONFIG_ESP_HOSTED_SDIO_PIN_D3=8
 CONFIG_ESP_HOSTED_SDIO_GPIO_RESET_SLAVE=15
+# The co-processor is an ESP32-C6: esp_wifi_remote 0.8's default is an ESP32,
+# and esp-hosted aborts when the chip it finds isn't the one configured.
+CONFIG_SLAVE_IDF_TARGET_ESP32C6=y
 CONFIG_ESP_HOSTED_SDIO_RESET_ACTIVE_LOW=y
 
 # Bluetooth LE keyboards through the C6 as well: NimBLE's host here, the
@@ -109,9 +113,3 @@ CONFIG_BSP_ERROR_CHECK=n
 # so tab5uart sets it back.
 CONFIG_ESP32P4_SELECTS_REV_LESS_V3=y
 CONFIG_ESP32P4_REV_MIN_100=y
-
-# esp-hosted's SDIO buffers (about 47 KB) in PSRAM. It allocates them in a C
-# constructor, and on a pre-v3 P4 the large internal RAM region joins the heap
-# only after start-up: from internal RAM the pool failed and the Tab5
-# boot-looped (assert in sdio_mempool_create). Falls back to internal RAM.
-CONFIG_ESP_HOSTED_MEMPOOL_PREFER_SPIRAM=y

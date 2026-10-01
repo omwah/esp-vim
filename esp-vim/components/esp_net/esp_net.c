@@ -13,6 +13,7 @@
 #include <unistd.h>
 
 #include "esp_crt_bundle.h"
+#include "esp_board.h"
 #include "esp_event.h"
 #include "esp_fs.h"
 #include "esp_heap_caps.h"
@@ -125,6 +126,10 @@ static esp_err_t start_wifi_locked(void)
 {
     if (s_wifi_started)
         return ESP_OK;
+#if CONFIG_ESP_VIM_NET_WIFI_REMOTE
+    if (!esp_board_coprocessor_powered())
+        return ESP_ERR_INVALID_STATE;   /* esp-hosted 1.x would abort waiting for it */
+#endif
     if (s_netif == NULL)                /* once, even if a start fails and is retried */
         s_netif = esp_netif_create_default_wifi_sta();
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();

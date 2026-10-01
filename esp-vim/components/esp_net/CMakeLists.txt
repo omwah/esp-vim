@@ -4,6 +4,6 @@
 idf_component_register(
     SRCS "esp_net.c" "esp_net_cp.c"
     INCLUDE_DIRS "include"
-    REQUIRES esp_netif esp_event esp_http_client esp_eth esp_wifi mbedtls esp_fs heap nvs_flash esp_timer
-             bootloader_support esp_app_format
+    REQUIRES esp_board esp_netif esp_event esp_http_client esp_eth esp_wifi mbedtls esp_fs heap nvs_flash esp_timer
+             bootloader_support esp_app_format esp_driver_sdmmc
 )

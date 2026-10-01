@@ -59,6 +59,11 @@ int esp_board_touch_read(int *x, int *y);
  * port's power, and the USB host is better not started. */
 esp_err_t esp_board_usb_power(bool on);
 
+/* Whether the radio co-processor (the Tab5's C6) has its power. esp-hosted
+ * 1.x aborts when the C6 never answers, so nothing asks it otherwise. True
+ * on boards without one, where nothing asks. */
+bool esp_board_coprocessor_powered(void);
+
 #ifdef __cplusplus
 }
 #endif

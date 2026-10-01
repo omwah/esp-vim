@@ -25,9 +25,13 @@
 #include "host/util/util.h"
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
+#include "esp_board.h"
 #if CONFIG_ESP_HOSTED_ENABLE_BT_NIMBLE
 # include "esp_hosted.h"
-# include "esp_hosted_misc.h"
+# if __has_include("esp_hosted_misc.h")     /* esp-hosted 2.x; 1.x has none */
+#  include "esp_hosted_misc.h"
+#  define HOSTED_BT_CONTROLLER_CALLS 1
+# endif
 #endif
 
 #define MAX_DEVICES 64
@@ -89,6 +93,11 @@ int esp_ble__start(char *err, size_t errlen)
         esp_log_level_set("NIMBLE_HIDH", ESP_LOG_NONE);
         esp_log_level_set("ESP_HIDH", ESP_LOG_NONE);
 #if CONFIG_ESP_HOSTED_ENABLE_BT_NIMBLE
+        /* esp-hosted 1.x aborts when the C6 never answers: not without power. */
+        if (!esp_board_coprocessor_powered())
+            return snprintf(err, errlen, "the co-processor has no power"), -1;
+#endif
+#if CONFIG_ESP_HOSTED_ENABLE_BT_NIMBLE && HOSTED_BT_CONTROLLER_CALLS
         /* The controller is the C6's, through esp-hosted (the Tab5): its link
          * up first (it waits for the C6), then the controller started there. */
         esp_hosted_connect_to_slave();

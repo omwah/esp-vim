@@ -12,7 +12,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ESP_HOSTED_VERSION="2.12.13"
+ESP_HOSTED_VERSION="1.4.0"
 DIR="$REPO_ROOT/build-deps/c6-coprocessor"
 
 # Recreate the project when it is missing or from another esp-hosted version.

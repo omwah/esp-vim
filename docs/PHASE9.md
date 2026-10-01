@@ -19,7 +19,7 @@ build uses), M5Stack's M5Unified and M5GFX libraries, and M5Stack's Tab5 page.
 | Display | MIPI-DSI, 2 lanes, 720 x 1280 portrait | three revisions: ILI9881C with GT911 touch (0x14); ST7123 (from Oct 2025) and ST7121 (from Apr 2026) with touch at 0x55 |
 | Backlight | GPIO22, PWM (LEDC) | |
 | Touch INT | GPIO23 | not used: the touch controller is polled every 16 ms |
-| ESP32-C6 | SDIO slot 1: CLK 12, CMD 13, D0-D3 11/10/9/8; reset 15, active low | esp-hosted 2.12.13. Powered by expander 0x44 P0, which must be on before esp-hosted starts |
+| ESP32-C6 | SDIO slot 1: CLK 12, CMD 13, D0-D3 11/10/9/8; reset 15, active low | esp-hosted 1.4.0 (the C6 ships with 1.4.1). Powered by expander 0x44 P0, which must be on before esp-hosted starts |
 | microSD | SDMMC slot 0: CLK 43, CMD 44, D0-D3 39-42; LDO channel 4 | shares the SDMMC controller with the C6 |
 | Clock chip | RX8130CE, 0x32 | |
 | Battery monitor | INA226, 0x41, 5 mΩ shunt | bus voltage = the battery, NP-F550, two cells |
@@ -64,7 +64,8 @@ build uses), M5Stack's M5Unified and M5GFX libraries, and M5Stack's Tab5 page.
   `network_adapter.bin`, copied to /sd or /fat, not the merged image. It checks
   the image first: an ESP32-C6 app with an app description. The C6 writes it to its
   other slot and checks it before it boots it, so a stopped or failed transfer
-  leaves it on the firmware it had.
+  leaves it on the firmware it had. This is esp-hosted 2.x's update: on 1.x, which
+  the Tab5 build uses now, the command says it can't.
 
 ### Keyboards
 
@@ -95,10 +96,10 @@ build uses), M5Stack's M5Unified and M5GFX libraries, and M5Stack's Tab5 page.
   - Up to four at once. Each prints `ESPVIM-KBD USB keyboard N: vid:pid` when
     plugged in and `... unplugged` when removed.
 - **BLE keyboards through the C6.** The Tab5 build has NimBLE's host with no local
-  controller: esp-hosted carries its HCI to the C6. `esp_ble` connects to the C6 and
-  enables its controller before it starts NimBLE. `:EspBtKeyboard` and the pairing
-  screen then work as on the S3. Our C6 image (`pixi run c6-build`) has Bluetooth; the
-  factory one may not.
+  controller: esp-hosted carries its HCI to the C6. With esp-hosted 1.x NimBLE's
+  transport brings the link up itself; with 2.x `esp_ble` connects and enables the
+  C6's controller first. `:EspBtKeyboard` and the pairing screen then work as on the
+  S3. The factory C6 firmware has Bluetooth LE (HCI over SDIO).
 - The pairing screen stays away while the keyboard accessory or a USB keyboard is
   attached (`esp_kbd_wired()`).
 
@@ -145,10 +146,10 @@ It arrived on 2026-09-30. `esptool flash_id` in download mode: an ESP32-P4,
   works.
 - First boots, and what each needed:
   - A boot loop before `app_main`: `assert failed: sdio_mempool_create`.
-    esp-hosted allocates its SDIO buffers (about 47 KB of DMA-capable RAM) in a C
-    constructor. On a pre-v3 P4 the large internal region (178 KiB) joins the heap
-    only after start-up. The pool now goes in PSRAM
-    (`CONFIG_ESP_HOSTED_MEMPOOL_PREFER_SPIRAM`), falling back to internal RAM.
+    esp-hosted 2.12.13 allocates its SDIO buffers (about 47 KB of DMA-capable
+    RAM) in a C constructor, and on a pre-v3 P4 the large internal region (178 KiB)
+    joins the heap only after start-up. Its PSRAM option fixed that. With 1.4.0,
+    used now, the pool is made once the link is up.
   - `panel unknown`: nothing answered at 0x55 or 0x14. The ST7121's touch
     controller is part of the display chip and stays silent while the display is
     held in reset. `esp_board_panel_new()` now does what the BSP and M5Stack do:
@@ -160,13 +161,25 @@ It arrived on 2026-09-30. `esptool flash_id` in download mode: an ESP32-P4,
     picture's origin, and the next redraw wrote past the frame buffer. Found with
     a core dump to flash: the USB console didn't survive the crash.
 - Working: the display (ST7121, 106x30 in Terminus 12x24), touch (tap, scroll,
-  drag), the keyboard accessory (firmware 0x01) and a USB keyboard on USB-A.
+  drag), the keyboard accessory (firmware 0x01), a USB keyboard on USB-A, WiFi
+  (the saved network joined at boot) and Bluetooth LE through the C6: scans, and
+  a bonded keyboard that reconnects by itself after a restart.
   Internal RAM free at the prompt: about 186 KB.
-- Open: the C6 doesn't answer our firmware. After esp-hosted resets it, every
-  SDIO CMD5 times out (`sdmmc_init_ocr: send_op_cond (1) returned 0x107`), so
-  WiFi, Bluetooth and `:EspC6` have no link. M5Stack's factory firmware
-  (M5Tab5-UserDemo, esp-hosted 1.4.0) reaches it on the same pins, slot, clock
-  and reset: the C6 is fine, and the difference is ours.
+- The C6 didn't answer esp-hosted 2.12.13: after the reset, every SDIO CMD5
+  timed out (`sdmmc_init_ocr: send_op_cond (1) returned 0x107`). M5Stack's
+  factory firmware (M5Tab5-UserDemo, esp-hosted 1.4.0) reached it on the same
+  pins, slot, clock and reset. Built against 1.4.0, the link comes up: the C6
+  runs esp-hosted 1.4.1, a WiFi scan found 14 networks, and a Bluetooth LE scan
+  31 devices. The cause was 2.x's reset level, and two of 1.4's defaults then had
+  to be set for the Tab5 (D1's pin, the slave chip). See DECISIONS.md, 2026-09-30.
+  With a keyboard bonded, Bluetooth starts at boot and connects to the C6 there;
+  the saved network is joined at boot too.
+- Open: with no battery in the back and only USB power, the Tab5 goes into deep
+  sleep straight after boot (the sleep screen shows, then black). Probably the
+  INA226 reading near 0 V with no battery, which `esp_power` takes for a flat one
+  (below 6.9 V, nothing unsaved: deep sleep). It needs to tell "no battery, on
+  USB" from "battery low": a reading near 0 V, or the charger's status line
+  (expander 0x44 P6) or the USB input.
 - The USB console doesn't always come back after a reset: the port can vanish
   until the cable is replugged. Download mode (BOOT held, RESET pressed) brings
   it back every time.
@@ -210,14 +223,11 @@ Do the steps in order. Each gives the next one something to stand on.
    be 16 MB.
 8. **The C6.**
    - The boot log shows esp-hosted's `Identified slave [esp32c6]` and the slave's
-     firmware version. Our side is 2.12.13. A different major version may not talk to
+     firmware version. Our side is 1.4.0. A different major version may not talk to
      us.
    - `:EspWifiScan`, then `:EspWifiConnect`, then `:EspGet` of a small file.
-   - `:EspC6` shows both versions. If the C6 runs another esp-hosted (M5Stack ships
-     its own), update it: copy `build-deps/c6-coprocessor/build/network_adapter.bin`
-     to the SD card, `:EspC6 update /sd/network_adapter.bin`, and after the restart
-     `:EspC6` again. This needs a link, so it works only if the C6's firmware talks
-     to ours at all.
+   - `:EspC6` shows both versions: "1.x" here and 1.4.1 on the C6, as shipped.
+     `:EspC6 update` needs esp-hosted 2.x on this side; on 1.x it says so.
    - If the link never comes up, the `ESPVIM-NET` line says so after esp-hosted's
      retries. First check the C6's power (expander 0x44 P0). With no link,
      `:EspC6 update` can't help: the C6 then needs flashing through its own pins,

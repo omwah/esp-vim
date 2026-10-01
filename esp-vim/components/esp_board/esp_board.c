@@ -42,7 +42,9 @@ static const char *TAG = "esp_board";
                    | BIT64(39) | BIT64(40) | BIT64(41) | BIT64(42) | BIT64(43) | BIT64(44) \
                    | BIT64(26) | BIT64(27) | BIT64(28) | BIT64(29) | BIT64(30) | BIT64(36))
 
-static bool s_i2c_ok, s_ioe_ok;
+#define TAB5_C6_RESET   15              /* esp-hosted's CONFIG_ESP_HOSTED_SDIO_GPIO_RESET_SLAVE */
+
+static bool s_i2c_ok, s_ioe_ok, s_c6_ok;
 static const char *s_panel_name = "";
 static esp_lcd_touch_handle_t s_touch;
 
@@ -77,6 +79,16 @@ esp_err_t esp_board_init(void)
     esp_err_t wifi = ESP_ERR_NOT_FOUND, usb = ESP_ERR_NOT_FOUND, touch = ESP_ERR_NOT_FOUND;
     esp_err_t other = ESP_ERR_NOT_FOUND;
     if (ioe1) {
+        /* The C6 held in reset from its power-on until esp-hosted connects
+         * (its reset pulse ends by letting go). A C6 still running from
+         * before a restart of ours otherwise keeps its old link, and
+         * esp-hosted 1.x then retries a dead one without end, at high
+         * priority. GPIO15 low is reset, high runs. (esp-hosted 1.4 drives it
+         * that way whatever its Kconfig says: its "#ifdef H_RESET_ACTIVE_HIGH"
+         * is always true. 2.x reads the setting, and "active low", as
+         * M5Stack's config has it, leaves the C6 held in reset.) */
+        gpio_set_direction(TAB5_C6_RESET, GPIO_MODE_OUTPUT);
+        gpio_set_level(TAB5_C6_RESET, 0);
         wifi = bsp_feature_enable(BSP_FEATURE_WIFI, true);
         usb = bsp_feature_enable(BSP_FEATURE_USB, true);
         other = ioe_out(ioe1, IOE1_NQC_EN, 1);
@@ -92,6 +104,7 @@ esp_err_t esp_board_init(void)
             other = ant;
     }
     s_ioe_ok = ioe0 && ioe1;
+    s_c6_ok = wifi == ESP_OK;
     printf("ESPVIM-BOARD tab5: expander 0x43 %s, 0x44 %s; C6 power %s, USB-A 5V %s, touch %s,"
            " charging %s\n",
            ioe0 ? "ok" : "missing", ioe1 ? "ok" : "missing", esp_err_to_name(wifi),
@@ -231,6 +244,11 @@ esp_err_t esp_board_usb_power(bool on)
     return bsp_feature_enable(BSP_FEATURE_USB, on);
 }
 
+bool esp_board_coprocessor_powered(void)
+{
+    return s_c6_ok;
+}
+
 #else   /* no board layer */
 
 esp_err_t esp_board_init(void) { return ESP_OK; }
@@ -246,5 +264,6 @@ esp_err_t esp_board_backlight(int percent) { (void)percent; return ESP_ERR_NOT_S
 esp_err_t esp_board_touch_init(void) { return ESP_ERR_NOT_SUPPORTED; }
 int esp_board_touch_read(int *x, int *y) { (void)x; (void)y; return -1; }
 esp_err_t esp_board_usb_power(bool on) { (void)on; return ESP_ERR_NOT_SUPPORTED; }
+bool esp_board_coprocessor_powered(void) { return true; }
 
 #endif

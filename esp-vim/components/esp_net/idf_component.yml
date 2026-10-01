@@ -1,8 +1,8 @@
 # WiFi through a radio co-processor (ESP_VIM_NET_WIFI_REMOTE, the Tab5 build):
 # esp_wifi_remote provides the esp_wifi_* API and esp_hosted carries it over
 # SDIO to the ESP32-C6. Pinned; the co-processor firmware (scripts/c6-build.sh)
-# is built from the same esp_hosted version, as the two ends must match. 2.x,
-# not 3.x: see docs/DECISIONS.md (esp-hosted version).
+# is built from the same esp_hosted version, as the two ends must match. 1.4,
+# as M5Stack's own firmware and the C6 they ship: see docs/DECISIONS.md.
 #
 # The target rule comes first on purpose: on chips with their own radio the
 # Kconfig symbol does not exist, and the component manager fails on a missing
@@ -10,12 +10,12 @@
 # first false one.
 dependencies:
   espressif/esp_hosted:
-    version: "2.12.13"
+    version: "1.4.0"
     rules:
       - if: "target in [esp32p4]"
       - if: "$CONFIG{ESP_VIM_NET_WIFI_REMOTE} == True"
   espressif/esp_wifi_remote:
-    version: "1.6.5"
+    version: "0.8.5"
     rules:
       - if: "target in [esp32p4]"
       - if: "$CONFIG{ESP_VIM_NET_WIFI_REMOTE} == True"

@@ -341,7 +341,9 @@ a separate radio chip.  Elsewhere they say the build has no WiFi.
 		co-processor checks it before it boots it; stopped part way
 		(CTRL-C), it keeps the firmware it has.  Then the device
 		restarts, so it is refused while buffers have unsaved
-		changes, unless ! is given.
+		changes, unless ! is given.  Not on a build with esp-hosted
+		1.x (|:EspC6| shows "1.x" for this side), which updates the
+		co-processor only from a URL.
 		Scripts: esp_c6(), esp_c6_update({file}).
 
 :EspBleScan [{seconds}]					*:EspBleScan*
