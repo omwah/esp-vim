@@ -101,3 +101,23 @@ notes:    MicroPython, MIT (LICENSE). Built as an ESP-IDF component
           (components/micropython) with MicroPython's own CMake fragments
           (py/py.cmake, py/mkrules.cmake) and our mpconfigport.h. It runs on
           the Vim task; see docs/PLAN.md, Phase 7.
+
+name:     esp_hosted
+version:  1.4.0
+file:     esp_hosted-1.4.0.tar.gz
+sha256:   3accfa5caf66964272de55011deff3b1e01b7b910d5fd5eedad1eec9cc460502
+prefix:   esp_hosted-1.4.0
+url:      https://components-file.espressif.com/components/espressif/esp_hosted/1.4.0/espressif__esp_hosted-v1.4.0.zip
+origin:   repack of the ESP Component Registry's archive (sha256 of the .zip:
+          030402f7453e8418a8f8c6bf17e9983ef344017e868d335d069feb6cbeeec542;
+          every file checked against the registry's CHECKSUMS.json, and the
+          same as the component manager's copy). The zip has no top-level
+          directory: repacked under esp_hosted-1.4.0/, with
+          tar --sort=name --mtime='2025-03-27 00:00:00 UTC' --owner=0 --group=0
+          --numeric-owner | gzip -n -9.
+patches:  esp_hosted
+notes:    ESP-Hosted-MCU, Apache-2.0 (LICENSE). The Tab5's WiFi and Bluetooth
+          through its ESP32-C6; was a managed component, vendored to patch:
+          a C6 that stops answering marks the link failed instead of
+          restarting the P4 or aborting. Used by components/esp_net and
+          esp_ble through override_path. See docs/DECISIONS.md, 2026-10-01.

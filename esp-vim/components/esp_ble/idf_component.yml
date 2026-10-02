@@ -4,6 +4,8 @@
 # controller, esp_hosted_misc.h). Required here only so the header is found;
 # the version is esp_net's, which the two ends must match.
 dependencies:
+  # Vendored and patched (third_party/, patches/esp_hosted): the project's
+  # CMakeLists adds build-deps/esp_hosted, which takes the place of this one.
   espressif/esp_hosted:
     version: "1.4.0"
     rules:

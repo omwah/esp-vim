@@ -196,13 +196,39 @@ It arrived on 2026-09-30. `esptool flash_id` in download mode: an ESP32-P4,
   certificate the one Vim prints, the API refused without a session, a wrong
   password refused and the third in a row held off; internal heap at least 94 KB
   through it.
+- The slow web interface was WiFi's modem sleep, not TLS: with hardware SHA, AES,
+  MPI and ECC, a handshake takes 0.23-0.8 s; but the C6 dozes between beacons, and
+  pings ran 57-137 ms (average 99), a 5.8 KB page up to 3 s. `esp_power` now turns
+  modem sleep off while USB powers the board (`esp_net_power_save`), keeping it
+  on battery: pings 4-90 ms (average 36), the page in 0.33-0.43 s.
+- 0x28, on the internal bus, is in none of M5Stack's lists. It isn't the
+  keyboard (it stays with the keyboard off), and doesn't act like a register
+  chip: `esp_i2c_read(0x28, {reg}, n)` returns the same whatever {reg} -- 0xFD,
+  then 0x4D bytes (just after boot once 0xFE, then 0xD2). A scan at each step of
+  `esp_board_init` and the panel's start: absent with the C6 powered and held in
+  reset, absent up to the LCD's reset; there, with the touch controller at 0x55,
+  as soon as the panel leaves reset (100 ms later). So it is the display chip's
+  (the ST7121's) second address, and `:EspSensors` names it so.
 - Open: once, just after one of those downloads finished (its file whole), the
-  Tab5 restarted with a watchdog reset, untouched and unnoticed on its screen.
-  Not seen again in four tries, with no panic output caught. Next time: the core
-  dump build.
-- The USB console doesn't always come back after a reset: the port can vanish
-  until the cable is replugged. Download mode (BOOT held, RESET pressed) brings
-  it back every time.
+  Tab5 restarted, untouched and unnoticed on its screen. Not seen again in four
+  tries, with no panic output caught. `esp_info()` said "watchdog"
+  (`ESP_RST_WDT`), but a press of the Tab5's RESET button reads the same, so it
+  may not have been a crash. The likeliest cause: esp-hosted restarts the host
+  on purpose when one SDIO read of the C6's interrupt register fails. That is
+  now patched to fail the link instead (DECISIONS.md, 2026-10-01): if it happens
+  again, WiFi stops with "co-processor not responding" in `:EspLog`, and Vim
+  stays.
+- Log lines (ESP-IDF's, from any task) went over Vim's screen on the serial
+  console. During a session they go to a 16 KB buffer instead (`esp_logbuf`),
+  which `:EspLog` shows; at boot and between sessions they print, and are kept
+  too. A failed DNS lookup's four esp-tls lines: none on the console, all four
+  in `esp_log()`.
+- The USB console doesn't always come back after a reset: the port can be
+  missing for 30 s and more. After a software reset (esptool's watchdog reset)
+  it was back in 3 s; the slow returns were after the RESET button, and once
+  it didn't come back at all until replugged. Download mode (BOOT held, RESET
+  pressed) brings it at once. esptool reaches the bootloader with no buttons
+  (`--before usb_reset`), and resets out of it (`--after watchdog_reset`).
 
 ## First flash: the checklist
 

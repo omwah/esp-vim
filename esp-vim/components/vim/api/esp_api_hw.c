@@ -1,6 +1,7 @@
 /*
- * esp_serial_*(), esp_i2c_scan(), esp_adc_read(), esp_sensors(): the chip's
- * peripherals, behind :EspSerial, :EspI2cScan, :EspAdc and :EspSensors.
+ * esp_serial_*(), esp_i2c_scan(), esp_i2c_read(), esp_adc_read(),
+ * esp_sensors(): the chip's peripherals, behind :EspSerial, :EspI2cScan,
+ * :EspAdc and :EspSensors.
  *
  * Every pin goes through the same check as :EspGpio (esp_api_gpio_usable):
  * nothing the flash, PSRAM or console depends on can be taken.
@@ -126,20 +127,18 @@ void f_esp_serial_close(typval_T *argvars, typval_T *rettv UNUSED)
 /* ----------------------------------------------------------------- i2c -- */
 
 typedef bool (*i2c_found_cb)(void *ctx, i2c_master_bus_handle_t bus, int addr);
+typedef bool (*i2c_use_cb)(void *ctx, i2c_master_bus_handle_t bus);
 
-/* Probe every 7-bit address on a bus built on {sda}/{scl} for the call. */
-static bool i2c_scan(int sda, int scl, i2c_found_cb cb, void *ctx, const char *fn)
+/* Run {use} on the bus on {sda}/{scl}: the one the board already has there,
+ * or one built for the call. */
+static bool i2c_with_bus(int sda, int scl, i2c_use_cb use, void *ctx, const char *fn)
 {
     /* The touch panel's bus (the board's own, on the ES3C28P), or the board
      * layer's (the Tab5's internal bus), is shared, not claimed a second time;
      * its pins are otherwise reserved. */
     i2c_master_bus_handle_t shared = esp_touch_i2c_bus(sda, scl);
-    if (shared != NULL) {
-        for (int a = 0x08; a < 0x78; a++)
-            if (i2c_master_probe(shared, a, 20) == ESP_OK && !cb(ctx, shared, a))
-                break;
-        return true;
-    }
+    if (shared != NULL)
+        return use(ctx, shared);
     if (!pin_ok(sda, fn) || !pin_ok(scl, fn))
         return false;
     esp_time_bus_lock();                /* the RTC chip may share these pins */
@@ -158,8 +157,19 @@ static bool i2c_scan(int sda, int scl, i2c_found_cb cb, void *ctx, const char *f
         semsg("%s(): cannot use SDA %d / SCL %d: %s", fn, sda, scl, esp_err_to_name(e));
         return false;
     }
+    bool ok = use(ctx, bus);
+    i2c_del_master_bus(bus);
+    esp_time_bus_unlock();
+    return ok;
+}
+
+struct scan { i2c_found_cb cb; void *ctx; };
+
+static bool scan_bus(void *ctx, i2c_master_bus_handle_t bus)
+{
+    struct scan *sc = ctx;
     for (int a = 0x08; a < 0x78; a++) {
-        if (i2c_master_probe(bus, a, 20) == ESP_OK && !cb(ctx, bus, a))
+        if (i2c_master_probe(bus, a, 20) == ESP_OK && !sc->cb(sc->ctx, bus, a))
             break;
         if (a % 16 == 0) {
             ui_breakcheck();
@@ -167,16 +177,22 @@ static bool i2c_scan(int sda, int scl, i2c_found_cb cb, void *ctx, const char *f
                 break;
         }
     }
-    i2c_del_master_bus(bus);
-    esp_time_bus_unlock();
     return true;
 }
 
-static void pins_arg(typval_T *argvars, int *sda, int *scl)
+/* Probe every 7-bit address on the bus on {sda}/{scl}. */
+static bool i2c_scan(int sda, int scl, i2c_found_cb cb, void *ctx, const char *fn)
 {
-    *sda = argvars[0].v_type != VAR_UNKNOWN ? (int)tv_get_number(&argvars[0]) : CONFIG_ESP_VIM_I2C_SDA;
-    *scl = argvars[0].v_type != VAR_UNKNOWN && argvars[1].v_type != VAR_UNKNOWN
-         ? (int)tv_get_number(&argvars[1]) : CONFIG_ESP_VIM_I2C_SCL;
+    struct scan sc = { cb, ctx };
+    return i2c_with_bus(sda, scl, scan_bus, &sc, fn);
+}
+
+/* {sda} and {scl} from argvars[at] and [at + 1], else the board's bus. */
+static void pins_arg(typval_T *argvars, int at, int *sda, int *scl)
+{
+    *sda = argvars[at].v_type != VAR_UNKNOWN ? (int)tv_get_number(&argvars[at]) : CONFIG_ESP_VIM_I2C_SDA;
+    *scl = argvars[at].v_type != VAR_UNKNOWN && argvars[at + 1].v_type != VAR_UNKNOWN
+         ? (int)tv_get_number(&argvars[at + 1]) : CONFIG_ESP_VIM_I2C_SCL;
 }
 
 static bool add_addr(void *ctx, i2c_master_bus_handle_t bus UNUSED, int addr)
@@ -190,8 +206,48 @@ void f_esp_i2c_scan(typval_T *argvars, typval_T *rettv)
     if (rettv_list_alloc(rettv) == FAIL)
         return;
     int sda, scl;
-    pins_arg(argvars, &sda, &scl);
+    pins_arg(argvars, 0, &sda, &scl);
     i2c_scan(sda, scl, add_addr, rettv->vval.v_list, "esp_i2c_scan");
+}
+
+struct reg_read { int addr, reg, count; list_T *out; };
+
+static bool read_regs(void *ctx, i2c_master_bus_handle_t bus)
+{
+    struct reg_read *rr = ctx;
+    i2c_device_config_t dc = { .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+                               .device_address = rr->addr, .scl_speed_hz = 100000 };
+    i2c_master_dev_handle_t dev;
+    esp_err_t e = i2c_master_bus_add_device(bus, &dc, &dev);
+    if (e == ESP_OK) {
+        uint8_t reg = rr->reg, data[256];
+        e = i2c_master_transmit_receive(dev, &reg, 1, data, rr->count, 50);
+        i2c_master_bus_rm_device(dev);
+        for (int i = 0; e == ESP_OK && i < rr->count; i++)
+            list_append_number(rr->out, data[i]);
+    }
+    if (e != ESP_OK)
+        semsg("esp_i2c_read(): 0x%02x: %s", rr->addr, esp_err_to_name(e));
+    return e == ESP_OK;
+}
+
+/* esp_i2c_read({addr}, {reg}, {count} [, {sda}, {scl}]) -> List of {count}
+ * bytes from register {reg} on, of the device at 7-bit {addr}; [] after an
+ * error. Reads only: the register's address is all it writes. */
+void f_esp_i2c_read(typval_T *argvars, typval_T *rettv)
+{
+    if (rettv_list_alloc(rettv) == FAIL)
+        return;
+    struct reg_read rr = { (int)tv_get_number(&argvars[0]), (int)tv_get_number(&argvars[1]),
+                           (int)tv_get_number(&argvars[2]), rettv->vval.v_list };
+    if (rr.addr < 0x08 || rr.addr > 0x77 || rr.reg < 0 || rr.reg > 0xff
+            || rr.count < 1 || rr.count > 256) {
+        emsg("esp_i2c_read(): {addr} 0x08-0x77, {reg} 0-255, {count} 1-256");
+        return;
+    }
+    int sda, scl;
+    pins_arg(argvars, 3, &sda, &scl);
+    i2c_with_bus(sda, scl, read_regs, &rr, "esp_i2c_read");
 }
 
 /*
@@ -220,6 +276,9 @@ static const struct {
     { 0x41, 0xff, 0x00, "INA226 current / power monitor" },
     { 0x10, 0xff, 0x00, "ES8388 audio codec" },
     { 0x55, 0xff, 0x00, "ST7123 / ST7121 touch controller" },
+    /* On the Tab5 it answers from the moment the panel leaves reset, with its
+     * touch at 0x55, and gives the same bytes whatever register is asked. */
+    { 0x28, 0xff, 0x00, "ST7121 display controller, or an MFRC522 RFID reader" },
     { 0x32, 0xff, 0x00, "RX8130 RTC" },
     { 0x51, 0xff, 0x00, "RTC (PCF8563 / PCF85063)" },
 };
@@ -258,7 +317,7 @@ void f_esp_sensors(typval_T *argvars, typval_T *rettv)
     if (rettv_list_alloc(rettv) == FAIL)
         return;
     int sda, scl;
-    pins_arg(argvars, &sda, &scl);
+    pins_arg(argvars, 0, &sda, &scl);
     i2c_scan(sda, scl, add_sensor, rettv->vval.v_list, "esp_sensors");
 }
 

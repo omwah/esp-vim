@@ -33,6 +33,18 @@ espvim_patched_component(fatfs 0002-fatfs-exfat.patch)
 if(NOT ESPVIM_VARIANT)
     set(ESPVIM_VARIANT ${IDF_TARGET})
 endif()
+# esp-hosted, vendored and patched (third_party/, patches/esp_hosted; extracted
+# by scripts/prepare-deps.sh): as a project component it overrides the
+# registry's by name. Not an override_path, which the lock file would record
+# as an absolute path.
+if(ESPVIM_VARIANT MATCHES "^tab5")
+    set(ESP_HOSTED_DIR "${CMAKE_CURRENT_LIST_DIR}/../build-deps/esp_hosted")
+    if(NOT EXISTS "${ESP_HOSTED_DIR}/CMakeLists.txt")
+        message(FATAL_ERROR "esp-hosted not found at ${ESP_HOSTED_DIR}.\n"
+                            "Run: scripts/prepare-deps.sh esp_hosted")
+    endif()
+    list(APPEND EXTRA_COMPONENT_DIRS "${ESP_HOSTED_DIR}")
+endif()
 idf_build_set_property(DEPENDENCIES_LOCK dependencies.lock.${ESPVIM_VARIANT})
 project(esp-vim)
 

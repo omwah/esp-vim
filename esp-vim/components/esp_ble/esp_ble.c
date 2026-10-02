@@ -96,6 +96,10 @@ int esp_ble__start(char *err, size_t errlen)
         /* esp-hosted 1.x aborts when the C6 never answers: not without power. */
         if (!esp_board_coprocessor_powered())
             return snprintf(err, errlen, "the co-processor has no power"), -1;
+# ifdef ESP_HOSTED_LINK_FAILED_API
+        if (esp_hosted_link_failed())   /* our patch: the C6 stopped answering */
+            return snprintf(err, errlen, "the co-processor stopped answering (restart to try again)"), -1;
+# endif
 #endif
 #if CONFIG_ESP_HOSTED_ENABLE_BT_NIMBLE && HOSTED_BT_CONTROLLER_CALLS
         /* The controller is the C6's, through esp-hosted (the Tab5): its link

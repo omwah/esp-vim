@@ -9,6 +9,7 @@
 #include "esp_vim_port.h"
 #include "esp_board.h"
 #include "esp_display.h"
+#include "esp_logbuf.h"
 #include "esp_power.h"
 #include "esp_time.h"
 
@@ -281,6 +282,40 @@ void f_esp_console_output(typval_T *argvars, typval_T *rettv)
     }
     rettv->v_type = VAR_BOOL;
     rettv->vval.v_number = esp_vim_console_output() ? VVAL_TRUE : VVAL_FALSE;
+}
+
+/*
+ * esp_log([{clear}]) -> List of the log lines (ESP-IDF's, from any task) kept
+ * while Vim has the console instead of printed over its screen, oldest first.
+ * {clear} true: empty the log after reading it.
+ */
+void f_esp_log(typval_T *argvars, typval_T *rettv)
+{
+    if (rettv_list_alloc(rettv) == FAIL)
+        return;
+    int error = FALSE;
+    bool clear = argvars[0].v_type != VAR_UNKNOWN && tv_get_bool_chk(&argvars[0], &error);
+    if (error)
+        return;
+    size_t n = 16 * 1024 + 1;
+    char *text = alloc(n);
+    if (text == NULL)
+        return;
+    esp_logbuf_copy(text, n);
+    if (clear)
+        esp_logbuf_clear();
+    for (char *line = text, *nl; *line; line = nl + 1) {
+        nl = strchr(line, '\n');
+        if (nl == NULL)
+            nl = line + strlen(line) - 1;
+        else
+            *nl = '\0';
+        size_t len = strlen(line);
+        if (len && line[len - 1] == '\r')
+            line[--len] = '\0';
+        list_append_string(rettv->vval.v_list, (char_u *)line, (int)len);
+    }
+    vim_free(text);
 }
 
 /* A font's screen size as :EspFont names it, "80x24". */

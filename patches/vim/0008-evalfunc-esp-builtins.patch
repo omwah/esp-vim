@@ -12,7 +12,7 @@
  #if defined(FEAT_EVAL)
  
  #ifdef VMS
-@@ -2279,6 +2284,193 @@
+@@ -2279,6 +2284,197 @@
  			ret_void,	    f_err_teapot},
      {"escape",		2, 2, FEARG_1,	    arg2_string,
  			ret_string,	    f_escape},
@@ -108,10 +108,14 @@
 +			ret_dict_any,	    f_esp_heap},
 +    {"esp_http_get",	1, 2, FEARG_1,	    arg2_string,
 +			ret_dict_any,	    f_esp_http_get},
++    {"esp_i2c_read",	3, 5, FEARG_1,	    NULL,
++			ret_list_number,    f_esp_i2c_read},
 +    {"esp_i2c_scan",	0, 2, FEARG_1,	    arg2_number,
 +			ret_list_number,    f_esp_i2c_scan},
 +    {"esp_info",	0, 0, 0,	    NULL,
 +			ret_dict_any,	    f_esp_info},
++    {"esp_log",		0, 1, FEARG_1,	    arg1_bool,
++			ret_list_string,    f_esp_log},
 +    {"esp_net_status",	0, 0, 0,	    NULL,
 +			ret_dict_any,	    f_esp_net_status},
 +    {"esp_nvs_erase",	2, 2, FEARG_1,	    arg2_string,

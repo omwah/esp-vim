@@ -133,6 +133,16 @@ window at the bottom: "R" refreshes it, "q" closes it.
 		The FreeRTOS tasks, with priority, core and the least stack
 		each has had free.  "vim" is this editor.
 
+:EspLog							*:EspLog*
+		The system's own messages -- warnings and errors from the
+		network, the radio co-processor, Bluetooth, the drivers --
+		oldest first.  While Vim runs they are kept here instead of
+		being printed over its screen on the serial console: the most
+		recent 16 KB.  At boot and between sessions they print as
+		usual, and are kept here too.
+:EspLog!
+		Empty the log.
+
 :EspGpio {pin} [{action}]				*:EspGpio*
 		Read or drive a GPIO pin.  {action} is one of:
 			read		show the level (the default)
@@ -165,7 +175,11 @@ window at the bottom: "R" refreshes it, "q" closes it.
 		The same, with each device named where it is recognised --
 		IMUs, environment sensors, touch controllers, codecs, IO
 		expanders -- by its address and, where the chip has one, its
-		ID register.
+		ID register.  To look at one it doesn't know, read its
+		registers: ":echo esp_i2c_read(0x28, 0, 16)" gives the 16
+		bytes from register 0 on, of the device at 0x28 (on the pins
+		given as a fourth and fifth argument, else the board's bus).
+		It only reads.
 :EspAdc {pin}						*:EspAdc*
 		Read an analog pin: the raw value and, calibrated, millivolts.
 
@@ -669,7 +683,8 @@ esp_git_add(), esp_git_commit(), esp_git_log(), esp_git_clone() and the
 others behind |esp-git|, and for the web interface esp_web_start(),
 esp_web_stop(), esp_web_info(), esp_web_passwd(), esp_settings(), and for the
 hardware esp_serial_open(), esp_serial_read(), esp_serial_write(),
-esp_serial_close(), esp_i2c_scan(), esp_sensors(), esp_adc_read().  Try ":echo esp_heap()".
+esp_serial_close(), esp_i2c_scan(), esp_i2c_read(), esp_sensors(),
+esp_adc_read().  Try ":echo esp_heap()".
 esp_gpio_read() returns -1, with an error, for a pin it may not use.
 
 ==============================================================================

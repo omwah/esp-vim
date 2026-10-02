@@ -29,6 +29,7 @@
 #include "esp_display.h"
 #include "esp_ble.h"
 #include "esp_kbd.h"
+#include "esp_logbuf.h"
 #include "esp_usbkbd.h"
 #include "esp_touch.h"
 #include "esp_pairui.h"
@@ -303,6 +304,7 @@ static TaskHandle_t s_supervisor;       /* app_main's task, which runs sessions 
 void esp_vim_session_exit(int status)
 {
     (void)status;
+    esp_logbuf_capture(false);          /* the console is the log's again */
     xTaskNotifyGive(s_supervisor);
     vTaskDelete(NULL);
     for (;;)
@@ -361,6 +363,7 @@ static void vim_task(void *arg)
     if (esp_display_active())
         esp_vim_set_output_mirror(esp_display_write);
     esp_vim_console_output_load();          /* :EspConsole on/off, after the mirror */
+    esp_logbuf_capture(true);               /* Vim has the console: log lines to :EspLog */
 
     probe_terminal_size();                         /* the window may have changed */
     if (session == 1)
@@ -383,6 +386,7 @@ static void vim_task(void *arg)
 void app_main(void)
 {
     esp_log_level_set("*", ESP_LOG_WARN);
+    esp_logbuf_init();                  /* the log kept off Vim's screen (:EspLog) */
 
     /* Before anything else touches Vim: this snapshots Vim's .data while it
      * still holds its initial values. */

@@ -915,9 +915,52 @@ What 1.x costs:
   back to it.
 - 1.x aborts (`ESP_ERROR_CHECK`) when the C6 never answers. Nothing asks it
   unless the board switched the C6's power on (`esp_board_coprocessor_powered()`),
-  which also keeps the emulator, with no expanders, away from it.
+  which also keeps the emulator, with no expanders, away from it. (Patched
+  since, so a silent C6 fails the link instead: see 2026-10-01.)
 - `scripts/c6-build.sh` now builds the 1.4.0 slave, to match.
 
 2.x stays possible: `esp_ble` and `esp_net_cp.c` keep their 2.x paths, chosen
 by which headers esp-hosted provides. Moving to it means updating the C6 too,
 over a link that works first.
+
+## 2026-10-01 — esp-hosted vendored and patched: a silent C6 fails the link, not the board
+
+esp-hosted 1.4.0 has no way to give up on a co-processor. When the C6 doesn't
+answer, it either restarts the host or aborts:
+- its SDIO card set-up wraps every register access in `ESP_ERROR_CHECK`;
+- the read task, if the card set-up fails, returns from its task function,
+  which FreeRTOS on ESP-IDF treats as fatal;
+- `esp_hosted_reconfigure()` and `esp_wifi_remote_init()` abort on a failed
+  reconfigure, and Bluetooth's `ble_transport_ll_init()` the same;
+- three SDIO paths call `esp_restart()` deliberately: the C6's buffer count
+  unreadable, a write that fails twice, and the interrupt register unreadable
+  ("Host is reseting itself", logged at INFO level, below our WARN filter).
+
+The last of those is the likeliest cause of the Tab5 restarting once, just after
+a download, with nothing on the console: one failed SDIO read, while the SD card
+shares the controller, is enough. That's a guess. It fits everything seen, and
+nothing else found does.
+
+A restart loses whatever Vim had unsaved, and a C6 that never answers made the
+Tab5 restart without end. So esp-hosted is vendored like Vim and MicroPython
+(third_party/esp_hosted-1.4.0.tar.gz, the registry's archive repacked) with one
+patch, `patches/esp_hosted/0001-link-failure-instead-of-restart.patch`:
+- every one of those paths calls `hosted_link_failed(why)` instead: it logs once
+  ("co-processor not responding (...): link down until restart"), marks the
+  transport down, so sends fail at once rather than queue, and parks the SDIO
+  task that found it. Only esp-hosted's own tasks reach these paths;
+- the card set-up returns its errors (`SDIO_TRY`);
+- reconfigure returns ESP_FAIL as soon as the link has failed, instead of
+  waiting out its 1000 one-second retries (17 minutes, on Vim's task for
+  `:EspC6`);
+- `esp_hosted_link_failed()`, with `ESP_HOSTED_LINK_FAILED_API` defined, says
+  so. `esp_net_cp_failed()` wraps it for esp_net and esp_ble: WiFi, `:EspC6` and
+  Bluetooth then say "the co-processor stopped answering (restart to try
+  again)" without asking it.
+
+No recovery without a restart: the parked task stays parked. Saving the
+editor's work and restarting by hand is the trade.
+
+esp_net and esp_ble take it with `override_path` to build-deps/esp_hosted, the
+version pinned at 1.4.0 all the same. The C6's own firmware (`c6-build`) still
+comes from the registry: the patch is all on the host side.

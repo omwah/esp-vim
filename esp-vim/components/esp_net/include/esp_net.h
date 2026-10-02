@@ -68,6 +68,12 @@ void esp_net_get_status(esp_net_status_t *status);
 void esp_net_suspend(void);
 void esp_net_resume(void);
 
+/* WiFi's modem sleep: the radio dozes between the access point's beacons,
+ * which saves power and costs every reply up to a beacon interval (on the
+ * Tab5, pings of 60-140 ms). On by default; esp_power turns it off while
+ * USB powers the board. Kept, and applied whenever WiFi starts. */
+void esp_net_power_save(bool on);
+
 /* WiFi builds only (else -1, "no WiFi"). Scan blocks for about two seconds.
  * Connect stores the network (NVS), to be joined again at every boot, and
  * returns at once; watch the status. A NULL password rejoins the stored
@@ -106,6 +112,11 @@ typedef bool (*esp_net_cp_progress_cb)(void *ctx, uint64_t bytes, uint64_t total
 /* Brings the link up if it isn't (esp-hosted resets the co-processor and
  * waits for it). -1 with {err} if it doesn't answer. */
 int esp_net_cp_info(esp_net_cp_info_t *info, char *err, size_t errlen);
+
+/* The co-processor stopped answering: esp-hosted (patched) marked its link
+ * failed instead of restarting the board, and it stays so until a restart.
+ * Nothing that needs it is tried meanwhile. False without one. */
+bool esp_net_cp_failed(void);
 
 /* Update its firmware from {path}, an ESP32-C6 app image (the co-processor
  * build's network_adapter.bin; validated by esp_fs_check). Blocks for the

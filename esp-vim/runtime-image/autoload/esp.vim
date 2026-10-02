@@ -114,6 +114,18 @@ endfunction
 
 " ------------------------------------------------------------- :EspInfo --
 
+" :EspLog[!]: the system's log lines kept off the screen; ! empties it.
+function! esp#Log(...) abort
+  let lines = esp_log(a:0 && a:1)
+  if a:0 && a:1
+    echo 'EspLog: emptied (' . len(lines) . ' lines)'
+    return
+  endif
+  call s:Show('Log', ['Log -- the system''s messages, oldest first   (R refresh, q close)']
+        \ + (empty(lines) ? ['(none)'] : lines), 1, function('esp#Log'))
+  normal! G
+endfunction
+
 function! esp#Info() abort
   let i = esp_info()
   let up = i.uptime_ms / 1000

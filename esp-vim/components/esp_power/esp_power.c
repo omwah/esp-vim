@@ -227,6 +227,17 @@ static bool battery_low(void)
            && s_mv < CONFIG_ESP_VIM_SLEEP_LOW_MV;
 }
 
+/* WiFi's power saving on battery, not on USB: told when the source changes. */
+static void radio_for_source(void)
+{
+    static int last = -1;
+    int save = strcmp(source(), "usb") != 0;
+    if (save != last) {
+        last = save;
+        esp_net_power_save(save);
+    }
+}
+
 /* ---------------------------------------------------------- deep sleep -- */
 
 /* The sleep screen: a hippo, and something to say. */
@@ -511,8 +522,10 @@ static void power_task(void *arg)
             want = false;
         }
 #endif
-        if (HAVE_BAT && now - s_mv_at >= BAT_EVERY_US)
+        if (HAVE_BAT && now - s_mv_at >= BAT_EVERY_US) {
             measure();
+            radio_for_source();
+        }
 #if KEY >= 0
         if (gpio_get_level(KEY) == 0) {
             if (++down == 2 && armed) { /* 100 ms down: a press */
@@ -636,6 +649,7 @@ esp_err_t esp_power_init(void)
     if (HAVE_BAT)
         ESP_LOGI(TAG, "battery %d mV%s, USB-C power %d, source %s", s_mv,
                  battery_absent() ? " (none)" : "", esp_board_usb_c_powered(), source());
+    radio_for_source();
     s_req_done = xSemaphoreCreateBinary();
     if (s_req_done == NULL)
         return ESP_ERR_NO_MEM;

@@ -121,13 +121,14 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 
 static bool s_wifi_started;
 static SemaphoreHandle_t s_wifi_lock;   /* one start at a time: boot's, in the background, or a command's */
+static volatile bool s_wifi_ps = true;  /* modem sleep: esp_net_power_save() */
 
 static esp_err_t start_wifi_locked(void)
 {
     if (s_wifi_started)
         return ESP_OK;
 #if CONFIG_ESP_VIM_NET_WIFI_REMOTE
-    if (!esp_board_coprocessor_powered())
+    if (!esp_board_coprocessor_powered() || esp_net_cp_failed())
         return ESP_ERR_INVALID_STATE;   /* esp-hosted 1.x would abort waiting for it */
 #endif
     if (s_netif == NULL)                /* once, even if a start fails and is retried */
@@ -143,12 +144,26 @@ static esp_err_t start_wifi_locked(void)
     if (err == ESP_OK)
         err = esp_wifi_start();
     s_wifi_started = err == ESP_OK;
+    if (s_wifi_started)
+        esp_wifi_set_ps(s_wifi_ps ? WIFI_PS_MIN_MODEM : WIFI_PS_NONE);
     return err;
 }
 
 /* Through a co-processor (the Tab5's C6), the first start waits for its link:
  * esp-hosted resets it and waits for it to come up, seconds, or longer if it
  * never answers. */
+/* Why WiFi didn't start, in words where it's the co-processor. */
+static const char *start_error(esp_err_t e)
+{
+#if CONFIG_ESP_VIM_NET_WIFI_REMOTE
+    if (e == ESP_ERR_INVALID_STATE && !esp_board_coprocessor_powered())
+        return "the co-processor has no power";
+    if (esp_net_cp_failed())
+        return "the co-processor stopped answering (restart to try again)";
+#endif
+    return esp_err_to_name(e);
+}
+
 static esp_err_t start_wifi(void)
 {
     if (s_wifi_lock)
@@ -193,6 +208,16 @@ void esp_net_resume(void)
     s_wifi_suspended = false;
     s_wifi_no_rejoin = !s_wifi_wanted;
     esp_wifi_start();
+    esp_wifi_set_ps(s_wifi_ps ? WIFI_PS_MIN_MODEM : WIFI_PS_NONE);
+}
+
+void esp_net_power_save(bool on)
+{
+    if (on == s_wifi_ps)
+        return;
+    s_wifi_ps = on;
+    if (s_wifi_started && !s_wifi_suspended)
+        esp_wifi_set_ps(on ? WIFI_PS_MIN_MODEM : WIFI_PS_NONE);
 }
 
 static const char *auth_name(wifi_auth_mode_t m)
@@ -214,7 +239,7 @@ int esp_net_wifi_scan(esp_net_ap_cb cb, void *ctx, char *err, size_t errlen)
 {
     esp_err_t e = start_wifi();
     if (e != ESP_OK)
-        return snprintf(err, errlen, "WiFi start: %s", esp_err_to_name(e)), -1;
+        return snprintf(err, errlen, "WiFi start: %s", start_error(e)), -1;
     e = esp_wifi_scan_start(NULL, true);
     if (e != ESP_OK)
         return snprintf(err, errlen, "scan: %s", esp_err_to_name(e)), -1;
@@ -247,7 +272,7 @@ int esp_net_wifi_connect(const char *ssid, const char *password, char *err, size
         return snprintf(err, errlen, "a WPA password is 8 to 63 characters"), -1;
     esp_err_t se = start_wifi();
     if (se != ESP_OK)
-        return snprintf(err, errlen, "WiFi start: %s", esp_err_to_name(se)), -1;
+        return snprintf(err, errlen, "WiFi start: %s", start_error(se)), -1;
     wifi_config_t c = {0};
     if (password == NULL) {
         /* No password given: the stored network's, if that is the one asked
@@ -296,7 +321,7 @@ int esp_net_wifi_forget(char *err, size_t errlen)
     s_wifi_want = false;
     esp_err_t e = start_wifi();         /* the stored network lives in the driver */
     if (e != ESP_OK)
-        return snprintf(err, errlen, "WiFi start: %s", esp_err_to_name(e)), -1;
+        return snprintf(err, errlen, "WiFi start: %s", start_error(e)), -1;
     wifi_config_t c = {0};
     esp_wifi_disconnect();
     e = esp_wifi_set_config(WIFI_IF_STA, &c);
@@ -307,7 +332,7 @@ int esp_net_wifi_saved(char *ssid, size_t n, char *err, size_t errlen)
 {
     esp_err_t e = start_wifi();
     if (e != ESP_OK)
-        return snprintf(err, errlen, "WiFi start: %s", esp_err_to_name(e)), -1;
+        return snprintf(err, errlen, "WiFi start: %s", start_error(e)), -1;
     wifi_config_t c;
     if (esp_wifi_get_config(WIFI_IF_STA, &c) != ESP_OK)
         c.sta.ssid[0] = 0;
@@ -318,6 +343,7 @@ int esp_net_wifi_saved(char *ssid, size_t n, char *err, size_t errlen)
 #else
 void esp_net_suspend(void) {}
 void esp_net_resume(void) {}
+void esp_net_power_save(bool on) { (void)on; }
 int esp_net_wifi_scan(esp_net_ap_cb cb, void *ctx, char *err, size_t errlen)
 {
     return snprintf(err, errlen, "this build has no WiFi"), -1;

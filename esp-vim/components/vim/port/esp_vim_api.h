@@ -107,6 +107,7 @@ void f_esp_web_stop(typval_T *argvars, typval_T *rettv);
 /* api/esp_api_sys.c */
 void f_esp_heap(typval_T *argvars, typval_T *rettv);
 void f_esp_info(typval_T *argvars, typval_T *rettv);
+void f_esp_log(typval_T *argvars, typval_T *rettv);
 void f_esp_reboot(typval_T *argvars, typval_T *rettv);
 void f_esp_tasks(typval_T *argvars, typval_T *rettv);
 
@@ -118,6 +119,7 @@ void f_esp_nvs_set(typval_T *argvars, typval_T *rettv);
 
 /* api/esp_api_hw.c */
 void f_esp_adc_read(typval_T *argvars, typval_T *rettv);
+void f_esp_i2c_read(typval_T *argvars, typval_T *rettv);
 void f_esp_i2c_scan(typval_T *argvars, typval_T *rettv);
 void f_esp_sensors(typval_T *argvars, typval_T *rettv);
 void f_esp_serial_close(typval_T *argvars, typval_T *rettv);

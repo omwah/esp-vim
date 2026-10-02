@@ -51,6 +51,15 @@ static int fail(char *err, size_t errlen, const char *fmt, ...)
     return -1;
 }
 
+bool esp_net_cp_failed(void)
+{
+#ifdef ESP_HOSTED_LINK_FAILED_API
+    return esp_hosted_link_failed();
+#else
+    return false;
+#endif
+}
+
 static void host_version(esp_net_cp_info_t *info)
 {
 #if HOSTED_2X
@@ -71,7 +80,11 @@ static int cp_query(esp_net_cp_info_t *info, esp_hosted_coprocessor_fwver_t *ver
 #if HOSTED_2X
     esp_hosted_connect_to_slave();
 #else
+    if (esp_net_cp_failed())            /* our patch: no restart, no abort */
+        return snprintf(err, errlen, "the co-processor stopped answering (restart to try again)"), -1;
     esp_hosted_slave_reset();           /* 1.x's way to bring the link up */
+    if (esp_net_cp_failed())
+        return snprintf(err, errlen, "the co-processor doesn't answer"), -1;
 #endif
     if (esp_hosted_get_coprocessor_fwversion(ver) != ESP_OK)
         return snprintf(err, errlen, "no answer from the co-processor"), -1;
@@ -214,6 +227,11 @@ done:
 }
 
 #else   /* no co-processor */
+
+bool esp_net_cp_failed(void)
+{
+    return false;
+}
 
 int esp_net_cp_info(esp_net_cp_info_t *info, char *err, size_t errlen)
 {

@@ -12,6 +12,7 @@ let g:loaded_esp = 1
 command! -bar EspInfo  call esp#Info()
 command! -bar EspHeap  call esp#Heap()
 command! -bar EspTasks call esp#Tasks()
+command! -bar -bang EspLog call esp#Log(<bang>0)
 command! -bar -bang EspReboot call esp#Reboot(<bang>0)
 command! -bar -bang -nargs=* -complete=customlist,esp#SleepComplete EspSleep call esp#Sleep(<bang>0, <f-args>)
 command! -bar -nargs=* -complete=customlist,esp#PowerComplete EspPower call esp#Power(<f-args>)
