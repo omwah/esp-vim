@@ -68,6 +68,8 @@ mkpatch = { cmd = "scripts/mkpatch.sh", description = "Generate a patch from edi
 
 runtime = { cmd = "python scripts/make-runtime-image.py", description = "Curate $VIMRUNTIME into build-deps/vimrt-<target>/ for each target (checks it fits the partition)" }
 
+sd-help = { cmd = "python scripts/sd-help.py", description = "Write Vim's full help for an SD card: pixi run sd-help DEST puts it in DEST/vim/doc (the card, or a folder to copy to it)" }
+
 vim-build = { cmd = 'bash -c ". scripts/env.sh >/dev/null && scripts/vim-build.sh esp32p4"', depends-on = ["runtime"], description = "Build the Vim firmware for ESP32-P4 (curates the runtime first)" }
 
 vim-build-s3 = { cmd = 'bash -c ". scripts/env.sh >/dev/null && scripts/vim-build.sh esp32s3"', depends-on = ["runtime"], description = "Build the Vim firmware for the ESP32-S3 variant" }

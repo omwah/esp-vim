@@ -303,3 +303,84 @@ Do the steps in order. Each gives the next one something to stand on.
 
 Record the results here: the revision found, the rotation that's right, the port, the
 C6's firmware, and the timings.
+
+## The SD card as the place to work
+
+The Tab5's card is far bigger than `/fat`, so with a card mounted at startup the
+device now uses it by default. All of these changes are in the stock `/vimrt/vimrc`
+(plus a status field for the web page), so a user's `/fat/.vimrc` can change them
+back. Without a card, or on a board without a slot, nothing changes.
+
+- **Starting directory.** The vimrc does `cd /sd` when `esp_sd().mounted`. A `:cd`
+  in `/fat/.vimrc`, which runs later, sets your own. The C default (`/fat`,
+  `ESP_VIM_CWD_INITIAL`) is unchanged, so the emulator and boards without a card
+  start where they did. `:EspSd eject` moves Vim back to `/fat` when it was inside
+  the card.
+- **The web page** opens in Vim's current directory. Vim's once-a-second publish
+  (`autoload/esp/web.vim`) now carries `getcwd()`, and the page reads it from
+  `/api/status` before its first listing. It doesn't follow later `:cd`s, so it
+  won't jump while you browse. If the directory can't be listed, it opens `/fat`.
+- **The full help on the card.** `/sd/vim` goes on `'runtimepath'` after
+  `/fat/.vim` and before `/vimrt`. `pixi run sd-help DEST` (`scripts/sd-help.py`)
+  writes all of Vim's `doc/*.txt` for the same Vim as the firmware, plus netrw's
+  and a `tags` file, to `DEST/vim/doc`: 155 files, 10.4 MB, about 12,100 tags.
+  - Vim's own `help.txt` and any tag the device's `help.txt` defines are left out,
+    so the device's page stays first.
+  - The card's complete `version9.txt` (and `uganda`, `sponsor`) is found before
+    `/vimrt`'s trimmed one.
+  - Checked in desktop Vim against the generated runtime: `:help usr_toc` and
+    `:help version9` open from the card, `:help` and `:help EspSd` from `/vimrt`.
+- **Spell downloads** go to `g:esp_spell_dir`, which is `/sd/vim/spell` with a
+  card. Vim's `spellfile.vim` would otherwise use whichever `spell/` folder
+  happened to exist. As with the quiet loaders, a `SourcePost` autocommand replaces
+  its `spellfile#GetDirChoices()` once it loads. The new version puts that folder
+  first (creating it) and still offers any other one already in use. Vim's file
+  is not patched.
+
+- **A vimrc on the card**, `/sd/vim/vimrc`, so settings move with the card. When
+  it exists, the stock vimrc sets `$VIMINIT`, which Vim runs instead of looking
+  for a vimrc. It sources the card's vimrc, then `/fat/.vimrc` (or
+  `/fat/.vim/vimrc`), so the device's own settings win. Both count as the user's
+  vimrc, so `defaults.vim` is skipped, as it is for any vimrc. `$MYVIMRC` is the
+  card's.
+  - The environment outlives a session (`:q` starts a new one), so the vimrc
+    clears both variables when it set them and the card has gone.
+  - Checked in desktop Vim: card then `/fat`; only `/fat` with no card vimrc; and
+    unchanged, with the variables cleared, with no card.
+
+As with `/fat/.vim`, scripts in `/sd/vim/plugin/` run at startup, so a card can
+add plugins, and its vimrc runs on any device it goes into. `:help esp-sd-help` and `esp-vimrc` say so.
+
+Tested on the Tab5 (2026-10-02), with a card in:
+- Vim starts in `/sd`, with `/sd/vim` on `'runtimepath'` and `g:esp_spell_dir`
+  set.
+- `spellfile#GetDirChoices()` offers `/sd/vim/spell` and creates it.
+- The card's vimrc runs first and `/fat/.vimrc` second, with `$MYVIMRC` the card's
+  and `defaults.vim` skipped. With no card vimrc, Vim starts as before.
+- `:EspSd eject` moves Vim to `/fat`.
+
+The first card-vimrc try ran only the card's file. Vim reads the system vimrc
+while `'compatible'` is still set, and `'cpoptions'` then has `C`, which turns off
+`\` line continuation. The vimrc now uses none (desktop Vim run with `-N` hid
+this).
+
+Not yet tested on the board: the web page opening in Vim's directory, and the
+card's help.
+
+### Known: a new session panics (older than the above)
+
+Ending a session (`:qa!`, then a key) panics as the next session starts, and the
+board reboots; `esp_info().reset` reads "panic". This happens with no SD card
+activity, and it happened before the SD work began. It is the heap allocator's
+assertion, on the new session's first allocations:
+
+```
+assert failed: block_next tlsf_block_functions.h:161 (!block_is_last(block))
+  esp_vim_malloc (esp_shims.c:408) <- evalvars_init <- eval_init <- common_init_1
+  <- vim_main <- vim_task
+```
+
+So the heap was damaged during or at the end of the previous session, either by
+`esp_vim_session_begin()` releasing the previous session's blocks, files and
+directories, or before that. Next step: a tab5 build with
+`CONFIG_ESP_VIM_HEAP_GUARD`, to catch it where it happens.

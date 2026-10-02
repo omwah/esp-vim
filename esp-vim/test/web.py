@@ -192,6 +192,12 @@ def main():
             ok = (st == 200 and j["file"].endswith("s.txt") and j["lines"] == 3
                   and j["words"] == 6 and j["line"] == 2)
             check(ok, "the live status shows the file, lines, words and cursor", str(j))
+            s.type(":cd /fat/web\r")
+            time.sleep(3)
+            st, j, _ = b.request("GET", "/api/status")
+            check(st == 200 and j.get("cwd") == "/fat/web",
+                  "the status carries Vim's directory, where the page opens", str(j.get("cwd")))
+            s.type(":cd /fat\r")
 
             # 8. Logout, then stop.
             b.request("POST", "/api/logout")

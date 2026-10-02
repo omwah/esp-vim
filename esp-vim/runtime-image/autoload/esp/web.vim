@@ -89,14 +89,14 @@ function! esp#web#ApplySettings() abort
 endfunction
 
 function! s:Publish() abort
-  let key = bufnr() . ':' . b:changedtick . ':' . line('.') . ':' . col('.') . ':' . mode()
+  let key = bufnr() . ':' . b:changedtick . ':' . line('.') . ':' . col('.') . ':' . mode() . ':' . getcwd()
   if key ==# s:last
     return
   endif
   let s:last = key
   let wc = wordcount()
   call esp_web_publish({
-        \ 'file': expand('%:p'), 'filetype': &filetype, 'mode': mode(),
+        \ 'file': expand('%:p'), 'cwd': getcwd(), 'filetype': &filetype, 'mode': mode(),
         \ 'line': line('.'), 'col': col('.'), 'lines': line('$'),
         \ 'words': wc.words, 'chars': wc.chars, 'bytes': wc.bytes,
         \ 'modified': &modified, 'buffers': len(getbufinfo({'buflisted': 1}))})

@@ -46,6 +46,7 @@ typedef struct {
 /* What Vim publishes about the current buffer. */
 typedef struct {
     char file[256];
+    char cwd[256];              /* Vim's current directory */
     char filetype[32];
     char mode[16];
     long line, col, lines, words, chars, bytes;

@@ -42,8 +42,9 @@ the machine around it, and that is what this file is about.
 
 Vim's full documentation is 12 MB and does not fit on the device, so only a
 few help files are here -- see |esp-docs|.  ":help" on any other subject
-answers E149.  The complete reference is at https://vimhelp.org; everything
-there applies here except what |esp-missing| lists.
+answers E149, unless the rest is on an SD card (|esp-sd-help|).  The complete
+reference is at https://vimhelp.org; everything there applies here except what
+|esp-missing| lists.
 
 Vim stands for Vi IMproved.  Most of Vim was made by Bram Moolenaar, but only
 through the help of many others.  See |esp-credits|.
@@ -376,8 +377,9 @@ Reading a web page or file works like on any Vim: >
 
 Spell checking downloads its dictionary the first time you use it: >
 	:set spell spelllang=en
-<asks whether to fetch the English dictionary and saves it in
-/fat/.vim/spell/.  It needs the network, and space: English is about 1 MB.
+<asks whether to fetch the English dictionary and saves it in /sd/vim/spell/
+with an SD card in, /fat/.vim/spell/ without (|esp-vimrc| to choose).  It
+needs the network, and space: English is about 1 MB.
 
 BLUETOOTH KEYBOARDS					*esp-bt-keyboard*
 
@@ -694,16 +696,24 @@ The device has these filesystems:
 
 	/fat		Your files.  Flash storage, kept across reboots.
 			This is $HOME, and Vim starts with /fat as the
-			current directory.
+			current directory when there is no SD card.
 	/vimrt		Vim's runtime files ($VIMRUNTIME): syntax files,
 			plugins, this help.  Read-only.
 	/sd		The microSD card, on boards with a slot, when one is
 			in: FAT or exFAT, readable on any computer.  See
-			|:EspSd|.
+			|:EspSd|.  When a card is in at startup, Vim starts
+			in /sd, and /sd/vim holds Vim's files for it: a
+			vimrc that goes with the card (|esp-vimrc|), the
+			full help (|esp-sd-help|), spell dictionaries, and
+			plugins as in /fat/.vim.
 
-Everything you write goes under /fat.  Relative names work as usual: ":w
-notes.txt" writes /fat/notes.txt, ":cd" changes directory, ":pwd" shows it,
-and <Tab> completes file names on the command line (":e no<Tab>").
+Relative names work as usual: ":w notes.txt" writes notes.txt in the current
+directory (/sd, or /fat without a card), ":cd" changes directory, ":pwd" shows
+it, and <Tab> completes file names on the command line (":e no<Tab>").  To
+start somewhere else, put a ":cd" in your vimrc (|esp-vimrc|): >
+	cd /fat
+<":EspSd eject" moves Vim to /fat when it is in the card.  The web interface
+(|esp-web|) opens in Vim's current directory.
 
 To manage files use |:EspFiles|, a two-pane file manager.  To browse a
 single directory use ":Explore" (or ":e /fat").  Move to a name and press
@@ -816,7 +826,22 @@ the mouse.  Start /fat/.vimrc with this line to keep them: >
 	source $VIMRUNTIME/defaults.vim
 <Plugins and scripts go under /fat/.vim/ as on any Unix: plugin/, syntax/,
 ftplugin/, colors/, ftdetect/, and doc/ for their help (run ":helptags
-/fat/.vim/doc" after adding help files).
+/fat/.vim/doc" after adding help files).  With an SD card in, /sd/vim/ works
+the same way; /fat/.vim/ comes first.
+
+A vimrc can also go on the SD card, as /sd/vim/vimrc, so your settings move
+with the card from one device to another.  When the card is in at startup, Vim
+sources it first and then /fat/.vimrc, so what /fat/.vimrc sets for this
+device wins.  Either is enough for defaults.vim to be left out, so start the
+card's vimrc with the same "source" line.  $MYVIMRC is the card's.  Like its
+plugins, a card's vimrc runs on whatever device you put the card in.
+
+Your vimrc runs after the device's (/vimrt/vimrc), so it can change what that
+one sets up: the starting directory (a ":cd"), and where spell dictionaries
+are downloaded: >
+	let g:esp_spell_dir = '/fat/.vim/spell'
+<It must be a "spell" directory in a 'runtimepath' entry, or Vim will not find
+what it downloads; '' leaves the choice to Vim's spellfile plugin.
 
 ==============================================================================
 QUITTING						*esp-quit*
@@ -826,9 +851,10 @@ When the last window closes -- ":q", ":qa!", ":wq", "ZZ" -- you see: >
 	All buffers closed.  Vim is forever.
 	Press any key to start a new session.
 <and the next key starts Vim again, exactly as at power-on: no buffers, no
-variables or options left over from before, the current directory back at
-/fat.  This takes a moment, not a reboot.  Files you saved are of course still
-there; changes you quit without saving are gone, as always.
+variables or options left over from before, the current directory back where
+it starts (/sd, or /fat without a card).  This takes a moment, not a reboot.
+Files you saved are of course still there; changes you quit without saving are
+gone, as always.
 
 ==============================================================================
 NOT AVAILABLE ON THIS DEVICE				*esp-missing*
@@ -844,7 +870,8 @@ runs an external command is unavailable:
 
 Also not available:
 
-	This documentation	Only the files in |esp-docs|.  E149 for other
+	This documentation	Only the files in |esp-docs|, unless an SD card
+				has the rest (|esp-sd-help|).  E149 for other
 				subjects; see https://vimhelp.org.
 	System clipboard	The "* and "+ registers are not connected to
 				anything.  Other registers work normally.
@@ -869,6 +896,17 @@ HELP FILES ON THIS DEVICE				*esp-docs*
 
 Links inside those files that lead to Vim's other documentation are shown as
 plain text, since that documentation is not here.
+
+						*esp-sd-help*
+The rest of Vim's help can go on an SD card.  On a computer with a copy of
+this project, with the card mounted there: >
+	pixi run sd-help /media/YOU/CARD
+<writes Vim's help files (about 10 MB, for the same Vim as this one) and their
+tags to vim/doc on the card.  Or give it any folder and copy its vim/ folder
+to the card's top level afterwards, over the web interface, scp or USB.  With
+the card in when Vim starts, ":help" finds everything there -- try ":help
+usr_toc" -- and this file stays the first page.  The card's version9.txt,
+uganda.txt and sponsor.txt are the complete ones, used instead of those above.
 
 ==============================================================================
 CREDITS AND COPYING					*esp-credits*

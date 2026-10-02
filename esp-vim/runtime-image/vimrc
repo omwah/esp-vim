@@ -117,3 +117,82 @@ if exists('*esp_display') && esp_display().active
     highlight Visual cterm=NONE ctermfg=NONE ctermbg=24
   endif
 endif
+
+" The microSD card, when one is mounted (boards with a slot):
+"
+"   - Vim starts in /sd rather than /fat: it is the bigger place, and new
+"     files land there. To start elsewhere, :cd in /fat/.vimrc, which is
+"     sourced after this file.
+"   - /sd/vim goes on 'runtimepath', after /fat/.vim and before /vimrt. It is
+"     where the full help goes (:help esp-sd-help; scripts/sd-help.py, on a
+"     computer, writes it) and where spell dictionaries are downloaded. Like
+"     /fat/.vim, its plugin/ scripts run at startup.
+"   - /sd/vim/vimrc, if the card has one, is your vimrc too, so settings go
+"     with the card from one device to another: Vim sources it, then
+"     /fat/.vimrc (or /fat/.vim/vimrc), whose device-specific settings so
+"     win. Vim reads $VIMINIT, when set, instead of looking for a vimrc of
+"     its own, and both count as yours: defaults.vim is not loaded, as
+"     whenever there is a vimrc. $MYVIMRC is the card's.
+"   - Spell downloads go to g:esp_spell_dir, /sd/vim/spell; set it in
+"     /fat/.vimrc to change that, or to '' for Vim's own choice. It must be
+"     a "spell" folder in a 'runtimepath' entry, or Vim won't find the
+"     dictionaries it downloads.
+" No "\" line continuation in this file: Vim reads it while 'compatible' is
+" still set, and 'cpoptions' then has "C", which turns continuation off.
+let s:viminit = 'source /sd/vim/vimrc'
+let s:viminit .= ' | if filereadable(expand("~/.vimrc")) | source ~/.vimrc'
+let s:viminit .= ' | elseif filereadable(expand("~/.vim/vimrc")) | source ~/.vim/vimrc | endif'
+" The environment outlives a session (:q starts a new one): not set from the
+" last one, when the card has gone or has no vimrc now.
+if $VIMINIT ==# s:viminit
+  unlet $VIMINIT
+  if $MYVIMRC ==# '/sd/vim/vimrc'
+    unlet $MYVIMRC
+  endif
+endif
+if exists('*esp_sd') && esp_sd().mounted
+  let s:rtp = split(&runtimepath, ',')
+  let s:at = index(map(copy(s:rtp), 'expand(v:val)'), expand($VIMRUNTIME))
+  call insert(s:rtp, '/sd/vim', max([s:at, 0]))
+  let &runtimepath = join(s:rtp, ',')
+  unlet s:rtp s:at
+  let g:esp_spell_dir = '/sd/vim/spell'
+  cd /sd
+  if filereadable('/sd/vim/vimrc')
+    let $VIMINIT = s:viminit
+    let $MYVIMRC = '/sd/vim/vimrc'
+  endif
+endif
+unlet s:viminit
+
+" Vim's spellfile.vim offers the "spell" folders that exist on 'runtimepath'
+" and creates one in the first writable entry only when there are none, so
+" where a download lands depends on what happens to exist. Once it is loaded,
+" its choice is replaced by one that puts g:esp_spell_dir first, creating it,
+" and still offers any other folder already in use.
+function! s:SpellDirChoices() abort
+  function! spellfile#GetDirChoices() abort
+    let dirlist = []
+    let own = get(g:, 'esp_spell_dir', '')
+    if !empty(own)
+      silent! call mkdir(own, 'p')
+      if filewritable(own) == 2
+        call add(dirlist, own)
+      endif
+    endif
+    for dir in globpath(&runtimepath, 'spell', 0, 1)
+      if filewritable(dir) == 2 && index(dirlist, dir) < 0
+        call add(dirlist, dir)
+      endif
+    endfor
+    let choices = '&Cancel'
+    for i in range(len(dirlist))
+      let choices .= "\n&" . (i + 1)
+    endfor
+    return [dirlist, choices]
+  endfunction
+endfunction
+augroup esp_spell_dir
+  autocmd!
+  autocmd SourcePost */autoload/spellfile.vim call s:SpellDirChoices()
+augroup END

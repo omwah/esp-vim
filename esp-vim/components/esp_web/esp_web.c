@@ -865,6 +865,7 @@ static esp_err_t h_status(httpd_req_t *req)
     unlock();
     cJSON *j = cJSON_CreateObject();
     cJSON_AddStringToObject(j, "file", st.file);
+    cJSON_AddStringToObject(j, "cwd", st.cwd);
     cJSON_AddStringToObject(j, "filetype", st.filetype);
     cJSON_AddStringToObject(j, "mode", st.mode);
     cJSON_AddNumberToObject(j, "line", st.line);

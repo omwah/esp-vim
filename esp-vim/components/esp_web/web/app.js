@@ -4,7 +4,7 @@
 
 const $ = (id) => document.getElementById(id);
 let csrf = "";
-let cwd = "/fat";
+let cwd = "/fat";               // until Vim says where it is (startDir)
 let statusTimer = null;
 
 async function api(method, url, body, raw) {
@@ -46,7 +46,8 @@ function showLogin() {
 
 async function showApp() {
   $("login").hidden = true; $("app").hidden = false; $("logout").hidden = false;
-  await list(cwd);
+  await startDir();
+  if (!(await list(cwd)) && cwd !== "/fat") await list((cwd = "/fat"));
   await loadSettings();
   await loadTime();
   await status();
@@ -77,6 +78,15 @@ $("logout").addEventListener("click", async () => {
 
 // --------------------------------------------------------------- status --
 
+// The file list opens where Vim is (its :cd, which the status carries), not
+// where it went later: it doesn't follow Vim while you browse.
+async function startDir() {
+  try {
+    const s = await api("GET", "/api/status");
+    if (s.cwd) cwd = s.cwd;
+  } catch (e) { /* keep the default */ }
+}
+
 async function status() {
   try {
     const s = await api("GET", "/api/status");
@@ -94,6 +104,7 @@ async function status() {
     add("Characters", s.chars);
     add("Type", s.filetype || "-");
     add("Mode", s.mode || "-");
+    add("Directory", s.cwd || "-");
     $("clock").textContent = s.time || "";
   } catch (e) { /* shown on the next successful poll */ }
 }
@@ -104,7 +115,7 @@ async function list(dir) {
   $("fileerr").textContent = "";
   let r;
   try { r = await api("GET", "/api/list?path=" + q(dir)); }
-  catch (e) { $("fileerr").textContent = e.message; return; }
+  catch (e) { $("fileerr").textContent = e.message; return false; }
   cwd = r.path;
   $("cwd").textContent = cwd;
   $("space").textContent = r.total ? size(r.free) + " free of " + size(r.total) + (r.readonly ? " (read-only)" : "") : "";
@@ -145,6 +156,7 @@ async function list(dir) {
               el("td", { className: "num" }, when(e.mtime)), act);
     tb.append(tr);
   }
+  return true;
 }
 
 $("mkdir").addEventListener("click", async () => {

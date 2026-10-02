@@ -191,7 +191,13 @@ function! esp#Sd(...) abort
     return
   elseif what ==# 'eject'
     if esp_sd_eject()
-      echo 'SD card unmounted: it can come out'
+      " Not left in a directory that has gone: relative names would fail.
+      if getcwd() =~# '^/sd\%(/\|$\)'
+        cd /fat
+        echo 'SD card unmounted: it can come out (now in /fat)'
+      else
+        echo 'SD card unmounted: it can come out'
+      endif
     endif
     return
   elseif what !=# ''

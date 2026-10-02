@@ -71,7 +71,7 @@ static long num_item(dict_T *d, char *key)
 }
 
 /* esp_web_publish({status}): what is being edited, for the web page. Keys:
- * file, filetype, mode, line, col, lines, words, chars, bytes, modified,
+ * file, cwd, filetype, mode, line, col, lines, words, chars, bytes, modified,
  * buffers. */
 void f_esp_web_publish(typval_T *argvars, typval_T *rettv UNUSED)
 {
@@ -85,6 +85,8 @@ void f_esp_web_publish(typval_T *argvars, typval_T *rettv UNUSED)
     char_u *s;
     if ((s = dict_get_string(d, "file", FALSE)) != NULL)
         vim_strncpy((char_u *)st.file, s, sizeof st.file - 1);
+    if ((s = dict_get_string(d, "cwd", FALSE)) != NULL)
+        vim_strncpy((char_u *)st.cwd, s, sizeof st.cwd - 1);
     if ((s = dict_get_string(d, "filetype", FALSE)) != NULL)
         vim_strncpy((char_u *)st.filetype, s, sizeof st.filetype - 1);
     if ((s = dict_get_string(d, "mode", FALSE)) != NULL)
