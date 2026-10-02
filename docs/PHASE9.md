@@ -189,10 +189,17 @@ It arrived on 2026-09-30. `esptool flash_id` in download mode: an ESP32-P4,
   162 KB internal heap free with WiFi up (lowest 125 KB). The microSD card (4-bit,
   40 MHz) and WiFi together: five HTTPS downloads of a 621 KB file straight to `/sd`,
   all whole. `:EspSensors` finds everything expected, and something at 0x28 it
-  doesn't know. The clock, set by NTP, reads the same from the RX8130.
+  doesn't know. The clock, set by NTP, reads the same from the RX8130, and after a
+  power cycle with no battery and no network it is still right, from the RX8130.
+  A full-screen scroll (`:help`, `<C-F>` held) is smooth. The web interface over
+  WiFi: the login page in about 5.8 s the first time (a 3.6 s TLS handshake), its
+  certificate the one Vim prints, the API refused without a session, a wrong
+  password refused and the third in a row held off; internal heap at least 94 KB
+  through it.
 - Open: once, just after one of those downloads finished (its file whole), the
-  Tab5 restarted with a watchdog reset. Not seen again in four tries, with no
-  panic output caught.
+  Tab5 restarted with a watchdog reset, untouched and unnoticed on its screen.
+  Not seen again in four tries, with no panic output caught. Next time: the core
+  dump build.
 - The USB console doesn't always come back after a reset: the port can vanish
   until the cable is replugged. Download mode (BOOT held, RESET pressed) brings
   it back every time.
