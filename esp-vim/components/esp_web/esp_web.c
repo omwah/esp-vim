@@ -221,7 +221,11 @@ static int load_cert(char **cert, size_t *clen, char **key, size_t *klen, char *
     char *c = malloc(2048), *k = malloc(1024);
     uint8_t serial[16];
     esp_fill_random(serial, sizeof serial);
-    serial[0] &= 0x7f;                                  /* positive */
+    /* Positive, and with no leading zero byte: mbedTLS writes the bytes as
+     * they are, and DER wants an INTEGER's shortest form. A serial starting
+     * 00 then below 80 (1 in 256 of them) made a certificate OpenSSL 3.6
+     * won't decode ("ASN1 lib"), so browsers using it couldn't connect. */
+    serial[0] = (serial[0] & 0x3f) | 0x40;
     if (c == NULL || k == NULL
             || mbedtls_pk_setup(&pk, mbedtls_pk_info_from_type(MBEDTLS_PK_ECKEY)) != 0
             || mbedtls_ecp_gen_key(MBEDTLS_ECP_DP_SECP256R1, mbedtls_pk_ec(pk), rng, NULL) != 0) {

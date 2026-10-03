@@ -417,3 +417,51 @@ passes all seven variants.
 - Internal free memory held at about 155 KB per session.
 - The card vimrc across real restarts: `$VIMINIT` and `$MYVIMRC` are cleared
   once the card's vimrc is gone, and `defaults.vim` is back.
+
+### Emulator gate, 2026-10-02
+
+Results after the SD work and the session fix. tab5uart and the S3 are
+informational: tab5uart has no network in esp-emu (above), and the S3 has the
+esp-emu defect in DECISIONS (2026-09-30).
+
+| Suite | esp32p4 | tab5uart | esp32s3 |
+|---|---|---|---|
+| roundtrip | 8/8 | 8/8 | 8/8 |
+| interactive | 73/73 | 57/57 | 64/65 |
+| web | 24/24, twice, after the fix below | skipped: no network | `ESP_ERR_HTTPD_TASK`, see below |
+| hw | 10/10 | 10/10 | 7/8 |
+| wifi | none (Ethernet build) | 2/8 | 8/8 |
+| ble | none (no Bluetooth) | 3/7 | 7/7 |
+| git | 47/47 | 23/25 | not run |
+| py | 37/37 | 37/37 | 37/37 |
+
+- **tab5uart:** the wifi and ble failures are its known gap: no C6 session over
+  esp-emu's SDIO bridge, and no expander to power it. git's two failures are its
+  clone over HTTP, which has no network to use.
+- **esp32s3:**
+  - The interactive failure is a heap-corruption panic in the allocator while a
+    syntax file loads, the known esp-emu defect.
+  - The hw failure is an interrupt watchdog in `esp_adc_read()`: esp-emu never
+    finishes the S3's ADC conversion.
+- **Stale runtime images in the first S3 run:** that run used runtime images
+  made before the vimrc lost its `\` continuation lines, so every scenario had
+  E10. `vim-build.sh` doesn't regenerate them (`pixi run runtime`, or the pixi
+  build tasks, does). After regenerating, roundtrip passes.
+
+**The web interface's certificate, fixed.** The esp32p4 web run once failed at
+the first connection: Python's OpenSSL 3.6 said "ASN1 lib". The cause was the
+certificate's random 16-byte serial number. It was made positive by clearing the
+top bit only, so a serial starting `00` and then a byte below `80`, 1 in 256 of
+them, was a non-minimal DER INTEGER. mbedTLS writes such a serial as it is, and
+OpenSSL refuses the whole certificate. Shown by editing a served certificate's
+serial: `00 12` fails to decode, `00 92` decodes. The first byte is now
+`0x40`–`0x7f`. A device whose stored certificate drew such a serial keeps it in
+NVS; that is rare, and it has never been seen on a board.
+
+**Open: the S3's web server can't start its task in esp-emu.** With WiFi up the
+S3 has about 23 KB of internal RAM free, largest block 13.8 KB (72 KB and 31 KB
+at boot). That is too little for the server's 10 KB stack plus the rest of what
+it allocates, so `:EspWebStart` gives `ESP_ERR_HTTPD_TASK`. Nothing new among
+the largest static allocations explains it, and PHASE6 recorded the same failure
+once before (Bluetooth's controller in IRAM). Check on the FNK0115 and the
+ES3C28P before treating it as a firmware regression.
