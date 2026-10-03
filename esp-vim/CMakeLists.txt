@@ -6,6 +6,8 @@ include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 # itself is installed separately and never edited.
 #   esp_hid  0001: the NimBLE HID host skipped the HID service
 #   fatfs    0002: exFAT on, for SD cards
+#   esp_system 0003: targets of its own for the P4's high data region, before
+#                    revision 3 (Tab5 variants only; components/vim/linker.lf)
 function(espvim_patched_component name patch)
     set(patch "${CMAKE_CURRENT_LIST_DIR}/../patches/esp-idf/${patch}")
     file(SHA256 "${patch}" sum)
@@ -38,6 +40,7 @@ endif()
 # registry's by name. Not an override_path, which the lock file would record
 # as an absolute path.
 if(ESPVIM_VARIANT MATCHES "^tab5")
+    espvim_patched_component(esp_system 0003-esp_system-rev-less-v3-high-region-targets.patch)
     set(ESP_HOSTED_DIR "${CMAKE_CURRENT_LIST_DIR}/../build-deps/esp_hosted")
     if(NOT EXISTS "${ESP_HOSTED_DIR}/CMakeLists.txt")
         message(FATAL_ERROR "esp-hosted not found at ${ESP_HOSTED_DIR}.\n"

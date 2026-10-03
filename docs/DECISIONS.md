@@ -964,3 +964,35 @@ editor's work and restarting by hand is the trade.
 esp_net and esp_ble take it with `override_path` to build-deps/esp_hosted, the
 version pinned at 1.4.0 all the same. The C6's own firmware (`c6-build`) still
 comes from the registry: the patch is all on the host side.
+
+## 2026-10-02 — Vim's data in one piece on a P4 before v3: an ESP-IDF linker-template patch
+
+A new Vim session resets Vim's globals between linker bounds (`linker.lf`,
+`SURROUND`). On a P4 before revision 3 (the Tab5's), ESP-IDF has a second internal
+data region, makes its data and bss placements in both, and links with
+`--enable-non-contiguous-regions`. Vim's `.data` was split between the two, and
+the bounds, each assigned twice, covered one part. The next session's first
+allocations then hit a double free (PHASE9.md).
+
+Vim's sections have to be placed once, whole. What was tried:
+
+- **A linker template of the component's own, processed by ldgen.** ESP-IDF's
+  ldgen takes one template per build (its own `sections.ld.in`), so this fails at
+  configure time.
+- **A plain linker script that inserts output sections** (`INSERT AFTER
+  .dram1.data`). GNU ld resolves INSERT only against its built-in default
+  script, and ESP-IDF passes every script with `-T`: "not found for insert",
+  reproduced with two small scripts.
+
+What was chosen: `patches/esp-idf/0003` adds one marker to each of the
+high-region sections in `esp_system/ld/ld.dram.sections`, `mapping[dram1_data]`
+and `mapping[dram1_bss]`. They are targets no ESP-IDF fragment uses, so nothing
+else moves. `linker.lf` maps libvim.a there on those builds, and ldgen then
+excludes it from its own catch-alls. This uses the same copy-and-patch
+mechanism as 0001 and 0002, applied only for the Tab5 variants.
+
+Vim's data moved to the high region, which is the same internal RAM pool, so
+free memory didn't shrink overall. `scripts/check-vim-sections.py` checks the
+result after every build: an ESP-IDF update that changed the placement would
+fail the build rather than corrupt the heap at the second session.
+

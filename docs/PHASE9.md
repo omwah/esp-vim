@@ -367,12 +367,12 @@ this).
 Not yet tested on the board: the web page opening in Vim's directory, and the
 card's help.
 
-### Known: a new session panics (older than the above)
+### A new session panicked: Vim's data split between two regions
 
-Ending a session (`:qa!`, then a key) panics as the next session starts, and the
-board reboots; `esp_info().reset` reads "panic". This happens with no SD card
-activity, and it happened before the SD work began. It is the heap allocator's
-assertion, on the new session's first allocations:
+Ending a session (`:qa!`, then a key) panicked as the next session started, and
+the board rebooted, with `esp_info().reset` reading "panic". This was older than
+the SD work. At first it was the heap allocator's assertion, on the new
+session's first allocations:
 
 ```
 assert failed: block_next tlsf_block_functions.h:161 (!block_is_last(block))
@@ -380,7 +380,39 @@ assert failed: block_next tlsf_block_functions.h:161 (!block_is_last(block))
   <- vim_main <- vim_task
 ```
 
-So the heap was damaged during or at the end of the previous session, either by
-`esp_vim_session_begin()` releasing the previous session's blocks, files and
-directories, or before that. Next step: a tab5 build with
-`CONFIG_ESP_VIM_HEAP_GUARD`, to catch it where it happens.
+With `CONFIG_ESP_VIM_HEAP_GUARD` it became a double free in the same place:
+`set_vim_var_dict()` freeing the old value of `v:event`. In a fresh session that
+slot is empty; this one held the last session's dict, already freed with the
+rest of its heap. So `vimvars[]` had not been reset.
+
+**Cause.** A new session restores libvim.a's `.data` from a snapshot and zeroes
+its `.bss`, between bounds that `components/vim/linker.lf` puts around them with
+`SURROUND`. The Tab5's P4 is revision 1.3, and the build for revisions before v3
+(`ESP32P4_SELECTS_REV_LESS_V3`) has a second internal data region.
+- ESP-IDF makes its `dram0_data` and `dram0_bss` placements in both regions and
+  links with `--enable-non-contiguous-regions`, so the linker filled the low
+  region with Vim's data and put the rest in the high one: 68 KB low (`vimvars`
+  among it), 71 KB high.
+- Each `SURROUND` was emitted in both regions, so `_vim_data_start` and the other
+  bounds were each assigned twice, and the second value won. The bounds covered
+  only the high part.
+- A new session therefore left the low part as the last session had left it,
+  with pointers into a heap that had since been freed.
+- The emulator's esp32p4 build (v3) and the S3 boards have one region and were
+  never affected.
+
+**Fix.** `patches/esp-idf/0003` gives the high region targets only it has
+(`dram1_data`, `dram1_bss`). On those builds `linker.lf` maps Vim's data and bss
+there, once each, whole. `scripts/check-vim-sections.py` now runs after every
+build (`scripts/vim-build.sh`). It reads the link map and fails if any of
+libvim.a's writable sections is outside its bounds, if a bound is assigned more
+than once, or if anything else is inside them. It flags the old tab5 build and
+passes all seven variants.
+
+**Checked on the board.**
+- Five `:qa!` restarts in a row on the normal build: sessions 2 to 6 started
+  without a reboot, uptime kept growing, and each session started without the
+  last one's variables.
+- Internal free memory held at about 155 KB per session.
+- The card vimrc across real restarts: `$VIMINIT` and `$MYVIMRC` are cleared
+  once the card's vimrc is gone, and `defaults.vim` is back.

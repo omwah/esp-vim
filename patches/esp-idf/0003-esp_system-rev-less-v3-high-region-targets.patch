@@ -1,0 +1,36 @@
+ESP-IDF v5.5.5, components/esp_system: on an ESP32-P4 before revision 3
+(CONFIG_ESP32P4_SELECTS_REV_LESS_V3), internal data has two regions, and the
+dram0_data and dram0_bss placements are made in both, with the link using
+--enable-non-contiguous-regions -- so one library's .data or .bss can be split
+between them. esp-vim restores Vim's .data and zeroes its .bss between bounds
+made with SURROUND, which a split breaks: each bound is assigned twice and
+covers one part.
+
+This adds a target to each high-region section, dram1_data and dram1_bss, that
+appears nowhere else: a placement there is made once, whole. No mapping uses
+them unless a fragment asks (esp-vim's components/vim/linker.lf, on those
+chips), so nothing else moves.
+
+--- a/ld/ld.dram.sections
++++ b/ld/ld.dram.sections
+@@ -96,6 +96,10 @@
+     mapping[dram0_data]
+     mutable[dram0_data]
+ 
++    /* esp-vim: a target only this region has, for data that must not be
++       split between the two regions (esp-vim's linker.lf). */
++    mapping[dram1_data]
++
+     _data_end_high = ABSOLUTE(.);
+   } > dram_high_seg
+ 
+@@ -106,6 +110,9 @@
+     mapping[dram0_bss]
+     mutable[dram0_bss]
+ 
++    /* esp-vim: as dram1_data. */
++    mapping[dram1_bss]
++
+     ALIGNED_SYMBOL(8, _bss_end_high)
+   } > dram_high_seg
+ 

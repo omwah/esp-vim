@@ -67,5 +67,9 @@ fi
 mkdir -p ../build-deps
 echo "$VARIANT" > "$STAMP"
 
-exec idf.py -B "$BUILD" -D "SDKCONFIG=$BUILD/sdkconfig" -D "IDF_TARGET=$TARGET" \
+idf.py -B "$BUILD" -D "SDKCONFIG=$BUILD/sdkconfig" -D "IDF_TARGET=$TARGET" \
     -D "SDKCONFIG_DEFAULTS=$DEFAULTS" -D "ESPVIM_VARIANT=$VARIANT" "${RECONF[@]}" build
+
+# A new Vim session resets Vim's globals between linker-made bounds: check, from
+# the link map, that they hold all of them and nothing else.
+python3 "$PROJECT/../scripts/check-vim-sections.py" "$BUILD"

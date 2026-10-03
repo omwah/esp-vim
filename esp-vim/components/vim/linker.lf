@@ -24,10 +24,30 @@ entries:
     bss -> extern_ram
     common -> extern_ram
 
+# A P4 before revision 3 (the Tab5's) has a second internal data region, and
+# ESP-IDF makes its dram0_data and dram0_bss placements in both, linking with
+# --enable-non-contiguous-regions: Vim's sections were split between the two,
+# each bound below was assigned twice, the second value won, and a new session
+# left the low part (vimvars among it) as the last one had left it. There they
+# go to dram1_data and dram1_bss instead, targets only the high region has
+# (patches/esp-idf/0003-esp_system-rev-less-v3-high-region-targets.patch):
+# one placement each, whole. scripts/check-vim-sections.py checks every build.
+[scheme:vim_high_region]
+entries:
+    text -> flash_text
+    rodata -> flash_rodata
+    data -> dram1_data
+    bss -> dram1_bss
+    common -> dram1_bss
+
 [mapping:vim]
 archive: libvim.a
 entries:
-    if ESP_VIM_BSS_IN_PSRAM = y:
+    if ESP32P4_SELECTS_REV_LESS_V3 = y:
+        * (vim_high_region);
+            data -> dram1_data SURROUND(vim_data),
+            bss -> dram1_bss SURROUND(vim_bss)
+    elif ESP_VIM_BSS_IN_PSRAM = y:
         * (vim_psram_bss);
             data -> dram0_data SURROUND(vim_data),
             bss -> extern_ram SURROUND(vim_bss)
