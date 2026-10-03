@@ -42,6 +42,8 @@
 #include "driver/usb_serial_jtag.h"
 #include "driver/usb_serial_jtag_select.h"
 #include "driver/usb_serial_jtag_vfs.h"
+#include "hal/usb_serial_jtag_ll.h"
+#include "esp_rom_sys.h"
 #endif
 #include "esp_vim_port.h"
 #include "freertos/FreeRTOS.h"
@@ -383,8 +385,40 @@ static void vim_task(void *arg)
     esp_vim_session_exit(0);
 }
 
+#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG && CONFIG_ESP_VIM_BOARD_TAB5
+/*
+ * The Tab5's RESET button resets the P4 (it reads as "watchdog") without its
+ * USB pins ever showing a disconnect: the host keeps the old device, whose
+ * state on our side is gone, and finds out only when something next uses the
+ * port -- which then fails, disappears, and comes back some seconds later.
+ * Unused, the console looked missing for 30 s and more (docs/PHASE9.md). So
+ * after any reset but a power-on, which the host sees as a plug-in anyway, the
+ * D+ pull-up is held off for 100 ms: a clean unplug, then the register as it
+ * was, and the host enumerates the console again at once. What is printed
+ * before then is lost, as it is with no terminal open.
+ *
+ * The register is put back whole: the override's values are written into the
+ * same dp_pullup/dm_* bits the PHY uses without it, so only switching the
+ * override off again would leave D+ without its pull-up, the device unplugged
+ * for good (the first version did).
+ */
+static void usb_console_reconnect(void)
+{
+    if (esp_reset_reason() == ESP_RST_POWERON)
+        return;
+    uint32_t saved = USB_SERIAL_JTAG.conf0.val;
+    usb_serial_jtag_pull_override_vals_t off = { 0 };   /* no pull-ups or -downs */
+    usb_serial_jtag_ll_phy_enable_pull_override(&off);
+    esp_rom_delay_us(100 * 1000);
+    USB_SERIAL_JTAG.conf0.val = saved;
+}
+#endif
+
 void app_main(void)
 {
+#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG && CONFIG_ESP_VIM_BOARD_TAB5
+    usb_console_reconnect();
+#endif
     esp_log_level_set("*", ESP_LOG_WARN);
     esp_logbuf_init();                  /* the log kept off Vim's screen (:EspLog) */
 

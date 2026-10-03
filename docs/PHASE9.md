@@ -223,12 +223,33 @@ It arrived on 2026-09-30. `esptool flash_id` in download mode: an ESP32-P4,
   which `:EspLog` shows; at boot and between sessions they print, and are kept
   too. A failed DNS lookup's four esp-tls lines: none on the console, all four
   in `esp_log()`.
-- The USB console doesn't always come back after a reset: the port can be
-  missing for 30 s and more. After a software reset (esptool's watchdog reset)
-  it was back in 3 s; the slow returns were after the RESET button, and once
-  it didn't come back at all until replugged. Download mode (BOOT held, RESET
-  pressed) brings it at once. esptool reaches the bootloader with no buttons
-  (`--before usb_reset`), and resets out of it (`--after watchdog_reset`).
+- The USB console didn't always come back after a reset: the port could be
+  missing for 30 s and more, mostly after the RESET button. esptool reaches the
+  bootloader with no buttons (`--before usb_reset`), and resets out of it
+  (`--after watchdog_reset`). Found and fixed on 2026-10-02:
+  - **Cause.** The RESET button resets the P4 (it reads as "watchdog") without
+    its USB pins ever showing a disconnect. The host kept the old device, whose
+    state on the Tab5 was gone, and found out only when something next used the
+    port. Watched with the kernel log: after a press, nothing at all. The first
+    open got an I/O error, the kernel logged the disconnect then, and the port
+    was back 6 s later. So "missing for 30 s" was the time until something
+    tried the port. esptool's resets looked quick because it has the port open.
+  - **Fix** (`usb_console_reconnect()` in `esp_vim_main.c`, Tab5 only). After
+    any reset but a power-on, the D+ pull-up is held off for 100 ms at the start
+    of `app_main`: a clean unplug, then a fresh enumeration. The register must
+    be restored whole. ESP-IDF's override writes its values into the same
+    pull-up bits the PHY uses without it, and the first version, which only
+    switched the override off, left the Tab5 unplugged for good, until
+    download mode.
+  - **Result.** The host sees the disconnect at once, and the port is back in
+    about 2 s after esptool's watchdog reset and after the RESET button, with
+    nothing opening it.
+  - **Slower returns still seen were the host's.** Twice, a USB Bluetooth
+    adapter on the next root-hub port of the test computer failed its
+    descriptor reads during the Tab5's disconnect: 16 s timeouts, about 64 s in
+    all. Linux handles that hub's ports one at a time, so the Tab5's
+    enumeration waited, and it came back 0.5 s after the adapter's last reset.
+    Another USB port, on another controller, avoids that.
 
 ## First flash: the checklist
 
