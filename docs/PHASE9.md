@@ -364,8 +364,9 @@ while `'compatible'` is still set, and `'cpoptions'` then has `C`, which turns o
 `\` line continuation. The vimrc now uses none (desktop Vim run with `-N` hid
 this).
 
-Not yet tested on the board: the web page opening in Vim's directory, and the
-card's help.
+- The web page opens in `/sd`, Vim's directory.
+
+Not yet tested on the board: the card's help.
 
 ### A new session panicked: Vim's data split between two regions
 
