@@ -49,6 +49,14 @@ VARIANTS = {
 # Variants whose runtime is not flashed but copied to an SD card (pixi run
 # sd-runtime): there is no partition to fit, so no budget check.
 SD_VARIANTS = {"cardputer"}
+# Help for a build that leaves things out (prune_help): the :Esp commands it
+# has (all others' entries go), and the groups of commands it has none of.
+HELP_PRUNE = {
+    "cardputer": ({"EspSd", "EspInfo", "EspHeap", "EspLog", "EspConsole", "EspFont",
+                   "EspReboot"},
+                  {"esp-network", "esp-bt-keyboard", "esp-ssh", "esp-git", "esp-python",
+                   "esp-web"}),
+}
 OUT = None                  # build-deps/vimrt-<variant>, set per variant in build()
 PARTITIONS = ROOT / "esp-vim" / "partitions.csv"
 FILETYPES_CONF = ROOT / "esp-vim" / "filetypes.conf"
@@ -275,6 +283,50 @@ def copy_upstream_docs():
         (OUT / "doc" / name).write_text(text, encoding="utf-8")
 
 
+CMD_HEAD = re.compile(r":(Esp\w+)\b.*\*:Esp\w+\*")
+GROUP_HEAD = re.compile(r"[A-Z][A-Z :,]*\t+\*(esp-[^*\s]+)\*\s*")
+RULE_LINE = re.compile(r"={10,}")
+
+
+def prune_help(text, keep, drop_groups):
+    """help.txt for a build without some of the :Esp commands: the entries of
+    those not in {keep} go, and the groups (an all-caps heading with its tag)
+    named in {drop_groups}, whole. Links to what went become plain text."""
+    lines = text.split("\n")
+    out, gone, i = [], [], 0
+    while i < len(lines):
+        l = lines[i]
+        g = GROUP_HEAD.fullmatch(l)
+        c = CMD_HEAD.match(l)
+        if (g and g.group(1) in drop_groups) or (c and c.group(1) not in keep):
+            j = i + 1
+            while j < len(lines) and not CMD_HEAD.match(lines[j]) \
+                    and not GROUP_HEAD.fullmatch(lines[j]) and not RULE_LINE.fullmatch(lines[j]):
+                j += 1
+            if g:                       # a group takes its commands with it
+                while j < len(lines) and not GROUP_HEAD.fullmatch(lines[j]) \
+                        and not RULE_LINE.fullmatch(lines[j]):
+                    j += 1
+            gone += lines[i:j]
+            i = j
+            continue
+        out.append(l)
+        i += 1
+    text = "\n".join(out)
+    for tag in set(re.findall(r"\*([^*\s]+)\*", "\n".join(gone))):
+        text = text.replace(f"|{tag}|", tag)
+    return text
+
+
+def choose_boards(text, variant):
+    """Keep the side of each "@IF a,b@ ... [@ELSE@ ...] @ENDIF@" block that
+    applies to {variant}: the first when it is one of those named."""
+    def pick(m):
+        yes, no = m.group(2), m.group(3) or ""
+        return yes if variant in m.group(1).split(",") else no
+    return re.sub(r"@IF ([\w,]+)@\n(.*?)(?:@ELSE@\n(.*?))?@ENDIF@\n", pick, text, flags=re.S)
+
+
 def choose_alternatives(text, narrow):
     """Keep one side of each @WIDE@ ... @NARROW@ ... @END@ block. Returns the
     text, and the narrow parts (verbatim: already written to fit) replaced by
@@ -291,7 +343,7 @@ def choose_alternatives(text, narrow):
     return text, kept
 
 
-def render_help(filetypes, chip, width):
+def render_help(filetypes, chip, width, variant=None):
     """doc/help.txt from esp-vim/runtime-image/doc/help.txt.in.
 
     The device's help is an amended version of Vim's help.txt: the navigation
@@ -314,7 +366,16 @@ def render_help(filetypes, chip, width):
         lines.append(row)
     text = (HELP_TEMPLATE.read_text().replace("@FILETYPES@", "\n".join(lines))
             .replace("@CHIP@", chip))
+    text = choose_boards(text, variant)
+    if variant in HELP_PRUNE:
+        text = prune_help(text, *HELP_PRUNE[variant])
     text, kept = choose_alternatives(text, width < 78)
+    if width < helpfmt.COMPACT:
+        # The narrow alternatives are written for about 50 columns: on a
+        # smaller screen they are reflowed with the rest.
+        for n, part in enumerate(kept):
+            text = text.replace(f"@KEPT{n}@", part)
+        kept = []
     if width < 78:
         text, too_long = helpfmt.reflow(text, width)
         for n, part in enumerate(kept):
@@ -532,7 +593,7 @@ def build(variant):
             shutil.copy2(p, dst)
             ours += 1
 
-    render_help(filetypes, chip, help_width)
+    render_help(filetypes, chip, help_width, variant)
     copy_upstream_docs()
     ntags, unlinked = write_help_tags()
 

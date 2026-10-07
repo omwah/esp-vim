@@ -104,12 +104,15 @@ CONFIG_ESP_VIM_SERIAL_RX=1
 
 # Code ESP-IDF keeps in internal RAM by default, so it runs while flash is
 # being written: here the RAM is worth more. Little writes flash on this board
-# (NVS, now and then), and nothing in it needs to run meanwhile.
+# (NVS, now and then), and nothing in it needs to run meanwhile. (Logging,
+# libc and esp_timer can only leave IRAM on chips with flash auto-suspend.)
 CONFIG_HEAP_PLACE_FUNCTION_INTO_FLASH=y
 CONFIG_RINGBUF_PLACE_FUNCTIONS_INTO_FLASH=y
-# CONFIG_LOG_IN_IRAM is not set
-# CONFIG_LIBC_MISC_IN_IRAM is not set
-# CONFIG_ESP_ROM_PRINT_IN_IRAM is not set
+CONFIG_FREERTOS_PLACE_FUNCTIONS_INTO_FLASH=y
+# The keyboard's I2C and the SPI buses' DMA: interrupt handlers that can wait
+# out a flash write, like the SPI drivers' own (SPI_MASTER_ISR_IN_IRAM off).
+# CONFIG_I2C_MASTER_ISR_HANDLER_IN_IRAM is not set
+# CONFIG_GDMA_ISR_HANDLER_IN_IRAM is not set
 
 # The built-in keyboard (esp_kbd_cardputer.h): a TCA8418 on the board's bus,
 # ` as Esc, Fn for F-keys, arrows, Delete, PgUp/PgDn.

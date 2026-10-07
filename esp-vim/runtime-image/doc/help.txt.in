@@ -135,12 +135,20 @@ window at the bottom: "R" refreshes it, "q" closes it.
 		each has had free.  "vim" is this editor.
 
 :EspLog							*:EspLog*
+@IF cardputer@
+		The system's own messages -- warnings and errors from the
+		drivers -- oldest first.  While Vim runs they are kept here
+		instead of being printed over its screen on the serial
+		console: the most recent 4 KB.  At boot and between sessions
+		they print as usual, and are kept here too.
+@ELSE@
 		The system's own messages -- warnings and errors from the
 		network, the radio co-processor, Bluetooth, the drivers --
 		oldest first.  While Vim runs they are kept here instead of
 		being printed over its screen on the serial console: the most
 		recent 16 KB.  At boot and between sessions they print as
 		usual, and are kept here too.
+@ENDIF@
 :EspLog!
 		Empty the log.
 
@@ -692,6 +700,28 @@ esp_gpio_read() returns -1, with an error, for a pin it may not use.
 ==============================================================================
 FILES AND STORAGE					*esp-files*
 
+@IF cardputer@
+Everything is on the microSD card, at /sd.  The board's flash holds only the
+program, so that it can live beside other apps under a launcher.
+
+	/sd		Your files, and $HOME: Vim starts here.  FAT or
+			exFAT, readable on any computer.  See |:EspSd|.
+	/sd/vim/runtime	Vim's runtime files ($VIMRUNTIME): this help,
+			syntax files.  "pixi run sd-runtime" on a computer
+			with a copy of this project writes them to a card.
+	/sd/.vim	Your own plugins and scripts (|esp-vimrc|).
+	/sd/.tmp	Swap and temporary files.
+
+Without a card, or without the runtime on it, Vim still starts with a minimal
+setup and says why -- but nothing can be saved until a card is in.
+
+Relative names work as usual: ":w notes.txt" writes notes.txt in the current
+directory, ":cd" changes it, ":pwd" shows it, and <Tab> completes file names
+on the command line (":e no<Tab>").
+
+Memory, not storage, is what limits this board: see |esp-memory|.
+
+@ELSE@
 The device has these filesystems:
 
 	/fat		Your files.  Flash storage, kept across reboots.
@@ -723,6 +753,7 @@ features that do not work here.
 
 Flash is small (a few megabytes) and wears with writing, which is why swap,
 backup and undo files are off by default -- see |esp-settings|.
+@ENDIF@
 
 ==============================================================================
 FILE TYPES						*esp-filetypes*
@@ -735,15 +766,43 @@ A file with no matching name is still recognised from a first line such as
 "#!/bin/sh".  Other file types are deliberately not detected, which keeps
 memory use low.  Check what Vim decided with ":set filetype?".
 
+@IF cardputer@
+Here file types and syntax highlighting are off when Vim starts, to save
+memory: ":EspSyntax" turns them on for the session (|esp-memory|).
+
+To add a file type on the device, without rebuilding, put an ftdetect script
+in /sd/.vim/ftdetect/.  For example /sd/.vim/ftdetect/foo.vim: >
+	au BufNewFile,BufRead *.foo  setf foo
+<Its syntax file then goes in /sd/.vim/syntax/foo.vim.
+@ELSE@
 To add a file type on the device, without rebuilding, put an ftdetect script
 in /fat/.vim/ftdetect/.  For example /fat/.vim/ftdetect/foo.vim: >
 	au BufNewFile,BufRead *.foo  setf foo
-<Its syntax file then goes in /fat/.vim/syntax/foo.vim.  (The built-in list
-comes from esp-vim/filetypes.conf in the firmware sources.)
+<Its syntax file then goes in /fat/.vim/syntax/foo.vim.
+@ENDIF@
+(The built-in list comes from esp-vim/filetypes.conf in the firmware
+sources.)
 
 ==============================================================================
 KEYBOARD, MOUSE AND THE TERMINAL			*esp-keys*
 
+@IF cardputer@
+The Cardputer's own keyboard has no Esc key, and Vim needs one all the time:
+
+	`		Esc.  Shift-` is ~ and Fn-` is `, as printed.
+	; , . /		Up, Left, Down and Right, as printed on them.
+			Shift gives : < > ?, and Fn the characters
+			themselves -- so a search is Fn-/.
+	Fn		F1-F10 on 1..0, F11 and F12 on - and =, Delete on
+			Bksp, Page Up and Page Down on [ and ].
+	Alt		Meta.  Opt does nothing yet.
+	Mods		Ctrl, Alt, Fn and Shift work held, or tapped for
+			the next key only: Ctrl, then w, is CTRL-W.  Shift
+			tapped twice is Caps Lock, a third time ends it.
+
+A terminal on the USB serial console types into Vim as well.
+
+@ENDIF@
 Interrupt		CTRL-C stops a long command, a runaway search or a
 			loop, and returns to Normal mode.  Wait a moment
 			before typing again: Vim discards keys that were
@@ -751,12 +810,17 @@ Interrupt		CTRL-C stops a long command, a runaway search or a
 
 Backspace		Works whether your terminal sends DEL or CTRL-H.
 
+@IF cardputer@
+@ELSE@
 Keyboards		Besides the terminal, a Bluetooth keyboard can type into
 			Vim on boards with Bluetooth; see |esp-bt-keyboard|.
 			It has the keys of a US PC keyboard; F1-F12, the cursor
 			keys, Home, End, Page Up/Down, Insert and Delete send
 			what an xterm sends.
 
+@ENDIF@
+@IF cardputer@
+@ELSE@
 Mouse			Enabled, using SGR mouse reporting.  Click to move
 			the cursor, drag to select, wheel to scroll.
 
@@ -765,6 +829,12 @@ Touch			On boards with a touch screen it is the mouse: tap
 			select -- or press, hold still a moment, then move --
 			and swipe up or down to scroll.
 
+@ENDIF@
+@IF cardputer@
+Screen size		The display's: 25 columns by 8 lines.  A terminal on
+			the serial console shows the same screen.
+
+@ELSE@
 Screen size		Measured from your terminal when Vim starts.  If you
 			resize the terminal window afterwards, tell Vim: >
 				:set lines=40 columns=120
@@ -772,6 +842,7 @@ Screen size		Measured from your terminal when Vim starts.  If you
 			basic serial monitor) the size is 24 lines by 80
 			columns.
 
+@ENDIF@
 Connecting		Vim talks to a terminal over the serial console.  Use
 			a terminal program that passes keys through
 			unchanged ("raw" mode): arrow keys arriving as text
@@ -792,6 +863,43 @@ To turn it off: >
 ==============================================================================
 SETTINGS THAT DIFFER FROM DESKTOP VIM			*esp-settings*
 
+@IF cardputer@
+These are set by this board's system vimrc, $VIMRUNTIME/vimrc-lowmem:
+
+	'swapfile'	On, in /sd/.tmp, with 'maxmem' 16 and 'maxmemtot'
+			24: Vim keeps a few kilobytes of each file in
+			memory and the rest in its swap file on the card,
+			so files much bigger than memory can be edited.
+			The swap file also recovers your changes after a
+			power cut (":recover").
+	'noloadplugins'	No plugins, no defaults.vim, no file types and no
+			syntax at startup: they cost more memory than this
+			board has to spare.  ":EspSyntax" turns file types
+			and syntax highlighting on for the session.
+	'undolevels' 50  'undoreload' 0  'history' 20
+			Smaller than usual, to save memory.
+	'maxfuncdepth' 30
+			Vim's stack here is small: deep Vim script recursion
+			stops with an error before it runs out.
+	'nobackup' 'nowritebackup' 'noundofile'
+	'viminfo' empty	Nothing kept between sessions but your files.
+	'regexpengine' 1
+			The backtracking engine; it uses far less memory.
+	'encoding' utf-8
+
+							*esp-memory*
+Without PSRAM, Vim has about 150 KB of memory on this board, and uses about
+80 KB of it idle.  ":echo esp_heap().vim" shows where it stands ("used" and
+"budget"), and ":EspHeap" shows the whole device.  What doesn't fit:
+
+  - Undo is kept in memory, not in the swap file.  A change to every line of a
+    big file -- a ":%s" over thousands of lines -- has no room for its undo:
+    Vim asks before going ahead without it.
+  - Big Vim script lists and long-running scripts, and many windows at once.
+When memory runs out Vim says "E342: Out of memory" and carries on; save your
+work, and ":q" for a fresh start if it keeps happening.
+
+@ELSE@
 These are set by the system vimrc, /vimrt/vimrc:
 
 	'noswapfile'	No swap files: they would be written to flash
@@ -815,10 +923,22 @@ To keep undo history across restarts, for example: >
 	:call mkdir('/fat/.vim/undo', 'p')
 	:set undofile undodir=/fat/.vim/undo
 <Put those lines in your vimrc (|esp-vimrc|) to make them permanent.
+@ENDIF@
 
 ==============================================================================
 YOUR OWN CONFIGURATION					*esp-vimrc*
 
+@IF cardputer@
+Put your settings in /sd/.vimrc.  It runs after the device's own setup
+($VIMRUNTIME/vimrc-lowmem), which loads no plugins and no defaults.vim to save
+memory (|esp-memory|): set only what you need.  Plugins and scripts go under
+/sd/.vim/ as on any Unix -- plugin/, syntax/, ftdetect/, colors/, doc/ (run
+":helptags /sd/.vim/doc" after adding help) -- but plugin/ scripts are not
+loaded by themselves here: source the ones you want from /sd/.vimrc, for
+example: >
+	runtime plugin/foo.vim
+<
+@ELSE@
 Put your settings in /fat/.vimrc.  Note one thing Vim does everywhere, which
 is easy to miss: when a personal vimrc exists, defaults.vim is no longer
 loaded -- and it is what turns on syntax highlighting, file type plugins and
@@ -842,6 +962,7 @@ are downloaded: >
 	let g:esp_spell_dir = '/fat/.vim/spell'
 <It must be a "spell" directory in a 'runtimepath' entry, or Vim will not find
 what it downloads; '' leaves the choice to Vim's spellfile plugin.
+@ENDIF@
 
 ==============================================================================
 QUITTING						*esp-quit*
@@ -850,9 +971,16 @@ Vim is the only thing running on the device, so there is nowhere to "exit" to.
 When the last window closes -- ":q", ":qa!", ":wq", "ZZ" -- you see: >
 	All buffers closed.  Vim is forever.
 	Press any key to start a new session.
+@IF cardputer@
+<and the next key restarts the device, and Vim starts again as at power-on: no
+buffers, no variables or options left over from before.  It takes a few
+seconds.  Under a launcher, turning the device off and on goes back to the
+launcher.
+@ELSE@
 <and the next key starts Vim again, exactly as at power-on: no buffers, no
 variables or options left over from before, the current directory back where
 it starts (/sd, or /fat without a card).  This takes a moment, not a reboot.
+@ENDIF@
 Files you saved are of course still there; changes you quit without saving are
 gone, as always.
 
@@ -878,11 +1006,18 @@ Also not available:
 	CTRL-X CTRL-O		Omni-completion engines are not installed.
 				CTRL-N, CTRL-P and CTRL-X CTRL-F work.
 	{a,b} and `cmd`		Brace and backtick expansion in file names.
+@IF cardputer@
+	Network access		None in this build: no WiFi or Bluetooth, and
+				so no web interface, git, SCP or downloads.
+	Python, file manager	Left out to save memory, with most :Esp
+				commands: |esp-commands| lists those here.
+@ELSE@
 	Network access		netrw's ftp://, rsync:// and other methods that
 				run programs.  http://, https://, scp:// and
 				sftp:// work (|esp-network|, |esp-ssh|).
 	Remote directories	":e scp://host/dir/" cannot list a directory;
 				use |:EspFiles| for remote browsing.
+@ENDIF@
 
 ==============================================================================
 HELP FILES ON THIS DEVICE				*esp-docs*
@@ -903,9 +1038,13 @@ this project, with the card mounted there: >
 	pixi run sd-help /media/YOU/CARD
 <writes Vim's help files (about 10 MB, for the same Vim as this one) and their
 tags to vim/doc on the card.  Or give it any folder and copy its vim/ folder
-to the card's top level afterwards, over the web interface, scp or USB.  With
-the card in when Vim starts, ":help" finds everything there -- try ":help
-usr_toc" -- and this file stays the first page.  The card's version9.txt,
+@IF cardputer@
+to the card's top level afterwards.
+@ELSE@
+to the card's top level afterwards, over the web interface, scp or USB.
+@ENDIF@
+With the card in when Vim starts, ":help" finds everything there -- try
+":help usr_toc" -- and this file stays the first page.  The card's version9.txt,
 uganda.txt and sponsor.txt are the complete ones, used instead of those above.
 
 ==============================================================================

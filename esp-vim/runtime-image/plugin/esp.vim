@@ -9,11 +9,11 @@ if exists('g:loaded_esp') || !exists('*esp_info')
 endif
 let g:loaded_esp = 1
 
-command! -bar EspInfo  call esp#Info()
-command! -bar EspHeap  call esp#Heap()
+command! -bar EspInfo  call esp#core#Info()
+command! -bar EspHeap  call esp#core#Heap()
 command! -bar EspTasks call esp#Tasks()
-command! -bar -bang EspLog call esp#Log(<bang>0)
-command! -bar -bang EspReboot call esp#Reboot(<bang>0)
+command! -bar -bang EspLog call esp#core#Log(<bang>0)
+command! -bar -bang EspReboot call esp#core#Reboot(<bang>0)
 command! -bar -bang -nargs=* -complete=customlist,esp#SleepComplete EspSleep call esp#Sleep(<bang>0, <f-args>)
 command! -bar -nargs=* -complete=customlist,esp#PowerComplete EspPower call esp#Power(<f-args>)
 if esp_power().battery
@@ -22,7 +22,7 @@ endif
 command! -bar -nargs=+ -complete=customlist,esp#GpioComplete EspGpio call esp#Gpio(<f-args>)
 command! -bar -bang -nargs=* -complete=customlist,esp#NvsComplete EspNvs call esp#Nvs(<bang>0, <f-args>)
 command! -bar -nargs=* -complete=dir EspFiles call espfiles#Open(<f-args>)
-command! -bar -nargs=? -complete=customlist,esp#SdComplete EspSd call esp#Sd(<f-args>)
+command! -bar -nargs=? -complete=customlist,esp#core#SdComplete EspSd call esp#core#Sd(<f-args>)
 command! -bar EspNet call esp#Net()
 command! -bar -bang -nargs=* -complete=customlist,esp#C6Complete EspC6 call esp#C6(<bang>0, <f-args>)
 command! -bar -nargs=* -complete=customlist,esp#TimeComplete EspTime call esp#Time(<f-args>)
@@ -75,7 +75,7 @@ command! -bar EspWifiDisconnect call esp_wifi_disconnect() | echo 'WiFi disconne
 command! -bar EspWifiForget call esp_wifi_forget() | echo 'WiFi network and password forgotten'
 command! -bar EspWifiStatus call esp#Net()
 command! -bar -nargs=? EspBleScan call esp#BleScan(<f-args>)
-command! -bar -nargs=? -complete=customlist,esp#ConsoleComplete EspConsole call esp#Console(<f-args>)
-command! -bar -nargs=? -complete=customlist,esp#FontComplete EspFont call esp#Font(<f-args>)
-command! -bar -nargs=? -complete=customlist,esp#ConsoleComplete EspFlip call esp#Flip(<f-args>)
+command! -bar -nargs=? -complete=customlist,esp#core#ConsoleComplete EspConsole call esp#core#Console(<f-args>)
+command! -bar -nargs=? -complete=customlist,esp#core#FontComplete EspFont call esp#core#Font(<f-args>)
+command! -bar -nargs=? -complete=customlist,esp#core#ConsoleComplete EspFlip call esp#core#Flip(<f-args>)
 command! -nargs=* -complete=customlist,esp#BtKeyboardComplete EspBtKeyboard call esp#BtKeyboard(<f-args>)

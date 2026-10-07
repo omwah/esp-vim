@@ -326,6 +326,11 @@ static void on_sync(struct timeval *tv)
     xTimerPendFunctionCall(rtc_write_now, NULL, 0, 0);
 }
 
+#if CONFIG_ESP_VIM_NET_NONE
+/* No network, no NTP -- and nothing to pull lwIP into the build. */
+static void sntp_start(void) {}
+static void sntp_stop(void) {}
+#else
 static void sntp_start(void)
 {
     if (s_sntp_running)
@@ -343,6 +348,7 @@ static void sntp_stop(void)
     esp_netif_sntp_deinit();
     s_sntp_running = false;
 }
+#endif
 
 /* ---------------------------------------------------------------- API -- */
 
@@ -440,6 +446,10 @@ int esp_time_set_ntp(bool on, const char *server, char *err, size_t errlen)
 
 int esp_time_sync(int timeout_s, char *err, size_t errlen)
 {
+#if CONFIG_ESP_VIM_NET_NONE
+    (void)timeout_s;
+    return snprintf(err, errlen, "no network in this build"), -1;
+#endif
     xSemaphoreTake(s_lock, portMAX_DELAY);
     bool was = s_sntp_running;
     if (was)

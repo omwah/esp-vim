@@ -280,6 +280,10 @@
 #include "sdkconfig.h"
 #if !CONFIG_SPIRAM
 # define OUT_SIZE 1023
+/* The first syntax item in a buffer allocates a stack of at least this many
+ * states, 168 bytes each: 25 KB at Vim's 150, more than :EspHeap's view
+ * window had. (The same patch.) */
+# define SST_MIN_ENTRIES 30
 #endif
 
 #endif /* ESP_VIM_CONFIG_H */

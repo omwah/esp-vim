@@ -17,11 +17,16 @@ It knows the constructs esp-vim's help.txt uses:
     are, re-indented; a trailing tab-separated comment moves to its own line.
 Anything that still can't fit (a long URL, a long command in an example) is left
 long rather than broken, and reported.
+
+Below COMPACT columns (the Cardputer's 25) every column counts: indents become
+2 columns a level (at most two levels) instead of a quarter of the original,
+and what goes under a term or a heading is 2 columns in rather than 4.
 """
 
 import re
 
 TS = 8
+COMPACT = 40
 RULE = re.compile(r"[=-]{10,}")
 TAGS = r"(?:\*[^*\s]+\*)(?:\s+\*[^*\s]+\*)*"
 TAG_LINE = re.compile(rf"\s*({TAGS})\s*")
@@ -37,7 +42,9 @@ def indent(s):
     return width(s) - width(s.lstrip())
 
 
-def narrow_indent(col):
+def narrow_indent(col, w=78):
+    if w < COMPACT:
+        return 2 * min(col // 16, 2)    # 0 / 2 / 4: one or two tabs of nesting
     return col // 4
 
 
@@ -58,7 +65,8 @@ def words_of(lines):
                 if last and gap_after is not None:
                     gap = 2
                 elif last:                      # end of the source line
-                    gap = 2 if re.search(r"[.!?][)\"']?$", word) else 1
+                    gap = 2 if re.search(r"[.!?][)\"']?$", word) \
+                        and not re.search(r"\b(e\.g|i\.e|etc|vs)\.$", word) else 1
                 else:
                     gap = 1
                 out.append((word, gap))
@@ -88,6 +96,10 @@ class Reflow:
         self.w = w
         self.out = []
         self.long = []
+        self.step = 2 if w < COMPACT else 4     # what goes under a term or heading
+
+    def ni(self, col):
+        return narrow_indent(col, self.w)
 
     def emit(self, line):
         if width(line) > self.w:
@@ -100,7 +112,7 @@ class Reflow:
             self.emit(left + " " * (self.w - width(left) - len(tags)) + tags)
         else:
             self.emit(" " * max(0, self.w - len(tags)) + tags)
-            for l in wrap(words_of([left]), "", "    ", self.w):
+            for l in wrap(words_of([left]), "", " " * self.step, self.w):
                 self.emit(l)
 
     def example(self, lines, base):
@@ -110,12 +122,13 @@ class Reflow:
             if not l.strip():
                 self.emit("")
                 continue
-            ind = max(base + 2, narrow_indent(indent(l)))
+            ind = max(base + 2, self.ni(indent(l)))
             code, _, comment = l.strip().partition("\t")
             comment = comment.strip()
             if comment and width(" " * ind + l.strip()) > self.w:
                 self.emit(" " * ind + code)
-                for c in wrap(words_of([comment]), " " * (ind + 4), " " * (ind + 4), self.w):
+                c_ind = " " * (ind + self.step)
+                for c in wrap(words_of([comment]), c_ind, c_ind, self.w):
                     self.emit(c)
             else:
                 self.emit(" " * ind + (code + "  " + comment if comment else code))
@@ -136,7 +149,8 @@ class Reflow:
                 i += 1
             elif i == 0 and l.startswith("*"):         # "*help.txt*<Tab>For Vim ..."
                 tag, _, rest = l.partition("\t")
-                for x in wrap(words_of([rest]), tag + "\t", "\t", self.w):
+                sep = " " if self.w < COMPACT else "\t"
+                for x in wrap(words_of([rest]), tag + sep, sep if sep == "\t" else "", self.w):
                     self.emit(x)
                 i += 1
             elif TAG_LINE.fullmatch(l):
@@ -215,14 +229,40 @@ class Reflow:
             items.pop()
         return t, items, i
 
+    @staticmethod
+    def split_pairs(items):
+        """Rows with two pairs ("a<Tab>stage it<Tab><Tab>u<Tab>unstage it"):
+        one item per pair, for a screen with room for one."""
+        out = []
+        for it in items:
+            if it is None or len(it[1]) != 1 or "\t" not in it[1][0] or it[2] or it[3]:
+                out.append(it)
+                continue
+            parts = [p for p in re.split(r"\t+", it[1][0]) if p]
+            out.append((it[0], [parts[0]], [], []))
+            for k in range(1, len(parts) - 1, 2):
+                out.append((parts[k], [parts[k + 1]], [], []))
+            if len(parts) % 2 == 0:             # an odd one out: keep it as text
+                out[-1][1].append(parts[-1])
+        return out
+
     def table(self, lines, i):
         t, items, i = self.items(lines, i)
-        T = narrow_indent(t)
+        if self.w < COMPACT:
+            items = self.split_pairs(items)
+        T = self.ni(t)
         terms = [it[0] for it in items if it]
         widest = max(len(x) for x in terms)
-        # Columns if the descriptions keep at least 24 columns.
+        # Columns if the descriptions keep at least 24 columns -- or on a
+        # compact screen 14, and only when each fits in two lines: short keys
+        # beside short meanings beat a line each, but long text squeezed into
+        # a narrow column wastes the space beside it.
         D = T + widest + 2
-        columns = D <= self.w - 24
+        if self.w < COMPACT:
+            longest = max((len(" ".join(it[1])) for it in items if it), default=0)
+            columns = D <= self.w - 14 and longest <= 2 * (self.w - D)
+        else:
+            columns = D <= self.w - 24
         for it in items:
             if it is None:
                 self.out.append("")
@@ -235,8 +275,8 @@ class Reflow:
             else:
                 for x in wrap(words_of([term]), " " * T, " " * (T + 2), self.w):
                     self.emit(x)        # a term too long for a line, at its spaces
-                first = " " * (T + 4)
-                dind = T + 4
+                first = " " * (T + self.step)
+                dind = T + self.step
             if words:
                 for x in wrap(words, first, " " * dind, self.w):
                     self.emit(x)
@@ -268,7 +308,7 @@ class Reflow:
                     and not para[-1].endswith(">"):
                 para.append(lines[i].strip())
                 i += 1
-        T = narrow_indent(t)
+        T = self.ni(t)
         words = words_of(para)
         first = prefix + " " * max(0, T - len(prefix))
         for x in wrap(words, first, " " * T, self.w):

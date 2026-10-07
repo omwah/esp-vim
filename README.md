@@ -154,7 +154,7 @@ and works differently:
   `pixi run sd-runtime /media/YOU/CARD` writes (or, with the card in the Cardputer and
   Launcher's WebUI running, `python scripts/launcher-install.py IP --sd-runtime`). Without
   it Vim still starts, with a minimal setup, and says why.
-- **Memory:** Vim has about 110 KB; idle it uses about 80 KB. Files bigger than that are
+- **Memory:** Vim has about 150 KB; idle it uses about 80 KB. Files bigger than that are
   fine -- Vim keeps only part of a file in memory and pages the rest to its swap file on
   the card -- but **undo** is held in memory: a change to every line of a big file (a
   `:%s` over 2,000 lines) can't be undone, and Vim asks before going ahead without it.

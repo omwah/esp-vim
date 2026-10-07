@@ -39,6 +39,9 @@ set regexpengine=1
 " pages the rest to its swap file -- on the SD card, which also makes it
 " recoverable after a power cut. Without a card there is nowhere to page to.
 if exists('*esp_sd') && esp_sd().mounted
+  " The card's vim folder, as on the other boards: the full help, if
+  " "pixi run sd-help" put it there.
+  set runtimepath+=/sd/vim
   silent! call mkdir($HOME . '/.tmp', 'p')
   let &directory = $HOME . '/.tmp//'
   set swapfile maxmem=16 maxmemtot=24 updatecount=100
@@ -57,13 +60,14 @@ set background=dark
 highlight Visual cterm=NONE ctermfg=NONE ctermbg=24
 
 " A few :Esp* commands; the rest of plugin/esp.vim would cost more than they
-" are worth here. The autoload scripts load only when one is used.
+" are worth here. They load autoload/esp/core.vim, and only when one is used:
+" all of autoload/esp.vim doesn't fit.
 let g:loaded_esp = 1
-command! -bar EspInfo call esp#Info()
-command! -bar EspHeap call esp#Heap()
-command! -bar -bang EspLog call esp#Log(<bang>0)
-command! -bar -bang EspReboot call esp#Reboot(<bang>0)
-command! -bar -nargs=? EspSd call esp#Sd(<f-args>)
-command! -bar -nargs=? EspFont call esp#Font(<f-args>)
-command! -bar -nargs=? EspConsole call esp#Console(<f-args>)
+command! -bar EspInfo call esp#core#Info()
+command! -bar EspHeap call esp#core#Heap()
+command! -bar -bang EspLog call esp#core#Log(<bang>0)
+command! -bar -bang EspReboot call esp#core#Reboot(<bang>0)
+command! -bar -nargs=? EspSd call esp#core#Sd(<f-args>)
+command! -bar -nargs=? EspFont call esp#core#Font(<f-args>)
+command! -bar -nargs=? EspConsole call esp#core#Console(<f-args>)
 command! -bar EspSyntax filetype plugin indent on | syntax on | doautoall filetypedetect BufRead

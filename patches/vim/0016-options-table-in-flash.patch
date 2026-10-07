@@ -1,0 +1,1136 @@
+--- a/src/option.c	2026-10-06 18:55:32.255060580 -0700
++++ b/src/option.c	2026-10-06 18:55:14.714008272 -0700
+@@ -48,7 +48,7 @@
+ #if defined(FEAT_EVAL)
+ static long_u *insecure_flag(win_T *wp, int opt_idx, int opt_flags);
+ #else
+-# define insecure_flag(wp, opt_idx, opt_flags) (&options[opt_idx].flags)
++# define insecure_flag(wp, opt_idx, opt_flags) (&optdyn[opt_idx].flags)
+ #endif
+ static char *set_bool_option(int opt_idx, char_u *varp, int value, int opt_flags);
+ static char *set_num_option(int opt_idx, char_u *varp, long value, char *errbuf, size_t errbuflen, int opt_flags);
+@@ -193,7 +193,7 @@
+ 
+ 		itemlen = vim_snprintf((char *)item, itemsize, "%s%s*", p, (has_trailing_path_sep) ? "" : PATHSEPSTR);
+ 
+-		if (find_dup_item(ga.ga_data, item, itemlen, options[opt_idx].flags) == NULL
++		if (find_dup_item(ga.ga_data, item, itemlen, optdyn[opt_idx].flags) == NULL
+ 			&& ga_grow(&ga, (int)(itemseplen + itemlen + 1)) == OK)
+ 		{
+ 		    ga.ga_len += vim_snprintf((char *)ga.ga_data + ga.ga_len,
+@@ -228,7 +228,7 @@
+ 	return;
+ 
+ #if !defined(HAVE_AVAIL_MEM) && !defined(HAVE_TOTAL_MEM)
+-    if (options[opt_idx].def_val[VI_DEFAULT] == (char_u *)0L)
++    if (optdyn[opt_idx].def_val[VI_DEFAULT] == (char_u *)0L)
+ #endif
+     {
+ #if defined(HAVE_AVAIL_MEM)
+@@ -240,15 +240,15 @@
+ #else
+ 	n = (0x7fffffff >> 11);
+ #endif
+-	options[opt_idx].def_val[VI_DEFAULT] = (char_u *)n;
++	optdyn[opt_idx].def_val[VI_DEFAULT] = (char_u *)n;
+ 	opt_idx = findoption((char_u *)"maxmem");
+ 	if (opt_idx >= 0)
+ 	{
+ #if !defined(HAVE_AVAIL_MEM) && !defined(HAVE_TOTAL_MEM)
+-	    if ((long)(long_i)options[opt_idx].def_val[VI_DEFAULT] > (long)n
+-		    || (long)(long_i)options[opt_idx].def_val[VI_DEFAULT] == 0L)
++	    if ((long)(long_i)optdyn[opt_idx].def_val[VI_DEFAULT] > (long)n
++		    || (long)(long_i)optdyn[opt_idx].def_val[VI_DEFAULT] == 0L)
+ #endif
+-		options[opt_idx].def_val[VI_DEFAULT] = (char_u *)n;
++		optdyn[opt_idx].def_val[VI_DEFAULT] = (char_u *)n;
+ 	}
+     }
+ }
+@@ -290,8 +290,8 @@
+ 	opt_idx = findoption((char_u *)"cdpath");
+ 	if (opt_idx >= 0)
+ 	{
+-	    options[opt_idx].def_val[VI_DEFAULT] = buf;
+-	    options[opt_idx].flags |= P_DEF_ALLOCED;
++	    optdyn[opt_idx].def_val[VI_DEFAULT] = buf;
++	    optdyn[opt_idx].flags |= P_DEF_ALLOCED;
+ 	}
+ 	else
+ 	    vim_free(buf); // cannot happen
+@@ -375,13 +375,13 @@
+     opt_idx = findoption((char_u *)"runtimepath");
+     if (opt_idx >= 0)
+     {
+-	options[opt_idx].def_val[VI_DEFAULT] = (char_u *)CLEAN_RUNTIMEPATH;
++	optdyn[opt_idx].def_val[VI_DEFAULT] = (char_u *)CLEAN_RUNTIMEPATH;
+ 	p_rtp = (char_u *)CLEAN_RUNTIMEPATH;
+     }
+     opt_idx = findoption((char_u *)"packpath");
+     if (opt_idx < 0)
+ 	return;
+-    options[opt_idx].def_val[VI_DEFAULT] = (char_u *)CLEAN_RUNTIMEPATH;
++    optdyn[opt_idx].def_val[VI_DEFAULT] = (char_u *)CLEAN_RUNTIMEPATH;
+     p_pp = (char_u *)CLEAN_RUNTIMEPATH;
+ }
+ #endif
+@@ -431,20 +431,20 @@
+     if ((opt_idx = findoption((char_u *)"runtimepath")) < 0)
+ 	goto theend;
+ 
+-    options[opt_idx].def_val[VI_DEFAULT] = xdg_rtp;
++    optdyn[opt_idx].def_val[VI_DEFAULT] = xdg_rtp;
+     p_rtp = xdg_rtp;
+ 
+     if ((opt_idx = findoption((char_u *)"packpath")) < 0)
+ 	goto theend;
+ 
+-    options[opt_idx].def_val[VI_DEFAULT] = xdg_rtp;
++    optdyn[opt_idx].def_val[VI_DEFAULT] = xdg_rtp;
+     p_pp = xdg_rtp;
+ 
+ # if defined(XDG_VDIR) && defined(FEAT_SESSION)
+     if ((opt_idx = findoption((char_u *)"viewdir")) < 0)
+ 	goto theend;
+ 
+-    options[opt_idx].def_val[VI_DEFAULT] = (char_u *)XDG_VDIR;
++    optdyn[opt_idx].def_val[VI_DEFAULT] = (char_u *)XDG_VDIR;
+     p_vdir = (char_u *)XDG_VDIR;
+ # endif
+ 
+@@ -474,7 +474,7 @@
+ 
+     for (opt_idx = 0; !istermoption_idx(opt_idx); opt_idx++)
+     {
+-	if ((options[opt_idx].flags & P_GETTEXT)
++	if ((optdyn[opt_idx].flags & P_GETTEXT)
+ 		&& options[opt_idx].var != NULL)
+ 	    p = (char_u *)_(*(char **)options[opt_idx].var);
+ 	else
+@@ -486,10 +486,10 @@
+ 	    // Defaults for all expanded options are currently the same for Vi
+ 	    // and Vim.  When this changes, add some code here!  Also need to
+ 	    // split P_DEF_ALLOCED in two.
+-	    if (options[opt_idx].flags & P_DEF_ALLOCED)
+-		vim_free(options[opt_idx].def_val[VI_DEFAULT]);
+-	    options[opt_idx].def_val[VI_DEFAULT] = p;
+-	    options[opt_idx].flags |= P_DEF_ALLOCED;
++	    if (optdyn[opt_idx].flags & P_DEF_ALLOCED)
++		vim_free(optdyn[opt_idx].def_val[VI_DEFAULT]);
++	    optdyn[opt_idx].def_val[VI_DEFAULT] = p;
++	    optdyn[opt_idx].flags |= P_DEF_ALLOCED;
+ 	}
+     }
+ }
+@@ -626,8 +626,8 @@
+ 	opt_idx = findoption((char_u *)"encoding");
+ 	if (opt_idx >= 0)
+ 	{
+-	    options[opt_idx].def_val[VI_DEFAULT] = p_enc;
+-	    options[opt_idx].flags |= P_DEF_ALLOCED;
++	    optdyn[opt_idx].def_val[VI_DEFAULT] = p_enc;
++	    optdyn[opt_idx].flags |= P_DEF_ALLOCED;
+ 	}
+ 
+ #if defined(MSWIN) || defined(MACOS_X) || defined(VMS)
+@@ -642,10 +642,10 @@
+ 		    ISK_LATIN1, OPT_FREE, SID_NONE);
+ 	    opt_idx = findoption((char_u *)"isp");
+ 	    if (opt_idx >= 0)
+-		options[opt_idx].def_val[VIM_DEFAULT] = ISP_LATIN1;
++		optdyn[opt_idx].def_val[VIM_DEFAULT] = ISP_LATIN1;
+ 	    opt_idx = findoption((char_u *)"isk");
+ 	    if (opt_idx >= 0)
+-		options[opt_idx].def_val[VIM_DEFAULT] = ISK_LATIN1;
++		optdyn[opt_idx].def_val[VIM_DEFAULT] = ISK_LATIN1;
+ 	    (void)init_chartab();
+ 	}
+ #endif
+@@ -674,8 +674,8 @@
+ 		opt_idx = findoption((char_u *)"termencoding");
+ 		if (opt_idx >= 0)
+ 		{
+-		    options[opt_idx].def_val[VI_DEFAULT] = p_tenc;
+-		    options[opt_idx].flags |= P_DEF_ALLOCED;
++		    optdyn[opt_idx].def_val[VI_DEFAULT] = p_tenc;
++		    optdyn[opt_idx].flags |= P_DEF_ALLOCED;
+ 		}
+ 		convert_setup(&input_conv, p_tenc, p_enc);
+ 		convert_setup(&output_conv, p_enc, p_tenc);
+@@ -705,6 +705,17 @@
+     void
+ set_init_1(int clean_arg)
+ {
++    // The options' changing fields, from the table (optiondefs.h, optdyn[]).
++    for (int i = 0; i < (int)(sizeof(options) / sizeof(options[0])); ++i)
++    {
++	optdyn[i].flags = options[i].flags;
++	optdyn[i].def_val[0] = options[i].def_val[0];
++	optdyn[i].def_val[1] = options[i].def_val[1];
++#ifdef FEAT_EVAL
++	optdyn[i].script_ctx = options[i].script_ctx;
++#endif
++    }
++
+ #ifdef FEAT_LANGMAP
+     langmap_init();
+ #endif
+@@ -826,7 +837,7 @@
+     int		both = (opt_flags & (OPT_LOCAL | OPT_GLOBAL)) == 0;
+ 
+     varp = get_varp_scope(&(options[opt_idx]), both ? OPT_LOCAL : opt_flags);
+-    flags = options[opt_idx].flags;
++    flags = optdyn[opt_idx].flags;
+     if (varp != NULL)	    // skip hidden option, nothing to do for it
+     {
+ 	dvi = ((flags & P_VI_DEF) || compatible) ? VI_DEFAULT : VIM_DEFAULT;
+@@ -839,13 +850,13 @@
+ 	    // freeing and allocating the value.
+ 	    else if (options[opt_idx].indir != PV_NONE)
+ 		set_string_option_direct(NULL, opt_idx,
+-				 options[opt_idx].def_val[dvi], opt_flags, 0);
++				 optdyn[opt_idx].def_val[dvi], opt_flags, 0);
+ 	    else
+ 	    {
+ 		if ((opt_flags & OPT_FREE) && (flags & P_ALLOCED))
+ 		    free_string_option(*(char_u **)(varp));
+-		*(char_u **)varp = options[opt_idx].def_val[dvi];
+-		options[opt_idx].flags &= ~P_ALLOCED;
++		*(char_u **)varp = optdyn[opt_idx].def_val[dvi];
++		optdyn[opt_idx].flags &= ~P_ALLOCED;
+ 	    }
+ 	}
+ 	else if (flags & P_NUM)
+@@ -854,7 +865,7 @@
+ 		win_comp_scroll(curwin);
+ 	    else
+ 	    {
+-		long def_val = (long)(long_i)options[opt_idx].def_val[dvi];
++		long def_val = (long)(long_i)optdyn[opt_idx].def_val[dvi];
+ 
+ 		if ((long *)varp == &curwin->w_p_so
+ 			|| (long *)varp == &curwin->w_p_siso
+@@ -874,7 +885,7 @@
+ 	{
+ 	    // the cast to long is required for Manx C, long_i is needed for
+ 	    // MSVC
+-	    *(int *)varp = (int)(long)(long_i)options[opt_idx].def_val[dvi];
++	    *(int *)varp = (int)(long)(long_i)optdyn[opt_idx].def_val[dvi];
+ #ifdef UNIX
+ 	    // 'modeline' defaults to off for root
+ 	    if (options[opt_idx].indir == PV_ML && getuid() == ROOT_UID)
+@@ -914,7 +925,7 @@
+     tabpage_T	*tp;
+ 
+     for (i = 0; !istermoption_idx(i); i++)
+-	if (!(options[i].flags & P_NODEFAULT)
++	if (!(optdyn[i].flags & P_NODEFAULT)
+ 		&& (opt_flags == 0
+ 		    || (options[i].var != (char_u *)&p_enc
+ #if defined(FEAT_CRYPT)
+@@ -955,10 +966,10 @@
+ 	return;
+     }
+ 
+-    if (options[opt_idx].flags & P_DEF_ALLOCED)
+-	vim_free(options[opt_idx].def_val[VI_DEFAULT]);
+-    options[opt_idx].def_val[VI_DEFAULT] = p;
+-    options[opt_idx].flags |= P_DEF_ALLOCED;
++    if (optdyn[opt_idx].flags & P_DEF_ALLOCED)
++	vim_free(optdyn[opt_idx].def_val[VI_DEFAULT]);
++    optdyn[opt_idx].def_val[VI_DEFAULT] = p;
++    optdyn[opt_idx].flags |= P_DEF_ALLOCED;
+ }
+ 
+     void
+@@ -1016,7 +1027,7 @@
+ 
+     opt_idx = findoption((char_u *)name);
+     if (opt_idx >= 0)
+-	options[opt_idx].def_val[VI_DEFAULT] = (char_u *)(long_i)val;
++	optdyn[opt_idx].def_val[VI_DEFAULT] = (char_u *)(long_i)val;
+ }
+ 
+ #if defined(FEAT_PROP_POPUP)
+@@ -1042,7 +1053,7 @@
+ 
+ 	if (p->indir != PV_NONE
+ 		&& (do_buffer || (p->indir & PV_BUF) == 0)
+-		&& !(options[i].flags & P_NODEFAULT)
++		&& !(optdyn[i].flags & P_NODEFAULT)
+ 		&& !optval_default(p, varp, FALSE))
+ 	    set_option_default(i, OPT_FREE|OPT_LOCAL, FALSE);
+     }
+@@ -1067,13 +1078,13 @@
+ 	if (options[i].indir == PV_NONE)
+ 	{
+ 	    // global option: free value and default value.
+-	    if ((options[i].flags & P_ALLOCED) && options[i].var != NULL)
++	    if ((optdyn[i].flags & P_ALLOCED) && options[i].var != NULL)
+ 		free_string_option(*(char_u **)options[i].var);
+-	    if (options[i].flags & P_DEF_ALLOCED)
+-		free_string_option(options[i].def_val[VI_DEFAULT]);
++	    if (optdyn[i].flags & P_DEF_ALLOCED)
++		free_string_option(optdyn[i].def_val[VI_DEFAULT]);
+ 	}
+ 	else if (options[i].var != VAR_WIN
+-		&& (options[i].flags & P_STRING))
++		&& (optdyn[i].flags & P_STRING))
+ 	    // buffer-local option: free global value
+ 	    clear_string_option((char_u **)options[i].var);
+     }
+@@ -1098,7 +1109,7 @@
+     // 'scroll' defaults to half the window height. The stored default is zero,
+     // which results in the actual value computed from the window height.
+     idx = findoption((char_u *)"scroll");
+-    if (idx >= 0 && !(options[idx].flags & P_WAS_SET))
++    if (idx >= 0 && !(optdyn[idx].flags & P_WAS_SET))
+ 	set_option_default(idx, OPT_LOCAL, p_cp);
+     comp_col();
+ 
+@@ -1114,13 +1125,13 @@
+     // depending on the terminal name.  Only need to check for terminals
+     // with a dark background, that can handle color.
+     idx = findoption((char_u *)"bg");
+-    if (idx >= 0 && !(options[idx].flags & P_WAS_SET)
++    if (idx >= 0 && !(optdyn[idx].flags & P_WAS_SET)
+ 						 && *term_bg_default() == 'd')
+     {
+ 	set_string_option_direct(NULL, idx, (char_u *)"dark", OPT_FREE, 0);
+ 	// don't mark it as set, when starting the GUI it may be
+ 	// changed again
+-	options[idx].flags &= ~P_WAS_SET;
++	optdyn[idx].flags &= ~P_WAS_SET;
+     }
+ #endif
+ 
+@@ -1159,13 +1170,13 @@
+     if (idx_srr < 0)
+ 	do_srr = FALSE;
+     else
+-	do_srr = !(options[idx_srr].flags & P_WAS_SET);
++	do_srr = !(optdyn[idx_srr].flags & P_WAS_SET);
+ # ifdef FEAT_QUICKFIX
+     idx_sp = findoption((char_u *)"sp");
+     if (idx_sp < 0)
+ 	do_sp = FALSE;
+     else
+-	do_sp = !(options[idx_sp].flags & P_WAS_SET);
++	do_sp = !(optdyn[idx_sp].flags & P_WAS_SET);
+ # endif
+     p = get_isolated_shell_name();
+     if (p != NULL)
+@@ -1188,13 +1199,13 @@
+ #  else
+ 		p_sp = (char_u *)"|& tee";
+ #  endif
+-		options[idx_sp].def_val[VI_DEFAULT] = p_sp;
++		optdyn[idx_sp].def_val[VI_DEFAULT] = p_sp;
+ 	    }
+ # endif
+ 	    if (do_srr)
+ 	    {
+ 		p_srr = (char_u *)">&";
+-		options[idx_srr].def_val[VI_DEFAULT] = p_srr;
++		optdyn[idx_srr].def_val[VI_DEFAULT] = p_srr;
+ 	    }
+ 	}
+ # ifdef MSWIN
+@@ -1208,13 +1219,13 @@
+ 		if (do_sp)
+ 		{
+ 		    p_sp = (char_u *)"2>&1 | Out-File -Encoding default";
+-		    options[idx_sp].def_val[VI_DEFAULT] = p_sp;
++		    optdyn[idx_sp].def_val[VI_DEFAULT] = p_sp;
+ 		}
+ #  endif
+ 		if (do_srr)
+ 		{
+ 		    p_srr = (char_u *)"2>&1 | Out-File -Encoding default";
+-		    options[idx_srr].def_val[VI_DEFAULT] = p_srr;
++		    optdyn[idx_srr].def_val[VI_DEFAULT] = p_srr;
+ 		}
+ 	}
+ # endif
+@@ -1257,13 +1268,13 @@
+ 		    else
+ 			p_sp = (char_u *)"2>&1| tee";
+ #  endif
+-		    options[idx_sp].def_val[VI_DEFAULT] = p_sp;
++		    optdyn[idx_sp].def_val[VI_DEFAULT] = p_sp;
+ 		}
+ # endif
+ 		if (do_srr)
+ 		{
+ 		    p_srr = (char_u *)">%s 2>&1";
+-		    options[idx_srr].def_val[VI_DEFAULT] = p_srr;
++		    optdyn[idx_srr].def_val[VI_DEFAULT] = p_srr;
+ 		}
+ 	    }
+ 	vim_free(p);
+@@ -1291,17 +1302,17 @@
+ 	int	idx_opt;
+ 
+ 	idx_opt = findoption((char_u *)"shcf");
+-	if (idx_opt >= 0 && !(options[idx_opt].flags & P_WAS_SET))
++	if (idx_opt >= 0 && !(optdyn[idx_opt].flags & P_WAS_SET))
+ 	{
+ 	    p_shcf = (char_u*)"-Command";
+-	    options[idx_opt].def_val[VI_DEFAULT] = p_shcf;
++	    optdyn[idx_opt].def_val[VI_DEFAULT] = p_shcf;
+ 	}
+ 
+ 	idx_opt = findoption((char_u *)"sxq");
+-	if (idx_opt >= 0 && !(options[idx_opt].flags & P_WAS_SET))
++	if (idx_opt >= 0 && !(optdyn[idx_opt].flags & P_WAS_SET))
+ 	{
+ 	    p_sxq = (char_u*)"\"";
+-	    options[idx_opt].def_val[VI_DEFAULT] = p_sxq;
++	    optdyn[idx_opt].def_val[VI_DEFAULT] = p_sxq;
+ 	}
+     }
+     else if (strstr((char *)gettail(p_sh), "sh") != NULL)
+@@ -1309,18 +1320,18 @@
+ 	int	idx3;
+ 
+ 	idx3 = findoption((char_u *)"shcf");
+-	if (idx3 >= 0 && !(options[idx3].flags & P_WAS_SET))
++	if (idx3 >= 0 && !(optdyn[idx3].flags & P_WAS_SET))
+ 	{
+ 	    p_shcf = (char_u *)"-c";
+-	    options[idx3].def_val[VI_DEFAULT] = p_shcf;
++	    optdyn[idx3].def_val[VI_DEFAULT] = p_shcf;
+ 	}
+ 
+ 	// Somehow Win32 requires the quotes around the redirection too
+ 	idx3 = findoption((char_u *)"sxq");
+-	if (idx3 >= 0 && !(options[idx3].flags & P_WAS_SET))
++	if (idx3 >= 0 && !(optdyn[idx3].flags & P_WAS_SET))
+ 	{
+ 	    p_sxq = (char_u *)"\"";
+-	    options[idx3].def_val[VI_DEFAULT] = p_sxq;
++	    optdyn[idx3].def_val[VI_DEFAULT] = p_sxq;
+ 	}
+     }
+     else if (strstr((char *)gettail(p_sh), "cmd.exe") != NULL)
+@@ -1341,17 +1352,17 @@
+ 	 * '"path with spaces/cmd" "a&b"'.
+ 	 */
+ 	idx3 = findoption((char_u *)"sxq");
+-	if (idx3 >= 0 && !(options[idx3].flags & P_WAS_SET))
++	if (idx3 >= 0 && !(optdyn[idx3].flags & P_WAS_SET))
+ 	{
+ 	    p_sxq = (char_u *)"(";
+-	    options[idx3].def_val[VI_DEFAULT] = p_sxq;
++	    optdyn[idx3].def_val[VI_DEFAULT] = p_sxq;
+ 	}
+ 
+ 	idx3 = findoption((char_u *)"shcf");
+-	if (idx3 >= 0 && !(options[idx3].flags & P_WAS_SET))
++	if (idx3 >= 0 && !(optdyn[idx3].flags & P_WAS_SET))
+ 	{
+ 	    p_shcf = (char_u *)"/c";
+-	    options[idx3].def_val[VI_DEFAULT] = p_shcf;
++	    optdyn[idx3].def_val[VI_DEFAULT] = p_shcf;
+ 	}
+     }
+ #endif
+@@ -1361,7 +1372,7 @@
+ 	int idx_ffs = findoption((char_u *)"ffs");
+ 
+ 	// Apply the first entry of 'fileformats' to the initial buffer.
+-	if (idx_ffs >= 0 && (options[idx_ffs].flags & P_WAS_SET))
++	if (idx_ffs >= 0 && (optdyn[idx_ffs].flags & P_WAS_SET))
+ 	    set_fileformat(default_fileformat(), OPT_LOCAL);
+     }
+ 
+@@ -1387,10 +1398,10 @@
+ 	return;
+ 
+     idx = findoption((char_u *)"hlg");
+-    if (idx < 0 || (options[idx].flags & P_WAS_SET))
++    if (idx < 0 || (optdyn[idx].flags & P_WAS_SET))
+ 	return;
+ 
+-    if (options[idx].flags & P_ALLOCED)
++    if (optdyn[idx].flags & P_ALLOCED)
+ 	free_string_option(p_hlg);
+     p_hlg = vim_strnsave(lang, langlen);
+     if (p_hlg == NULL)
+@@ -1411,7 +1422,7 @@
+ 	}
+ 	p_hlg[2] = NUL;
+     }
+-    options[idx].flags |= P_ALLOCED;
++    optdyn[idx].flags |= P_ALLOCED;
+ }
+ #endif
+ 
+@@ -1432,7 +1443,7 @@
+     // icon name.  Saves a bit of time, because the X11 display server does
+     // not need to be contacted.
+     idx1 = findoption((char_u *)"title");
+-    if (idx1 >= 0 && !(options[idx1].flags & P_WAS_SET))
++    if (idx1 >= 0 && !(optdyn[idx1].flags & P_WAS_SET))
+     {
+ #ifdef FEAT_GUI
+ 	if (gui.starting || gui.in_use)
+@@ -1440,11 +1451,11 @@
+ 	else
+ #endif
+ 	    val = mch_can_restore_title();
+-	options[idx1].def_val[VI_DEFAULT] = (char_u *)(long_i)val;
++	optdyn[idx1].def_val[VI_DEFAULT] = (char_u *)(long_i)val;
+ 	p_title = val;
+     }
+     idx1 = findoption((char_u *)"icon");
+-    if (idx1 < 0 || (options[idx1].flags & P_WAS_SET))
++    if (idx1 < 0 || (optdyn[idx1].flags & P_WAS_SET))
+     {
+ 	return;
+     }
+@@ -1455,7 +1466,7 @@
+     else
+ #endif
+ 	val = mch_can_restore_icon();
+-    options[idx1].def_val[VI_DEFAULT] = (char_u *)(long_i)val;
++    optdyn[idx1].def_val[VI_DEFAULT] = (char_u *)(long_i)val;
+     p_icon = val;
+ }
+ 
+@@ -1722,7 +1733,7 @@
+ {
+     char_u	*newval;
+ 
+-    newval = options[opt_idx].def_val[((flags & P_VI_DEF) || cp_val)
++    newval = optdyn[opt_idx].def_val[((flags & P_VI_DEF) || cp_val)
+ 	? VI_DEFAULT : VIM_DEFAULT];
+     if ((char_u **)varp == &p_bg)
+     {
+@@ -2569,7 +2580,7 @@
+     if (nextchar == '!')
+ 	value = *(int *)(varp) ^ 1;
+     else if (nextchar == '&')
+-	value = (int)(long)(long_i)options[opt_idx].def_val[
++	value = (int)(long)(long_i)optdyn[opt_idx].def_val[
+ 	    ((flags & P_VI_DEF) || cp_val) ? VI_DEFAULT : VIM_DEFAULT];
+     else if (nextchar == '<')
+     {
+@@ -2637,7 +2648,7 @@
+      */
+     ++arg;
+     if (nextchar == '&')
+-	value = (long)(long_i)options[opt_idx].def_val[
++	value = (long)(long_i)optdyn[opt_idx].def_val[
+ 	    ((flags & P_VI_DEF) || cp_val) ? VI_DEFAULT : VIM_DEFAULT];
+     else if (nextchar == '<')
+     {
+@@ -2901,13 +2912,13 @@
+ 	    // Only give an error message when requesting the value of
+ 	    // a hidden option, ignore setting it.
+ 	    if (vim_strchr((char_u *)"=:!&<", nextchar) == NULL
+-		    && (!(options[opt_idx].flags & P_BOOL)
++		    && (!(optdyn[opt_idx].flags & P_BOOL)
+ 			|| nextchar == '?'))
+ 		errmsg = e_option_not_supported;
+ 	    goto skip;
+ 	}
+ 
+-	flags = options[opt_idx].flags;
++	flags = optdyn[opt_idx].flags;
+ 	varp = get_varp_scope(&(options[opt_idx]), opt_flags);
+     }
+     else
+@@ -2978,7 +2989,7 @@
+ 	    {
+ 		// Mention where the option was last set.
+ 		if (varp == options[opt_idx].var)
+-		    last_set_msg(options[opt_idx].script_ctx);
++		    last_set_msg(optdyn[opt_idx].script_ctx);
+ 		else if ((int)options[opt_idx].indir & PV_WIN)
+ 		    last_set_msg(curwin->w_p_script_ctx[
+ 			    (int)options[opt_idx].indir & PV_MASK]);
+@@ -3163,7 +3174,7 @@
+     long_u	*flagsp_local = NULL;
+     int		both = (opt_flags & (OPT_LOCAL | OPT_GLOBAL)) == 0;
+ 
+-    options[opt_idx].flags |= P_WAS_SET;
++    optdyn[opt_idx].flags |= P_WAS_SET;
+ 
+     // When an option is set in the sandbox, from a modeline or in secure mode
+     // set the P_INSECURE flag.  Otherwise, if a new value is stored reset the
+@@ -3308,7 +3319,7 @@
+ option_expand(int opt_idx, char_u *val)
+ {
+     // if option doesn't need expansion nothing to do
+-    if (!(options[opt_idx].flags & P_EXPAND) || options[opt_idx].var == NULL)
++    if (!(optdyn[opt_idx].flags & P_EXPAND) || options[opt_idx].var == NULL)
+ 	return NULL;
+ 
+     // If val is longer than MAXPATHL no meaningful expansion can be done,
+@@ -3406,7 +3417,7 @@
+     int		opt_idx;
+ 
+     for (opt_idx = 0; options[opt_idx].fullname != NULL; opt_idx++)
+-	if ((options[opt_idx].flags & P_STRING) && options[opt_idx].var != NULL)
++	if ((optdyn[opt_idx].flags & P_STRING) && options[opt_idx].var != NULL)
+ 	    check_string_option((char_u **)get_varp(&(options[opt_idx])));
+ }
+ 
+@@ -3435,7 +3446,7 @@
+     int		opt_idx = get_term_opt_idx(p);
+ 
+     if (opt_idx >= 0)
+-	options[opt_idx].flags |= P_ALLOCED;
++	optdyn[opt_idx].flags |= P_ALLOCED;
+     return opt_idx;
+ }
+ 
+@@ -3506,7 +3517,7 @@
+ 	}
+ 
+     // Nothing special, return global flags field.
+-    return &options[opt_idx].flags;
++    return &optdyn[opt_idx].flags;
+ }
+ #endif
+ 
+@@ -3565,7 +3576,7 @@
+     // Remember where the option was set.  For local options need to do that
+     // in the buffer or window structure.
+     if (both || (opt_flags & OPT_GLOBAL) || (indir & (PV_BUF|PV_WIN)) == 0)
+-	options[opt_idx].script_ctx = new_script_ctx;
++	optdyn[opt_idx].script_ctx = new_script_ctx;
+     if (both || (opt_flags & OPT_LOCAL))
+     {
+ 	if (indir & PV_BUF)
+@@ -3594,7 +3605,7 @@
+     sctx_T	*sctx = NULL;
+ 
+     if ((opt_flags & OPT_GLOBAL) || (indir & (PV_BUF|PV_WIN)) == 0)
+-	sctx = &options[opt_idx].script_ctx;
++	sctx = &optdyn[opt_idx].script_ctx;
+ 
+     if ((opt_flags & OPT_LOCAL) || (indir & (PV_BUF|PV_WIN)))
+     {
+@@ -3621,7 +3632,7 @@
+     int idx = findoption((char_u *)name);
+ 
+     if (idx >= 0)
+-	return &options[idx].script_ctx;
++	return &optdyn[idx].script_ctx;
+     siemsg("no such option: %s", name);
+     return NULL;
+ }
+@@ -5330,7 +5341,7 @@
+ #ifdef HAVE_SANDBOX
+ 		|| sandbox != 0
+ #endif
+-		) && (options[opt_idx].flags & P_SECURE))
++		) && (optdyn[opt_idx].flags & P_SECURE))
+ 	return e_not_allowed_here;
+ 
+ #if defined(FEAT_EVAL)
+@@ -5374,7 +5385,7 @@
+ 
+     // after handling side effects, call autocommand
+ 
+-    options[opt_idx].flags |= P_WAS_SET;
++    optdyn[opt_idx].flags |= P_WAS_SET;
+ 
+ #if defined(FEAT_EVAL)
+     apply_optionset_autocmd(opt_idx, opt_flags,
+@@ -5386,12 +5397,12 @@
+     comp_col();			    // in case 'ruler' or 'showcmd' changed
+ 
+     if (curwin->w_curswant != MAXCOL
+-		     && (options[opt_idx].flags & (P_CURSWANT | P_RALL)) != 0
+-				   && (options[opt_idx].flags & P_HLONLY) == 0)
++		     && (optdyn[opt_idx].flags & (P_CURSWANT | P_RALL)) != 0
++				   && (optdyn[opt_idx].flags & P_HLONLY) == 0)
+ 	curwin->w_set_curswant = true;
+ 
+     if ((opt_flags & OPT_NO_REDRAW) == 0)
+-	check_redraw(options[opt_idx].flags);
++	check_redraw(optdyn[opt_idx].flags);
+ 
+     return errmsg;
+ }
+@@ -5572,7 +5583,7 @@
+ #ifdef HAVE_SANDBOX
+ 		|| sandbox != 0
+ #endif
+-		) && (options[opt_idx].flags & P_SECURE))
++		) && (optdyn[opt_idx].flags & P_SECURE))
+ 	return e_not_allowed_here;
+ 
+ #if defined(FEAT_EVAL)
+@@ -5616,7 +5627,7 @@
+     errmsg = check_num_option_bounds(pp, old_value, old_Rows, old_Columns,
+ 						errbuf, errbuflen, errmsg);
+ 
+-    options[opt_idx].flags |= P_WAS_SET;
++    optdyn[opt_idx].flags |= P_WAS_SET;
+ 
+ #if defined(FEAT_EVAL)
+     apply_optionset_autocmd(opt_idx, opt_flags, old_value, old_global_value,
+@@ -5626,12 +5637,12 @@
+     comp_col();			    // in case 'columns' or 'ls' changed
+ 
+     if (curwin->w_curswant != MAXCOL
+-		     && (options[opt_idx].flags & (P_CURSWANT | P_RALL)) != 0
+-				   && (options[opt_idx].flags & P_HLONLY) == 0)
++		     && (optdyn[opt_idx].flags & (P_CURSWANT | P_RALL)) != 0
++				   && (optdyn[opt_idx].flags & P_HLONLY) == 0)
+ 	curwin->w_set_curswant = true;
+ 
+     if ((opt_flags & OPT_NO_REDRAW) == 0)
+-	check_redraw(options[opt_idx].flags);
++	check_redraw(optdyn[opt_idx].flags);
+ 
+     return errmsg;
+ }
+@@ -5804,9 +5815,9 @@
+ 
+     if (flagsp != NULL)
+ 	// Return the P_xxxx option flags.
+-	*flagsp = options[opt_idx].flags;
++	*flagsp = optdyn[opt_idx].flags;
+ 
+-    if (options[opt_idx].flags & P_STRING)
++    if (optdyn[opt_idx].flags & P_STRING)
+     {
+ 	if (varp == NULL)		    // hidden option
+ 	    return gov_hidden_string;
+@@ -5828,9 +5839,9 @@
+     }
+ 
+     if (varp == NULL)		    // hidden option
+-	return (options[opt_idx].flags & P_NUM)
++	return (optdyn[opt_idx].flags & P_NUM)
+ 					 ? gov_hidden_number : gov_hidden_bool;
+-    if (options[opt_idx].flags & P_NUM)
++    if (optdyn[opt_idx].flags & P_NUM)
+ 	*numval = *(long *)varp;
+     else
+     {
+@@ -5841,7 +5852,7 @@
+ 	else
+ 	    *numval = (long) *(int *)varp;
+     }
+-    return (options[opt_idx].flags & P_NUM) ? gov_number : gov_bool;
++    return (optdyn[opt_idx].flags & P_NUM) ? gov_number : gov_bool;
+ }
+ #endif
+ 
+@@ -5887,11 +5898,11 @@
+     if (p->var == NULL)
+ 	return 0;
+ 
+-    if (p->flags & P_BOOL)
++    if (OPT_D(p).flags & P_BOOL)
+ 	r |= SOPT_BOOL;
+-    else if (p->flags & P_NUM)
++    else if (OPT_D(p).flags & P_NUM)
+ 	r |= SOPT_NUM;
+-    else if (p->flags & P_STRING)
++    else if (OPT_D(p).flags & P_STRING)
+ 	r |= SOPT_STRING;
+ 
+     if (p->indir == PV_NONE)
+@@ -5976,9 +5987,9 @@
+ 
+     if (varp != NULL)
+     {
+-	if (p->flags & P_STRING)
++	if (OPT_D(p).flags & P_STRING)
+ 	    *stringval = vim_strsave(*(char_u **)(varp));
+-	else if (p->flags & P_NUM)
++	else if (OPT_D(p).flags & P_NUM)
+ 	    *numval = *(long *) varp;
+ 	else
+ 	    *numval = *(int *)varp;
+@@ -6055,7 +6066,7 @@
+     long_u
+ get_option_flags(int opt_idx)
+ {
+-    return options[opt_idx].flags;
++    return optdyn[opt_idx].flags;
+ }
+ 
+ /*
+@@ -6064,7 +6075,7 @@
+     void
+ set_option_flag(int opt_idx, long_u flag)
+ {
+-    options[opt_idx].flags |= flag;
++    optdyn[opt_idx].flags |= flag;
+ }
+ 
+ /*
+@@ -6165,7 +6176,7 @@
+     }
+     else
+     {
+-	flags = options[opt_idx].flags;
++	flags = optdyn[opt_idx].flags;
+ #ifdef HAVE_SANDBOX
+ 	// Disallow changing some options in the sandbox
+ 	if (sandbox > 0 && (flags & P_SECURE))
+@@ -6258,7 +6269,7 @@
+ 
+     i = findoption((char_u *)"hl");
+     if (i >= 0)
+-	return options[i].def_val[VI_DEFAULT];
++	return optdyn[i].def_val[VI_DEFAULT];
+     return (char_u *)NULL;
+ }
+ 
+@@ -6269,7 +6280,7 @@
+ 
+     i = findoption((char_u *)"enc");
+     if (i >= 0)
+-	return options[i].def_val[VI_DEFAULT];
++	return optdyn[i].def_val[VI_DEFAULT];
+     return (char_u *)NULL;
+ }
+ 
+@@ -6279,7 +6290,7 @@
+ {
+     int idx = findoption((char_u *)name);
+ 
+-    return idx >= 0 && (options[idx].flags & P_ALLOCED);
++    return idx >= 0 && (optdyn[idx].flags & P_ALLOCED);
+ }
+ #endif
+ 
+@@ -6383,7 +6394,7 @@
+ 	    {
+ 		if (opt_flags & OPT_ONECOLUMN)
+ 		    len = Columns;
+-		else if (p->flags & P_BOOL)
++		else if (OPT_D(p).flags & P_BOOL)
+ 		    len = 1;		// a toggle option fits always
+ 		else
+ 		{
+@@ -6435,15 +6446,15 @@
+ 
+     if (varp == NULL)
+ 	return TRUE;	    // hidden option is always at default
+-    dvi = ((p->flags & P_VI_DEF) || compatible) ? VI_DEFAULT : VIM_DEFAULT;
+-    if (p->flags & P_NUM)
+-	return (*(long *)varp == (long)(long_i)p->def_val[dvi]);
+-    if (p->flags & P_BOOL)
++    dvi = ((OPT_D(p).flags & P_VI_DEF) || compatible) ? VI_DEFAULT : VIM_DEFAULT;
++    if (OPT_D(p).flags & P_NUM)
++	return (*(long *)varp == (long)(long_i)OPT_D(p).def_val[dvi]);
++    if (OPT_D(p).flags & P_BOOL)
+ 			// the cast to long is required for Manx C, long_i is
+ 			// needed for MSVC
+-	return (*(int *)varp == (int)(long)(long_i)p->def_val[dvi]);
++	return (*(int *)varp == (int)(long)(long_i)OPT_D(p).def_val[dvi]);
+     // P_STRING
+-    return (STRCMP(*(char_u **)varp, p->def_val[dvi]) == 0);
++    return (STRCMP(*(char_u **)varp, OPT_D(p).def_val[dvi]) == 0);
+ }
+ 
+ /*
+@@ -6464,15 +6475,15 @@
+     varp = get_varp_scope(p, opt_flags);
+ 
+     // for 'modified' we also need to check if 'ff' or 'fenc' changed.
+-    if ((p->flags & P_BOOL) && ((int *)varp == &curbuf->b_changed
++    if ((OPT_D(p).flags & P_BOOL) && ((int *)varp == &curbuf->b_changed
+ 					? !curbufIsChanged() : !*(int *)varp))
+ 	msg_puts("no");
+-    else if ((p->flags & P_BOOL) && *(int *)varp < 0)
++    else if ((OPT_D(p).flags & P_BOOL) && *(int *)varp < 0)
+ 	msg_puts("--");
+     else
+ 	msg_puts("  ");
+     msg_puts(p->fullname);
+-    if (!(p->flags & P_BOOL))
++    if (!(OPT_D(p).flags & P_BOOL))
+     {
+ 	msg_putchar('=');
+ 	// put value string in NameBuff
+@@ -6526,9 +6537,9 @@
+     for (pri = 1; pri >= 0; --pri)
+     {
+       for (p = &options[0]; !istermoption(p); p++)
+-	if (!(p->flags & P_NO_MKRC)
++	if (!(OPT_D(p).flags & P_NO_MKRC)
+ 		&& !istermoption(p)
+-		&& ((pri == 1) == ((p->flags & P_PRI_MKRC) != 0)))
++		&& ((pri == 1) == ((OPT_D(p).flags & P_PRI_MKRC) != 0)))
+ 	{
+ 	    // skip global option when only doing locals
+ 	    if (p->indir == PV_NONE && !(opt_flags & OPT_GLOBAL))
+@@ -6536,7 +6547,7 @@
+ 
+ 	    // Do not store options like 'bufhidden' and 'syntax' in a vimrc
+ 	    // file, they are always buffer-specific.
+-	    if ((opt_flags & OPT_GLOBAL) && (p->flags & P_NOGLOB))
++	    if ((opt_flags & OPT_GLOBAL) && (OPT_D(p).flags & P_NOGLOB))
+ 		continue;
+ 
+ 	    // Global values are only written when not at the default value.
+@@ -6580,12 +6591,12 @@
+ 		else
+ 		    cmd = "setlocal";
+ 
+-		if (p->flags & P_BOOL)
++		if (OPT_D(p).flags & P_BOOL)
+ 		{
+ 		    if (put_setbool(fd, cmd, p->fullname, *(int *)varp) == FAIL)
+ 			return FAIL;
+ 		}
+-		else if (p->flags & P_NUM)
++		else if (OPT_D(p).flags & P_NUM)
+ 		{
+ 		    if (put_setnum(fd, cmd, p->fullname, (long *)varp) == FAIL)
+ 			return FAIL;
+@@ -6597,7 +6608,7 @@
+ 
+ 		    // Ignore those options associated to lambda expressions because
+ 		    // persistence makes no sense for them.
+-		    if ((p->flags & P_FUNC) && *(char_u **)varp != NULL
++		    if ((OPT_D(p).flags & P_FUNC) && *(char_u **)varp != NULL
+ 			    && strstr(*(char **)varp, "<lambda>") != NULL)
+ 			continue;
+ 
+@@ -6628,7 +6639,7 @@
+ 			do_endif = TRUE;
+ 		    }
+ 		    if (put_setstring(fd, legacy, cmd, p->fullname,
+-					    (char_u **)varp, p->flags) == FAIL)
++					    (char_u **)varp, OPT_D(p).flags) == FAIL)
+ 			return FAIL;
+ 		    if (do_endif)
+ 		    {
+@@ -6841,13 +6852,13 @@
+     for (p = options; p->fullname != NULL; p++)
+ 	if (istermoption(p))
+ 	{
+-	    if (p->flags & P_ALLOCED)
++	    if (OPT_D(p).flags & P_ALLOCED)
+ 		free_string_option(*(char_u **)(p->var));
+-	    if (p->flags & P_DEF_ALLOCED)
+-		free_string_option(p->def_val[VI_DEFAULT]);
++	    if (OPT_D(p).flags & P_DEF_ALLOCED)
++		free_string_option(OPT_D(p).def_val[VI_DEFAULT]);
+ 	    *(char_u **)(p->var) = empty_option;
+-	    p->def_val[VI_DEFAULT] = empty_option;
+-	    p->flags &= ~(P_ALLOCED|P_DEF_ALLOCED);
++	    OPT_D(p).def_val[VI_DEFAULT] = empty_option;
++	    OPT_D(p).flags &= ~(P_ALLOCED|P_DEF_ALLOCED);
+ #ifdef FEAT_EVAL
+ 	    // remember where the option was cleared
+ 	    set_option_sctx_idx((int)(p - options), OPT_GLOBAL, current_sctx);
+@@ -6869,10 +6880,10 @@
+     for (p = &options[0]; p->fullname != NULL; p++)
+ 	if (p->var == var)
+ 	{
+-	    if (p->flags & P_ALLOCED)
++	    if (OPT_D(p).flags & P_ALLOCED)
+ 		free_string_option(*(char_u **)(p->var));
+ 	    *(char_u **)(p->var) = empty_option;
+-	    p->flags &= ~P_ALLOCED;
++	    OPT_D(p).flags &= ~P_ALLOCED;
+ 	    break;
+ 	}
+ }
+@@ -6888,18 +6899,18 @@
+ 
+     for (p = &options[0]; p->fullname != NULL; p++)
+     {
+-	if (istermoption(p) && p->def_val[VI_DEFAULT] != *(char_u **)(p->var))
++	if (istermoption(p) && OPT_D(p).def_val[VI_DEFAULT] != *(char_u **)(p->var))
+ 	{
+-	    if (p->flags & P_DEF_ALLOCED)
++	    if (OPT_D(p).flags & P_DEF_ALLOCED)
+ 	    {
+-		free_string_option(p->def_val[VI_DEFAULT]);
+-		p->flags &= ~P_DEF_ALLOCED;
++		free_string_option(OPT_D(p).def_val[VI_DEFAULT]);
++		OPT_D(p).flags &= ~P_DEF_ALLOCED;
+ 	    }
+-	    p->def_val[VI_DEFAULT] = *(char_u **)(p->var);
+-	    if (p->flags & P_ALLOCED)
++	    OPT_D(p).def_val[VI_DEFAULT] = *(char_u **)(p->var);
++	    if (OPT_D(p).flags & P_ALLOCED)
+ 	    {
+-		p->flags |= P_DEF_ALLOCED;
+-		p->flags &= ~P_ALLOCED;	 // don't free the value now
++		OPT_D(p).flags |= P_DEF_ALLOCED;
++		OPT_D(p).flags &= ~P_ALLOCED;	 // don't free the value now
+ 	    }
+ 	}
+     }
+@@ -8184,7 +8195,7 @@
+     p_ma = FALSE;
+     opt_idx = findoption((char_u *)"ma");
+     if (opt_idx >= 0)
+-	options[opt_idx].def_val[VI_DEFAULT] = FALSE;
++	optdyn[opt_idx].def_val[VI_DEFAULT] = FALSE;
+ }
+ 
+ /*
+@@ -8317,7 +8328,7 @@
+ 		xp->xp_context = EXPAND_NOTHING;
+ 		return;
+ 	    }
+-	    flags = options[opt_idx].flags;
++	    flags = optdyn[opt_idx].flags;
+ 	    if (flags & P_BOOL)
+ 	    {
+ 		xp->xp_context = EXPAND_NOTHING;
+@@ -8354,7 +8365,7 @@
+ 
+     if (!is_term_option)
+     {
+-	if (options[opt_idx].flags & P_NO_CMD_EXPAND)
++	if (optdyn[opt_idx].flags & P_NO_CMD_EXPAND)
+ 	{
+ 	    xp->xp_context=EXPAND_UNSUCCESSFUL;
+ 	    return;
+@@ -8608,7 +8619,7 @@
+ 	    if (options[opt_idx].var == NULL)
+ 		continue;
+ 	    if (xp->xp_context == EXPAND_BOOL_SETTINGS
+-		    && !(options[opt_idx].flags & P_BOOL))
++		    && !(optdyn[opt_idx].flags & P_BOOL))
+ 		continue;
+ 	    is_term_opt = istermoption_idx(opt_idx);
+ 	    if (is_term_opt && num_normal > 0)
+@@ -8783,7 +8794,7 @@
+     for (var = buf; *var != NUL; MB_PTR_ADV(var))
+ 	if (var[0] == '\\' && var[1] == '\\'
+ 		&& expand_option_idx >= 0
+-		&& (options[expand_option_idx].flags & P_EXPAND)
++		&& (optdyn[expand_option_idx].flags & P_EXPAND)
+ 		&& vim_isfilec(var[2])
+ 		&& (var[2] != '\\' || (var == buf && var[4] != '\\')))
+ 	    STRMOVE(var, var + 1);
+@@ -8899,7 +8910,7 @@
+     char_u *option_val = *(char_u**)get_option_varp_scope(
+ 	expand_option_idx, expand_option_flags);
+ 
+-    long_u option_flags =  options[expand_option_idx].flags;
++    long_u option_flags =  optdyn[expand_option_idx].flags;
+ 
+     if (option_flags & P_NUM)
+ 	return ExpandOldSetting(numMatches, matches);
+@@ -9039,7 +9050,7 @@
+ 
+     varp = get_varp_scope(opp, scope);
+ 
+-    if (opp->flags & P_NUM)
++    if (OPT_D(opp).flags & P_NUM)
+     {
+ 	long wc = 0;
+ 
+@@ -9060,7 +9071,7 @@
+ 	else if (opp->var == (char_u *)&p_key && *varp)
+ 	    STRCPY(NameBuff, "*****");
+ #endif
+-	else if (opp->flags & P_EXPAND)
++	else if (OPT_D(opp).flags & P_EXPAND)
+ 	    home_replace(NULL, varp, NameBuff, MAXPATHL, FALSE);
+ 	// Translate 'pastetoggle' into special key names
+ 	else if ((char_u **)opp->var == &p_pt)
+@@ -9119,7 +9130,7 @@
+     {
+ 	p_cp = FALSE;
+ 	for (opt_idx = 0; !istermoption_idx(opt_idx); opt_idx++)
+-	    if (!(options[opt_idx].flags & (P_WAS_SET|P_VI_DEF)))
++	    if (!(optdyn[opt_idx].flags & (P_WAS_SET|P_VI_DEF)))
+ 		set_option_default(opt_idx, OPT_FREE, FALSE);
+ 	didset_options();
+ 	didset_options2();
+@@ -9160,7 +9171,7 @@
+     }
+     opt_idx = findoption((char_u *)"cp");
+     if (opt_idx >= 0)
+-	options[opt_idx].flags |= P_WAS_SET;
++	optdyn[opt_idx].flags |= P_WAS_SET;
+ }
+ 
+ /*
+@@ -9175,7 +9186,7 @@
+     idx = findoption(name);
+     if (idx < 0)	// unknown option
+ 	return FALSE;
+-    if (options[idx].flags & P_WAS_SET)
++    if (optdyn[idx].flags & P_WAS_SET)
+ 	return TRUE;
+     return FALSE;
+ }
+@@ -9191,7 +9202,7 @@
+     if (idx < 0)
+ 	return FAIL;
+ 
+-    options[idx].flags &= ~P_WAS_SET;
++    optdyn[idx].flags &= ~P_WAS_SET;
+     return OK;
+ }
+ 
+@@ -9209,8 +9220,8 @@
+     int	    opt_idx;
+ 
+     for (opt_idx = 0; !istermoption_idx(opt_idx); opt_idx++)
+-	if (	   ((options[opt_idx].flags & P_VIM) && p_cp)
+-		|| (!(options[opt_idx].flags & P_VI_DEF) && !p_cp))
++	if (	   ((optdyn[opt_idx].flags & P_VIM) && p_cp)
++		|| (!(optdyn[opt_idx].flags & P_VI_DEF) && !p_cp))
+ 	    set_option_default(opt_idx, OPT_FREE, p_cp);
+     didset_options();
+     didset_options2();
+@@ -9339,9 +9350,9 @@
+ 
+ 	    if (varp != NULL)
+ 	    {
+-		if (opt->flags & P_STRING)
++		if (OPT_D(opt).flags & P_STRING)
+ 		    dict_add_string(d, opt->fullname, *(char_u **)varp);
+-		else if (opt->flags & P_NUM)
++		else if (OPT_D(opt).flags & P_NUM)
+ 		    dict_add_number(d, opt->fullname, *(long *)varp);
+ 		else
+ 		    dict_add_number(d, opt->fullname, *(int *)varp);
+--- a/src/optiondefs.h	2026-10-06 18:55:32.255942294 -0700
++++ b/src/optiondefs.h	2026-10-06 18:55:14.701129547 -0700
+@@ -335,7 +335,9 @@
+ // Exception: "t_" options are at the end.
+ // The options with a NULL variable are 'hidden': a set command for them is
+ // ignored and they are not printed.
+-static struct vimoption options[] =
++// VIM_RODATA: the table itself can be read-only data (in flash on a
++// microcontroller); what changes of each option is in optdyn[], below.
++static struct vimoption options[] VIM_RODATA =
+ {
+     {"aleph",	    "al",   P_NUM|P_VI_DEF|P_CURSWANT,
+ #ifdef FEAT_RIGHTLEFT
+@@ -3198,6 +3200,22 @@
+     {NULL, NULL, 0, NULL, PV_NONE, NULL, NULL, {NULL, NULL} SCTX_INIT}
+ };
+ 
++// The fields of options[] that change while Vim runs, one entry per option:
++// copied from the table at startup (set_init_1()), then used instead of it.
++// Keeps options[] unwritten, so it can be read-only data (VIM_RODATA).
++typedef struct
++{
++    long_u	flags;
++    char_u	*def_val[2];
++#ifdef FEAT_EVAL
++    sctx_T	script_ctx;
++#endif
++} optdyn_T;
++static optdyn_T optdyn[sizeof(options) / sizeof(options[0])];
++
++// The changing fields of the option {p} points to (in options[]).
++#define OPT_D(p) optdyn[(p) - options]
++
+ #define OPTION_COUNT ARRAY_LENGTH(options)
+ 
+ // The following is needed to make the gen_opt_test.vim script work.

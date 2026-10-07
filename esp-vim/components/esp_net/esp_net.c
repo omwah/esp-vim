@@ -368,6 +368,12 @@ int esp_net_wifi_saved(char *ssid, size_t n, char *err, size_t errlen)
 
 esp_err_t esp_net_init(void)
 {
+#if CONFIG_ESP_VIM_NET_NONE
+    /* No network: no lwIP and its task either (a board without PSRAM wants
+     * that RAM), only the event loop other components may post to. */
+    esp_err_t err = esp_event_loop_create_default();
+    return err == ESP_ERR_INVALID_STATE ? ESP_OK : err;
+#else
     esp_err_t err = esp_netif_init();
     if (err == ESP_OK)
         err = esp_event_loop_create_default();
@@ -394,17 +400,22 @@ esp_err_t esp_net_init(void)
     }
 #endif
     return err;
+#endif  /* !CONFIG_ESP_VIM_NET_NONE */
 }
 
+#if !CONFIG_ESP_VIM_NET_NONE
 static void ip4(char *out, size_t n, const esp_ip4_addr_t *a)
 {
     snprintf(out, n, IPSTR, IP2STR(a));
 }
 
+#endif
+
 void esp_net_get_status(esp_net_status_t *st)
 {
     memset(st, 0, sizeof *st);
     snprintf(st->iface, sizeof st->iface, "%s", s_iface);
+#if !CONFIG_ESP_VIM_NET_NONE
     if (s_netif == NULL)
         return;
     uint8_t mac[6];
@@ -432,6 +443,7 @@ void esp_net_get_status(esp_net_status_t *st)
     if (esp_netif_get_dns_info(s_netif, ESP_NETIF_DNS_MAIN, &dns) == ESP_OK
             && dns.ip.type == ESP_IPADDR_TYPE_V4 && dns.ip.u_addr.ip4.addr != 0)
         ip4(st->dns, sizeof st->dns, &dns.ip.u_addr.ip4);
+#endif
 }
 
 /* ----------------------------------------------------------------- http -- */
@@ -462,6 +474,10 @@ int esp_net_http_fetch(const char *url, esp_net_sink_cb sink, void *sink_ctx,
     esp_net_http_result_t res = {0};
     if (url == NULL || (strncmp(url, "http://", 7) != 0 && strncmp(url, "https://", 8) != 0))
         return fail(err, errlen, "%s: only http:// and https:// are supported", url ? url : "(null)");
+#if CONFIG_ESP_VIM_NET_NONE
+    (void)sink, (void)sink_ctx, (void)progress, (void)progress_ctx, (void)result, (void)res;
+    return fail(err, errlen, "%s: no network in this build", url);
+#else
 
     esp_http_client_config_t cfg = {
         .url = url,
@@ -549,6 +565,7 @@ out:
     if (result != NULL)
         *result = res;
     return rc;
+#endif
 }
 
 typedef struct {

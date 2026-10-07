@@ -1049,10 +1049,45 @@ runtime `/sd/vim/runtime` (`pixi run sd-runtime`).
 - Its **NVS is shared**: never erased here, though ESP-IDF's recovery would.
 
 Launcher installs an app where it fits, and when there's no gap big enough it reuses an
-installed app's slot -- one install here replaced another app. With 8 MB, a 2.6 MB app
+installed app's slot -- one install here replaced another app. With 8 MB, a 2.3 MB app
 leaves room for one more of about that size.
 
 **Keys:** the keyboard has no Esc, and Vim needs it constantly: `` ` `` is Esc, with
 the character on Shift (`~`) and Fn (`` ` ``). The arrows printed on `; , . /` are the
 plain keys the same way, by the owner's choice after trying Fn-arrows -- at the price of
 Fn-`/` for search.
+
+## 2026-10-07 — The Cardputer: 40 KB more for Vim, and help written for it
+
+The second round on the Cardputer took Vim's heap budget from 109 KB to 149 KB, all
+of it internal RAM given back by the rest of the system:
+
+- **`options[]` in flash** (`patches/vim/0016-options-table-in-flash`). Vim's option
+  table (560 entries, 29 KB) changes in only three fields: the flags, the defaults and
+  where each option was last set. Those now live in a RAM array beside it, `optdyn[]`
+  (15.7 KB), filled from the table at startup; the table is read-only data. A
+  mechanical change -- every `options[i].flags` and `p->flags` (and `def_val`,
+  `script_ctx`) in option.c goes through `optdyn` -- so it is one patch to carry, on
+  every board. 13.4 KB.
+- **ESP-IDF code out of internal RAM**: FreeRTOS's functions, and the I2C and GDMA
+  interrupt handlers (the SPI drivers' already weren't IRAM-safe here). 11.5 KB. Not
+  everything can go: logging, libc and esp_timer can leave IRAM only on chips with
+  flash auto-suspend, which the S3 lacks.
+- **No lwIP at all without a network**: `esp_net` called `esp_netif_init()`, and so
+  started lwIP's task, even with `ESP_VIM_NET_NONE`, and `esp_time` started SNTP. Both
+  are now stubs there, and the linker leaves the network stack out: 5 KB static, the
+  task's memory, and 320 KB of flash.
+- **The syntax state stack** (`SST_MIN_ENTRIES`, 0015) is 30 entries, not 150: the
+  first syntax item in a buffer allocated 25 KB at once, which `:EspHeap`'s view
+  window (it highlights its title) couldn't get.
+
+`:EspHeap` and the other commands the lean vimrc defines now load
+`autoload/esp/core.vim` (12 KB) rather than all of `autoload/esp.vim` (33 KB), which
+ran out of memory partway and reported "Missing :endfunction".
+
+The help: on a 25-column screen (helpfmt.py's compact mode, under 40 columns) indents
+are 2 columns a level and what goes under a term 2 columns in, rather than a quarter of
+the original and 4. The Cardputer's help.txt drops the commands it doesn't have
+(`HELP_PRUNE`), and its storage, settings, configuration, keyboard and quitting
+sections are its own, chosen in help.txt.in by `@IF cardputer@ ... @ELSE@ ...
+@ENDIF@`.
