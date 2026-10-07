@@ -25,11 +25,20 @@ if(CONFIG_ESP_VIM_DISPLAY)
     set(FONT_ROWS "")
     set(i 0)
     foreach(font IN LISTS FONTS)
-        if(font MATCHES "^spleen-([0-9]+x[0-9]+)$")
+        # A "+N" suffix widens the cells by N blank pixel columns (bdf2c.py
+        # PAD): spleen-8x16+1 is 9x16, 25 columns on a 240-pixel panel.
+        set(pad 0)
+        if(font MATCHES "^(.*)\\+([0-9]+)$")
+            set(pad "${CMAKE_MATCH_2}")
+            set(base "${CMAKE_MATCH_1}")
+        else()
+            set(base "${font}")
+        endif()
+        if(base MATCHES "^spleen-([0-9]+x[0-9]+)$")
             set(bdf "${DEPS}/spleen/spleen-${CMAKE_MATCH_1}.bdf")
-        elseif(font MATCHES "^terminus-[0-9]+x([0-9]+)$")
+        elseif(base MATCHES "^terminus-[0-9]+x([0-9]+)$")
             set(bdf "${DEPS}/terminus/ter-u${CMAKE_MATCH_1}n.bdf")
-        elseif(font MATCHES "^terminus-bold-[0-9]+x([0-9]+)$")
+        elseif(base MATCHES "^terminus-bold-[0-9]+x([0-9]+)$")
             set(bdf "${DEPS}/terminus/ter-u${CMAKE_MATCH_1}b.bdf")
         else()
             message(FATAL_ERROR "ESP_VIM_DISP_FONTS: unknown font '${font}' "
@@ -41,7 +50,7 @@ if(CONFIG_ESP_VIM_DISPLAY)
         set(c "${CMAKE_CURRENT_BINARY_DIR}/esp_display_font_${i}.c")
         add_custom_command(
             OUTPUT "${c}"
-            COMMAND ${python} "${BDF2C}" "${bdf}" "${c}" "esp_display_font_${i}" "${font}"
+            COMMAND ${python} "${BDF2C}" "${bdf}" "${c}" "esp_display_font_${i}" "${font}" "${pad}"
             DEPENDS "${bdf}" "${BDF2C}"
             VERBATIM)
         list(APPEND FONT_SRCS "${c}")

@@ -17,6 +17,7 @@
 
 #include "driver/sdmmc_host.h"
 #include "driver/sdspi_host.h"
+#include "driver/gpio.h"
 #include "esp_vfs_fat.h"
 #include "ff.h"
 #include "diskio_sdmmc.h"               /* after ff.h, whose types it uses */
@@ -73,6 +74,10 @@ static esp_err_t mount(void)
 #if CONFIG_ESP_VIM_SD_SPI
     sdmmc_host_t host = SDSPI_HOST_DEFAULT();
     host.slot = SPI2_HOST;
+#if CONFIG_ESP_VIM_SD_SPI_OTHER_CS >= 0
+    gpio_set_level(CONFIG_ESP_VIM_SD_SPI_OTHER_CS, 1);     /* deselected */
+    gpio_set_direction(CONFIG_ESP_VIM_SD_SPI_OTHER_CS, GPIO_MODE_OUTPUT);
+#endif
     host.max_freq_khz = CONFIG_ESP_VIM_SD_MHZ * 1000;
     if (!s_bus_ready) {
         spi_bus_config_t bus = {

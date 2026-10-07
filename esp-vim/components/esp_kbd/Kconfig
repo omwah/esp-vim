@@ -24,4 +24,27 @@ menu "esp-vim keyboards"
         depends on ESP_VIM_KBD_TAB5
         default 50
 
+    config ESP_VIM_KBD_CARDPUTER
+        bool "M5Stack Cardputer ADV keyboard (TCA8418, I2C 0x34)"
+        default n
+        help
+            The Cardputer ADV's built-in 56 keys, behind a TCA8418 key-scan
+            controller, typed as esp_kbd_cardputer.h describes: ` is Esc,
+            Fn for F1-F12, the arrows, Delete, PgUp and PgDn, and sticky
+            modifiers. (The original Cardputer's keyboard is a GPIO matrix,
+            not this.)
+
+    config ESP_VIM_KBD_CARDPUTER_SDA
+        int "SDA GPIO"
+        depends on ESP_VIM_KBD_CARDPUTER
+        default 8
+    config ESP_VIM_KBD_CARDPUTER_SCL
+        int "SCL GPIO"
+        depends on ESP_VIM_KBD_CARDPUTER
+        default 9
+    config ESP_VIM_KBD_CARDPUTER_INT
+        int "Interrupt GPIO"
+        depends on ESP_VIM_KBD_CARDPUTER
+        default 11
+
 endmenu

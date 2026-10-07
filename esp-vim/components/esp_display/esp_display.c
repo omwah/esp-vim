@@ -35,6 +35,9 @@
 # include "esp_lcd_mipi_dsi.h"
 #elif CONFIG_ESP_VIM_DISP_ST7305
 # include "driver/spi_master.h"
+#elif CONFIG_ESP_VIM_DISP_ST7789
+# include "driver/spi_master.h"
+# include "esp_lcd_panel_st7789.h"
 #else
 # include "driver/spi_master.h"
 # include "esp_lcd_ili9341.h"
@@ -69,7 +72,11 @@ static int s_cols, s_rows, s_x0, s_y0;
 #define ROWS        s_rows
 #define X0          s_x0
 #define Y0          s_y0
+#if CONFIG_SPIRAM
 #define STREAM_SIZE (8 * 1024)
+#else
+#define STREAM_SIZE (2 * 1024)      /* internal RAM: a 25x8 screen's output is small */
+#endif
 #define CHUNK       16              /* cells per SPI transfer: 2.3 KB of line buffer at 6x12 */
 #define NVS_NS      "esp_display"
 
@@ -452,6 +459,8 @@ static void use_font(int i)
     s_font = esp_display_fonts[i];
     s_font_index = i;
     s_cols = CONFIG_ESP_VIM_DISP_WIDTH / FONT_W;
+    if (CONFIG_ESP_VIM_DISP_MAX_COLS > 0 && s_cols > CONFIG_ESP_VIM_DISP_MAX_COLS)
+        s_cols = CONFIG_ESP_VIM_DISP_MAX_COLS;
     s_rows = CONFIG_ESP_VIM_DISP_HEIGHT / FONT_H;
     s_x0 = (CONFIG_ESP_VIM_DISP_WIDTH - s_cols * FONT_W) / 2;
     s_y0 = (CONFIG_ESP_VIM_DISP_HEIGHT - s_rows * FONT_H) / 2;
@@ -883,9 +892,17 @@ void esp_display_touch(int ev, int x, int y, void *ctx)
 
 /* ---------------------------------------------------------------- setup -- */
 
+/* libvterm's memory, the output stream and the display task's stack: in PSRAM
+ * when there is some, else internal RAM (a 25x8 grid needs little). */
+#if CONFIG_SPIRAM
+#define SPARE_CAPS (MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
+#else
+#define SPARE_CAPS (MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)
+#endif
+
 static void *vt_malloc(size_t size, void *data)
 {
-    return heap_caps_calloc(1, size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    return heap_caps_calloc(1, size, SPARE_CAPS);
 }
 
 static void vt_free(void *ptr, void *data)
@@ -1112,7 +1129,11 @@ static esp_err_t panel_init(void)
         .rgb_ele_order = DISP_ORDER,
         .bits_per_pixel = 16,
     };
+#if CONFIG_ESP_VIM_DISP_ST7789
+    e = esp_lcd_new_panel_st7789(io, &dev, &s_panel);
+#else
     e = esp_lcd_new_panel_ili9341(io, &dev, &s_panel);
+#endif
     if (e == ESP_OK)
         e = esp_lcd_panel_reset(s_panel);   /* a software reset when there's no pin */
     if (e == ESP_OK)
@@ -1123,6 +1144,8 @@ static esp_err_t panel_init(void)
         e = esp_lcd_panel_swap_xy(s_panel, DISP_SWAP_XY);
     if (e == ESP_OK)
         e = esp_lcd_panel_mirror(s_panel, DISP_MIRROR_X, DISP_MIRROR_Y);
+    if (e == ESP_OK)
+        e = esp_lcd_panel_set_gap(s_panel, CONFIG_ESP_VIM_DISP_X_GAP, CONFIG_ESP_VIM_DISP_Y_GAP);
     if (e == ESP_OK)
         e = esp_lcd_panel_disp_on_off(s_panel, true);
     return e;
@@ -1218,7 +1241,7 @@ esp_err_t esp_display_init(void)
     s_font_done = xSemaphoreCreateBinary();
     s_sleep_done = xSemaphoreCreateBinary();
     s_resume = xSemaphoreCreateBinary();
-    s_stream = xStreamBufferCreateWithCaps(STREAM_SIZE, 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    s_stream = xStreamBufferCreateWithCaps(STREAM_SIZE, 1, SPARE_CAPS);
     /* SPI sends it by DMA. An RGB panel copies it into the frame buffer, and
      * from internal RAM that copy doesn't also read PSRAM, which the LCD is
      * streaming the frame buffer out of -- unless the LCD streams from bounce
@@ -1256,13 +1279,28 @@ esp_err_t esp_display_init(void)
     clear_panel();
     keep_pins_in_light_sleep();
 
-    s_vt = vterm_new_with_allocator(ROWS, COLS, &s_alloc, NULL);
+    /*
+     * Without PSRAM (the Cardputer) the terminal costs internal RAM Vim needs:
+     * libvterm's reply and scratch buffers at 512 bytes, not 4 KB each (they
+     * hold a few escape sequences at a time), and no alternate screen, a
+     * second copy of every cell -- Vim owns the display, and there's no
+     * shell's screen to give back when it leaves.
+     */
+    struct VTermBuilder vb = {
+        .rows = ROWS, .cols = COLS, .allocator = &s_alloc,
+#if !CONFIG_SPIRAM
+        .outbuffer_len = 512, .tmpbuffer_len = 512,
+#endif
+    };
+    s_vt = vterm_build(&vb);
     if (s_vt == NULL)
         return ESP_ERR_NO_MEM;
     vterm_set_utf8(s_vt, 1);
     s_screen = vterm_obtain_screen(s_vt);
     vterm_screen_set_callbacks(s_screen, &s_callbacks, NULL);
+#if CONFIG_SPIRAM
     vterm_screen_enable_altscreen(s_screen, 1);
+#endif
     VTermColor fg, bg;
     vterm_color_rgb(&fg, 0xE5, 0xE5, 0xE5);     /* xterm's default foreground */
     vterm_color_rgb(&bg, 0x00, 0x00, 0x00);
@@ -1277,7 +1315,7 @@ esp_err_t esp_display_init(void)
     /* Its stack in PSRAM: internal RAM is scarce on the S3, and this task never
      * touches flash, which is what a PSRAM stack must not do. */
     if (xTaskCreatePinnedToCoreWithCaps(display_task, "display", 6 * 1024, NULL, 5, NULL, 1,
-                                        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS)
+                                        SPARE_CAPS) != pdPASS)
         return ESP_ERR_NO_MEM;
     s_active = true;
     ESP_LOGI(TAG, "%dx%d cells on a %dx%d panel, in %s", COLS, ROWS,

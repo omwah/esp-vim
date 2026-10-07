@@ -1,0 +1,10 @@
+# M5Stack Cardputer ADV: 8 MB flash shared with other apps under a launcher
+# (bmorcelli/Launcher). The same shape as the launcher's own table -- nvs at
+# 0x9000 (0x5000), otadata, one OTA app slot -- so the app runs the same flashed
+# alone at 0x0 or installed by the launcher, which keeps only the app and puts it
+# where it has room. No data partitions: files and Vim's runtime are on the SD
+# card (CONFIG_ESP_VIM_FLASH_FS and _FLASH_RUNTIME off).
+# Name,     Type, SubType, Offset,   Size,     Flags
+nvs,        data, nvs,     0x9000,   0x5000,
+otadata,    data, ota,     0xE000,   0x2000,
+app0,       app,  ota_0,   0x10000,  0x300000,

@@ -43,6 +43,10 @@
 #include "driver/usb_serial_jtag_select.h"
 #include "driver/usb_serial_jtag_vfs.h"
 #include "hal/usb_serial_jtag_ll.h"
+#include "esp_private/periph_ctrl.h"
+#if CONFIG_ESP_VIM_LAUNCHER_APP             /* usb_console_take_back(): ESP32-S3 */
+#include "soc/rtc_cntl_struct.h"
+#endif
 #include "esp_rom_sys.h"
 #endif
 #include "esp_vim_port.h"
@@ -51,6 +55,9 @@
 
 /* Vim's renamed entry point. Declared here to avoid pulling in vim.h. */
 int vim_main(int argc, char **argv);
+
+#define ESP_VIM_STR_(x) #x
+#define ESP_VIM_STR(x)  ESP_VIM_STR_(x)
 
 static const char *TAG = "esp-vim";
 
@@ -62,9 +69,7 @@ TaskHandle_t g_vim_task;
  * (the S3 variant) costs more stack per frame than RISC-V. Kconfig-tunable
  * rather than a constant -- see docs/PLAN.md Phase 3.
  */
-#ifndef ESP_VIM_TASK_STACK
-# define ESP_VIM_TASK_STACK (64 * 1024)
-#endif
+#define ESP_VIM_TASK_STACK (CONFIG_ESP_VIM_TASK_STACK_KB * 1024)
 
 /*
  * Phase 1 finding: tcgetattr/tcsetattr fail with EINVAL until the UART driver
@@ -127,11 +132,17 @@ static void console_init(void)
 #endif
 
 /* NVS: :EspNvs, WiFi credentials, keys and settings. A full or newer-format
- * partition is erased, ESP-IDF's documented recovery. */
+ * partition is erased, ESP-IDF's documented recovery -- unless it is a
+ * launcher's (ESP_VIM_LAUNCHER_APP), whose settings are not ours to lose. */
+#if CONFIG_ESP_VIM_LAUNCHER_APP
+# define NVS_ERASABLE false
+#else
+# define NVS_ERASABLE true
+#endif
 static void nvs_init(void)
 {
     esp_err_t n = nvs_flash_init();
-    if (n == ESP_ERR_NVS_NO_FREE_PAGES || n == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    if (NVS_ERASABLE && (n == ESP_ERR_NVS_NO_FREE_PAGES || n == ESP_ERR_NVS_NEW_VERSION_FOUND)) {
         ESP_LOGW(TAG, "nvs: %s; erasing the partition", esp_err_to_name(n));
         if (nvs_flash_erase() == ESP_OK)
             n = nvs_flash_init();
@@ -145,6 +156,7 @@ static void storage_init(void)
 
     ESP_ERROR_CHECK(esp_fs_init());     /* before any task can use it */
 
+#if CONFIG_ESP_VIM_FLASH_FS
     static wl_handle_t wl = WL_INVALID_HANDLE;
     esp_vfs_fat_mount_config_t rw = {
         .max_files = 12,
@@ -154,14 +166,17 @@ static void storage_init(void)
     esp_err_t e = esp_vfs_fat_spiflash_mount_rw_wl("/fat", "storage", &rw, &wl);
     if (e != ESP_OK)
         ESP_LOGE(TAG, "/fat mount failed: %s", esp_err_to_name(e));
+#endif
 
     esp_sd_init();                      /* /sd, when the board has a slot and a card is in */
 
+#if CONFIG_ESP_VIM_FLASH_RUNTIME
     esp_vfs_fat_mount_config_t ro = { .max_files = 12 };
-    e = esp_vfs_fat_rawflash_mount("/vimrt", "vimrt", &ro);
-    if (e != ESP_OK)
+    esp_err_t r = esp_vfs_fat_rawflash_mount("/vimrt", "vimrt", &ro);
+    if (r != ESP_OK)
         ESP_LOGE(TAG, "/vimrt mount failed: %s -- $VIMRUNTIME will be missing",
-                 esp_err_to_name(e));
+                 esp_err_to_name(r));
+#endif
 }
 
 /*
@@ -171,7 +186,10 @@ static void storage_init(void)
  */
 static void environment_init(void)
 {
-    setenv("HOME", "/fat", 1);
+    const char *home = CONFIG_ESP_VIM_HOME_DIR;
+    char path[96];
+
+    setenv("HOME", home, 1);
     setenv("TERM", "xterm", 1);      /* resolves to builtin_xterm, no termcap file */
     setenv("SHELL", "", 1);          /* no shell exists; keep Vim from guessing */
     /*
@@ -180,7 +198,8 @@ static void environment_init(void)
      * and the like concluded the tool was installed and tried to use it. A real
      * but empty directory makes executable() answer an honest 0.
      */
-    setenv("PATH", "/fat/bin", 1);
+    snprintf(path, sizeof path, "%s/bin", home);
+    setenv("PATH", path, 1);
     /*
      * Temporary files: Vim tries $TMPDIR, then /tmp, "." and $HOME, and on this
      * filesystem layout /tmp does not exist and "." may be the read-only /vimrt.
@@ -188,13 +207,31 @@ static void environment_init(void)
      * a session that ends by restarting never runs Vim's own cleanup.
      */
     esp_fs_err_t ferr;
-    esp_fs_delete("/fat/.tmp", NULL, NULL, &ferr);     /* fine if absent */
-    mkdir("/fat/.tmp", 0777);
-    setenv("TMPDIR", "/fat/.tmp", 1);
-    setenv("VIM", "/vimrt", 1);
-    setenv("VIMRUNTIME", "/vimrt", 1);
-    setenv("LINES", "24", 1);
-    setenv("COLUMNS", "80", 1);
+    snprintf(path, sizeof path, "%s/.tmp", home);
+    esp_fs_delete(path, NULL, NULL, &ferr);            /* fine if absent */
+    mkdir(path, 0777);
+    setenv("TMPDIR", path, 1);
+    setenv("VIM", CONFIG_ESP_VIM_RUNTIME_DIR, 1);
+    setenv("VIMRUNTIME", CONFIG_ESP_VIM_RUNTIME_DIR, 1);
+#if !CONFIG_ESP_VIM_FLASH_RUNTIME
+    /*
+     * The runtime is on the SD card. Without it -- no card, or a card nobody
+     * copied it to -- Vim would start in Vi-compatible mode with nothing to
+     * say why. $VIMINIT stands in for the missing vimrc: the settings this
+     * port can't do without (runtime-image/vimrc has the reasons), and a word
+     * on what is wrong.
+     */
+    struct stat st;
+    if (stat(CONFIG_ESP_VIM_RUNTIME_DIR "/vimrc", &st) != 0)
+        setenv("VIMINIT",
+               "set nocompatible noswapfile regexpengine=1 history=50 undolevels=100"
+               " backspace=indent,eol,start ruler showmode"
+               "|autocmd VimEnter * echomsg esp_sd().mounted"
+               " ? 'No Vim runtime on the card: run pixi run sd-runtime'"
+               " : 'No SD card: nothing can be saved'", 1);
+#endif
+    setenv("LINES", ESP_VIM_STR(CONFIG_ESP_VIM_TERM_ROWS), 1);
+    setenv("COLUMNS", ESP_VIM_STR(CONFIG_ESP_VIM_TERM_COLS), 1);
 }
 
 /*
@@ -224,7 +261,8 @@ static void report_test_artifact(void)
  * a cursor position report): a real terminal clamps to its last row and column
  * and answers "ESC [ rows ; cols R". Save/restore the cursor around it so the
  * screen is left as found. No answer within the timeout -- a scripted session,
- * a log capture, a dumb serial monitor -- keeps the 24x80 default.
+ * a log capture, a dumb serial monitor -- keeps the default (24x80, or the
+ * board's ESP_VIM_TERM_ROWS x _COLS).
  */
 static void probe_terminal_size(void)
 {
@@ -355,6 +393,14 @@ static void vim_task(void *arg)
     unsigned session = (unsigned)(uintptr_t)arg;
     char *argv[] = { "vim", NULL };
 
+#if !CONFIG_SPIRAM
+    /* Vim's heap is internal RAM, shared with everything else: its budget is
+     * what the drivers and tasks have left, less a reserve for them. */
+    size_t avail = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    size_t reserve = CONFIG_ESP_VIM_HEAP_RESERVE_KB * 1024;
+    s_session.heap_budget = avail > reserve + 1024 ? avail - reserve : 1024;
+#endif
+
     /* Power-on state for Vim, and an empty heap. Must run on THIS task:
      * what a session opens is owned by the task that begins it. */
     esp_vim_session_begin(&s_session);
@@ -414,19 +460,72 @@ static void usb_console_reconnect(void)
 }
 #endif
 
+#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG && CONFIG_ESP_VIM_LAUNCHER_APP
+/*
+ * A launcher (bmorcelli/Launcher) starts an app with USB disconnected -- its
+ * Arduino apps connect it again themselves, as Arduino's USB serial does --
+ * and ESP-IDF's console, which expects the reset state, never did: the console
+ * was gone, and the host saw no device at all until a power cycle. So put the
+ * USB Serial/JTAG back as a power-on leaves it: its clock on, the chip's own
+ * PHY routed to it, the pads on, and no overrides -- neither the peripheral's
+ * nor the RTC controller's, which a software reset doesn't clear (hence "until
+ * a power cycle"). The host then sees a plug-in.
+ */
+static void usb_console_take_back(void)
+{
+    /* Only when it was left disconnected: after our own restart (a new Vim
+     * session) it is still connected, and a reset would make the host find
+     * it all over again for nothing. */
+    if (!USB_SERIAL_JTAG.conf0.pad_pull_override && USB_SERIAL_JTAG.conf0.dp_pullup
+            && USB_SERIAL_JTAG.conf0.usb_pad_enable && !RTCCNTL.usb_conf.usb_pad_pull_override
+            && !RTCCNTL.usb_conf.usb_pad_enable_override && !RTCCNTL.usb_conf.sw_usb_phy_sel)
+        return;
+    RTCCNTL.usb_conf.usb_pad_pull_override = 0;
+    RTCCNTL.usb_conf.usb_pad_enable_override = 0;
+    RTCCNTL.usb_conf.usb_tx_en_override = 0;
+    RTCCNTL.usb_conf.usb_vref_override = 0;
+    /* A software reset leaves the peripheral as the launcher's USB code left
+     * it -- on purpose, so USB stays connected across one -- and clearing the
+     * PHY overrides alone gave a device the host found but that never sent a
+     * byte. Reset it: everything as at power-on, D+ pulled up included. */
+    PERIPH_RCC_ATOMIC() {
+        usb_serial_jtag_ll_enable_bus_clock(true);
+        usb_serial_jtag_ll_reset_register();
+    }
+    usb_serial_jtag_ll_phy_enable_external(false);
+    /* The PHY uses the dp_pullup/dm_* bits with the override off too (see
+     * usb_console_reconnect), and the launcher leaves them all clear: set
+     * them as a reset does -- D+ pulled up -- before letting go of it. */
+    const usb_serial_jtag_pull_override_vals_t reset_pulls = { .dp_pu = true };
+    usb_serial_jtag_ll_phy_enable_pull_override(&reset_pulls);
+    usb_serial_jtag_ll_phy_disable_pull_override();
+    usb_serial_jtag_ll_phy_enable_pad(true);
+}
+
+#endif
+
+
+
 void app_main(void)
 {
 #if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG && CONFIG_ESP_VIM_BOARD_TAB5
     usb_console_reconnect();
+#endif
+#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG && CONFIG_ESP_VIM_LAUNCHER_APP
+    usb_console_take_back();
 #endif
     esp_log_level_set("*", ESP_LOG_WARN);
     esp_logbuf_init();                  /* the log kept off Vim's screen (:EspLog) */
 
     /* Before anything else touches Vim: this snapshots Vim's .data while it
      * still holds its initial values. */
+#if CONFIG_SPIRAM
     size_t budget = heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 2;
     if (budget > ESP_VIM_HEAP_MAX)
         budget = ESP_VIM_HEAP_MAX;
+#else
+    size_t budget = 0;                  /* set as each session starts (vim_task) */
+#endif
     ESP_ERROR_CHECK(esp_vim_session_init(&s_session, budget));
 
     /*
@@ -442,10 +541,19 @@ void app_main(void)
     if (esp_time_init() != ESP_OK)      /* the RTC chip, NTP, the time zone */
         ESP_LOGE(TAG, "time: not available");
     console_init();
+#if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG && CONFIG_ESP_VIM_LAUNCHER_APP
+    /* The host is still finding the console usb_console_take_back() just
+     * reconnected: give it a moment, or what Vim says first is lost. */
+    for (int i = 0; i < 10 && !usb_serial_jtag_is_connected(); i++)
+        vTaskDelay(pdMS_TO_TICKS(100));
+#endif
     esp_kbd_init();                     /* keyboards and touch feed console input */
     esp_err_t kb = esp_kbd_tab5_start();    /* the Tab5's keyboard accessory, when attached */
     if (kb != ESP_OK && kb != ESP_ERR_NOT_SUPPORTED)
         ESP_LOGE(TAG, "Tab5 keyboard: %s", esp_err_to_name(kb));
+    kb = esp_kbd_cardputer_start();     /* the Cardputer's own keys */
+    if (kb != ESP_OK && kb != ESP_ERR_NOT_SUPPORTED)
+        ESP_LOGE(TAG, "Cardputer keyboard: %s", esp_err_to_name(kb));
     /* USB keyboards, on a USB host port -- on a board that switches the
      * port's power, once it's on (under esp-emu, with no expanders and no USB
      * controller, it isn't, and the host driver would assert). */
@@ -466,8 +574,12 @@ void app_main(void)
 #endif
     storage_init();
     environment_init();
+#if CONFIG_ESP_VIM_SSH
     esp_ssh_init();
+#endif
+#if CONFIG_ESP_VIM_WEB
     esp_web_init();
+#endif
     esp_ble_kbd_boot();     /* a bonded Bluetooth keyboard reconnects by itself */
     esp_pairui_start();     /* no keyboard: offer to pair one by touch */
     if (esp_power_init() != ESP_OK)     /* the battery, and sleep */
@@ -508,5 +620,11 @@ void app_main(void)
         while (eTaskGetState(g_vim_task) != eDeleted)
             vTaskDelay(1);                         /* its stack is about to be reused */
         between_sessions();
+#if CONFIG_ESP_VIM_SESSION_REBOOT
+        /* No copy of Vim's .data to start afresh from (esp_vim_session_init):
+         * a restart is the clean slate. Under a launcher, a software reset
+         * comes back to this app, not to the launcher. */
+        esp_restart();
+#endif
     }
 }

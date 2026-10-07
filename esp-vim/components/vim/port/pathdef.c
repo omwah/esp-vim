@@ -4,16 +4,17 @@
  * Upstream generates this at build time from the Makefile's variables. Here the
  * values are fixed by the firmware image, so it is written by hand.
  *
- * The two that matter are the runtime directories: they must name the read-only
- * partition the curated $VIMRUNTIME is flashed to (docs/PLAN.md Phase 4), or
+ * The two that matter are the runtime directories: they must name where the
+ * curated $VIMRUNTIME is -- the read-only partition it is flashed to
+ * (docs/PLAN.md Phase 4), or the SD card on a board without one -- or
  * FEAT_NORMAL will fail during startup when it tries to source defaults.vim.
  */
 
 #include "vim.h"
-
-char_u *default_vim_dir        = (char_u *)"/vimrt";
-char_u *default_vimruntime_dir = (char_u *)"/vimrt";
 #include "sdkconfig.h"
+
+char_u *default_vim_dir        = (char_u *)CONFIG_ESP_VIM_RUNTIME_DIR;
+char_u *default_vimruntime_dir = (char_u *)CONFIG_ESP_VIM_RUNTIME_DIR;
 #include "esp_idf_version.h"
 
 #if CONFIG_IDF_TARGET_ARCH_XTENSA

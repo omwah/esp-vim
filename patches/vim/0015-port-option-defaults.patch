@@ -1,0 +1,50 @@
+--- a/src/option.h	2026-09-21 13:40:41.000000000 -0700
++++ b/src/option.h	2026-10-06 16:10:03.079373303 -0700
+@@ -130,7 +130,8 @@
+ #define ENC_UCSBOM	"ucs-bom"	// check for BOM at start of file
+ 
+ // default value for 'encoding'
+-#if defined(MSWIN) || defined(__MVS__)
++// VIM_ENC_UTF8: a port with no locale to ask (a microcontroller) says utf-8.
++#if defined(MSWIN) || defined(__MVS__) || defined(VIM_ENC_UTF8)
+ # define ENC_DFLT	"utf-8"
+ #else
+ # define ENC_DFLT	"latin1"
+--- a/src/option.c	2026-09-21 13:40:41.000000000 -0700
++++ b/src/option.c	2026-10-06 16:10:03.079647185 -0700
+@@ -596,7 +596,7 @@
+     char_u	*p;
+     int		opt_idx;
+ 
+-#if defined(MSWIN) || defined(__MVS__)
++#if defined(MSWIN) || defined(__MVS__) || defined(VIM_ENC_UTF8)
+     // MS-Windows has builtin support for conversion to and from Unicode, using
+     // "utf-8" for 'encoding' should work best for most users.
+     // z/OS built should default to UTF-8 mode as setlocale does not respect utf-8 environment variable locales
+--- a/src/optiondefs.h	2026-09-21 13:40:41.000000000 -0700
++++ b/src/optiondefs.h	2026-10-06 16:10:03.080975730 -0700
+@@ -2176,7 +2176,11 @@
+ 			    {(char_u *)2000L, (char_u *)0L} SCTX_INIT},
+     {"regexpengine", "re",  P_NUM|P_VI_DEF,
+ 			    (char_u *)&p_re, PV_NONE, NULL, NULL,
++#ifdef VIM_RE_DFLT
++			    {(char_u *)VIM_RE_DFLT, (char_u *)0L} SCTX_INIT},
++#else
+ 			    {(char_u *)0L, (char_u *)0L} SCTX_INIT},
++#endif
+     {"relativenumber", "rnu", P_BOOL|P_VI_DEF|P_RWIN,
+ 			    (char_u *)VAR_WIN, PV_RNU,
+ 			    did_set_number_relativenumber, NULL,
+--- a/src/term.c	2026-10-06 17:12:03.072928321 -0700
++++ b/src/term.c	2026-10-06 17:12:02.631739115 -0700
+@@ -2844,7 +2844,9 @@
+ /*
+  * The number of calls to ui_write is reduced by using "out_buf".
+  */
+-#define OUT_SIZE	8191
++#ifndef OUT_SIZE	    // a port short of RAM may set it smaller
++# define OUT_SIZE	8191
++#endif
+ 
+ // add one to allow mch_write() in os_win32.c to append a NUL
+ static char_u		out_buf[OUT_SIZE + 1];

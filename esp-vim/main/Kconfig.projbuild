@@ -1,4 +1,74 @@
+menu "esp-vim features"
+
+    config ESP_VIM_GIT
+        bool "Git (libgit2): the esp_git_*() builtins and :EspGit*"
+        default y
+        help
+            About 370 KB of flash. Off, the builtins remain but report that
+            git is not in this build.
+
+    config ESP_VIM_PYTHON
+        bool "MicroPython: the esp_py_*() builtins and :EspPy*"
+        default y
+        help
+            About 150 KB of flash, and a heap of ESP_VIM_PY_HEAP_KB the first
+            time Python runs.
+
+    config ESP_VIM_SSH
+        bool "SSH: SCP and SFTP (libssh2), the esp_ssh_*() builtins"
+        default y
+        help
+            About 90 KB of flash. Git over SSH needs it too.
+
+    config ESP_VIM_WEB
+        bool "The web interface (HTTPS): the esp_web_*() builtins"
+        default y
+        help
+            About 50 KB of flash, plus the HTTPS server's TLS.
+
+endmenu
+
+menu "esp-vim storage"
+
+    config ESP_VIM_FLASH_FS
+        bool "/fat: a read-write FAT partition (\"storage\") in flash"
+        default y
+        help
+            Off on a board whose app shares flash with others under a
+            launcher: files then live on the SD card only.
+
+    config ESP_VIM_FLASH_RUNTIME
+        bool "/vimrt: Vim's runtime in a read-only flash partition"
+        default y
+        help
+            The curated $VIMRUNTIME (pixi run runtime), flashed with the
+            app. Off, the runtime is read from ESP_VIM_RUNTIME_DIR instead,
+            normally on the SD card (pixi run sd-runtime).
+
+    config ESP_VIM_HOME_DIR
+        string "$HOME: where Vim starts, and its .vimrc, .tmp and bin"
+        default "/fat" if ESP_VIM_FLASH_FS
+        default "/sd"
+
+    config ESP_VIM_RUNTIME_DIR
+        string "$VIM and $VIMRUNTIME"
+        default "/vimrt" if ESP_VIM_FLASH_RUNTIME
+        default "/sd/vim/runtime"
+
+endmenu
+
 menu "esp-vim board"
+
+    config ESP_VIM_LAUNCHER_APP
+        bool "Installed and started by a launcher (bmorcelli/Launcher)"
+        default n
+        help
+            The app is one of several a launcher installs and starts. It
+            shares the launcher's NVS partition and its settings: an NVS that
+            won't initialise is left alone (:EspNvs and saved settings don't
+            work) instead of being erased, ESP-IDF's usual recovery. And the
+            launcher leaves USB disconnected when it starts an app, so the
+            USB Serial/JTAG console is connected again at boot.
 
     config ESP_VIM_BSS_IN_PSRAM
         bool "Put Vim's zero-initialised data (.bss) in PSRAM"
@@ -20,6 +90,35 @@ menu "esp-vim board"
             PSRAM (SPIRAM_XIP_FROM_PSRAM), when flash writes leave the cache
             on.
 
+    config ESP_VIM_TASK_STACK_KB
+        int "The Vim task's stack (KB)"
+        range 24 128
+        default 64
+        help
+            Vim recurses in the regexp engine and in eval, and Xtensa's
+            windowed ABI costs more stack per frame than RISC-V. A board
+            without PSRAM can't spare 64 KB of internal RAM: measure the
+            high-water mark (:EspTasks) before going lower.
+
+    config ESP_VIM_SESSION_REBOOT
+        bool "A new Vim session restarts the chip"
+        default y if !SPIRAM
+        help
+            After :q, the key that starts a new session restarts the chip
+            instead of resetting Vim in place. Resetting in place keeps a
+            copy of Vim's initialised data (about 140 KB) for the whole
+            run, which a board without PSRAM can't afford.
+
+    config ESP_VIM_HEAP_RESERVE_KB
+        int "Internal RAM kept back from Vim's heap (KB)"
+        depends on !SPIRAM
+        default 24
+        help
+            Without PSRAM, Vim's heap shares internal RAM with the system.
+            Its budget is what is free when a session starts, less this, so
+            Vim reports "out of memory" before the drivers and FreeRTOS run
+            short.
+
     config ESP_VIM_HEAP_GUARD
         bool "Debug: guard Vim's heap blocks"
         default n
@@ -37,6 +136,20 @@ menu "esp-vim board"
         int "Debug: check every heap block every N allocator calls (0: never)"
         depends on ESP_VIM_HEAP_GUARD
         default 1024
+
+    config ESP_VIM_TERM_ROWS
+        int "Serial console rows when the terminal doesn't say"
+        range 5 999
+        default 24
+        help
+            Used when the terminal on the serial console doesn't answer the
+            size probe and there is no display. Vim's screen buffers grow
+            with it: a board without PSRAM keeps it to its display's size.
+
+    config ESP_VIM_TERM_COLS
+        int "Serial console columns when the terminal doesn't say"
+        range 20 999
+        default 80
 
     config ESP_VIM_SERIAL_TX
         int "Default TX pin for :EspSerial"

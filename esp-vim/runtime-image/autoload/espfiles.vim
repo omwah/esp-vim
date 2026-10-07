@@ -63,7 +63,7 @@ function! s:StartDir(dir) abort
   endif
   let d = fnamemodify(expand(a:dir), ':p')
   let d = len(d) > 1 ? substitute(d, '/\+$', '', '') : d
-  return isdirectory(d) || d ==# '/' ? d : '/fat'
+  return isdirectory(d) || d ==# '/' ? d : $HOME
 endfunction
 
 function! s:Setup(side, dir) abort

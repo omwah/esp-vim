@@ -17,6 +17,12 @@ menu "esp-vim display"
         default ESP_VIM_DISP_ILI9341
     config ESP_VIM_DISP_ILI9341
         bool "ILI9341 on SPI"
+    config ESP_VIM_DISP_ST7789
+        bool "ST7789 on SPI"
+        help
+            ESP-IDF's own driver. A panel smaller than the controller's
+            240x320 (the M5Stack Cardputer's 240x135) sits at an offset in
+            its memory: ESP_VIM_DISP_X_GAP / _Y_GAP.
     config ESP_VIM_DISP_RGB
         bool "RGB parallel panel (16-bit RGB565, frame buffer in PSRAM)"
         depends on SOC_LCD_RGB_SUPPORTED && SPIRAM
@@ -73,6 +79,14 @@ menu "esp-vim display"
         bool "Spleen 16x32"
     endchoice
 
+    config ESP_VIM_DISP_MAX_COLS
+        int "At most this many columns (0: as many as fit)"
+        default 0
+        help
+            For a font padded to a wider cell (spleen-8x16+1) that leaves a
+            column more than wanted: the Cardputer's 240 pixels hold 26 cells
+            of 9, and it shows 25, centred.
+
     config ESP_VIM_DISP_WIDTH
         int "Width in pixels, as mounted"
         default 1280 if ESP_VIM_DISP_DSI
@@ -96,7 +110,7 @@ menu "esp-vim display"
         int "Backlight on level"
         default 1
 
-    if ESP_VIM_DISP_ILI9341 || ESP_VIM_DISP_ST7305
+    if ESP_VIM_DISP_ILI9341 || ESP_VIM_DISP_ST7789 || ESP_VIM_DISP_ST7305
 
     config ESP_VIM_DISP_SPI_MHZ
         int "SPI clock, MHz"
@@ -138,7 +152,7 @@ menu "esp-vim display"
 
     endif
 
-    if ESP_VIM_DISP_ILI9341
+    if ESP_VIM_DISP_ILI9341 || ESP_VIM_DISP_ST7789
 
     config ESP_VIM_DISP_INVERT
         bool "Invert colours (IPS panels that show complements)"
@@ -150,7 +164,14 @@ menu "esp-vim display"
         bool "Panel is BGR"
         default y
 
-    endif # ESP_VIM_DISP_ILI9341
+    config ESP_VIM_DISP_X_GAP
+        int "Panel offset in the controller's memory, X (as drawn)"
+        default 0
+    config ESP_VIM_DISP_Y_GAP
+        int "Panel offset in the controller's memory, Y (as drawn)"
+        default 0
+
+    endif # ESP_VIM_DISP_ILI9341 || ESP_VIM_DISP_ST7789
 
     if ESP_VIM_DISP_RGB
 

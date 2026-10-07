@@ -18,7 +18,7 @@ than hand-picked.
 
 Fails if the estimated FAT footprint will not fit the partition.
 
-Usage: scripts/make-runtime-image.py [esp32p4|esp32s3|es3c28p|rlcd42 ...]
+Usage: scripts/make-runtime-image.py [esp32p4|esp32s3|es3c28p|rlcd42|cardputer ...]
        (no variant: every one; or: pixi run runtime)
 """
 
@@ -44,7 +44,11 @@ VARIANTS = {
     "esp32s3": ("esp32s3", 78),
     "es3c28p": ("esp32s3", 53),
     "rlcd42": ("esp32s3", 66),
+    "cardputer": ("esp32s3", 25),
 }
+# Variants whose runtime is not flashed but copied to an SD card (pixi run
+# sd-runtime): there is no partition to fit, so no budget check.
+SD_VARIANTS = {"cardputer"}
 OUT = None                  # build-deps/vimrt-<variant>, set per variant in build()
 PARTITIONS = ROOT / "esp-vim" / "partitions.csv"
 FILETYPES_CONF = ROOT / "esp-vim" / "filetypes.conf"
@@ -539,22 +543,25 @@ def build(variant):
     raw = sum(p.stat().st_size for p in files)
     clusters = sum(max(1, -(-p.stat().st_size // CLUSTER)) for p in files) + len(dirs)
     est = clusters * CLUSTER
-    cap = partition_size(PARTITION_NAME)
+    cap = None if variant in SD_VARIANTS else partition_size(PARTITION_NAME)
     # Leave room for the FAT itself, the root directory and long-name entries.
-    budget = int(cap * 0.90)
+    budget = int(cap * 0.90) if cap else None
 
     (ROOT / "build-deps" / f"vimrt-{variant}.manifest").write_text(
         "".join(f"{p.relative_to(OUT)}\t{p.stat().st_size}\n" for p in sorted(files)))
 
     print(f"vimrt-{variant}: {len(files)} files ({ours} ours), {len(dirs)} dirs, "
           f"{len(filetypes)} filetypes from {FILETYPES_CONF.name}")
-    print(f"  raw {raw / 1024:.0f} KB, FAT footprint ~{est / 1024:.0f} KB "
-          f"of {cap / 1024:.0f} KB partition ({100 * est / cap:.0f}%)")
+    if cap:
+        print(f"  raw {raw / 1024:.0f} KB, FAT footprint ~{est / 1024:.0f} KB "
+              f"of {cap / 1024:.0f} KB partition ({100 * est / cap:.0f}%)")
+    else:
+        print(f"  raw {raw / 1024:.0f} KB, for an SD card (no partition): pixi run sd-runtime")
     docs = ", ".join(["help.txt"] + sorted(UPSTREAM_DOCS.values()))
     print(f"  help for {chip}, {help_width} columns: {docs}; {ntags} tags")
     print(f"    our links all resolve; {unlinked} upstream links to absent docs made plain text")
     print(f"  written to {OUT.relative_to(ROOT)}/, listing in build-deps/vimrt-{variant}.manifest")
-    if est > budget:
+    if budget is not None and est > budget:
         die(f"estimated {est} bytes exceeds 90% of the {cap}-byte '{PARTITION_NAME}' partition")
 
 

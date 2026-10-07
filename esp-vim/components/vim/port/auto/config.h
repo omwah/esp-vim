@@ -245,4 +245,41 @@
  * the direct stat()/open() calls inside os_unix.c itself.
  */
 
+/* ------------------------------------------------- read-only data -- */
+
+/*
+ * Data Vim never writes but doesn't declare const -- its 1500 error messages
+ * (errors.h) and some character and digraph tables -- goes with the read-only
+ * data, in flash, instead of being copied into internal RAM at boot: about
+ * 80 KB, which a board without PSRAM (the Cardputer) can't spare.
+ * patches/vim/0014-rodata-in-flash adds VIM_RODATA to those definitions.
+ */
+#define VIM_RODATA __attribute__((section(".rodata.vim_ro")))
+
+/*
+ * 'encoding' is utf-8 from the start (patches/vim/0015-port-option-defaults). The
+ * system vimrc set it, but changing it reallocates the screen with the old
+ * one still held -- twice its size at once, which a board without PSRAM
+ * (the Cardputer) couldn't spare at startup.
+ */
+#define VIM_ENC_UTF8 1
+
+/*
+ * 'regexpengine' is 1, the backtracking engine, from the start (the same patch).
+ * The system vimrc set it (its comment has the measurements), but Vim compiles
+ * and runs patterns with the default, the NFA engine, before any vimrc is read:
+ * 'spellcapcheck' at startup took 6 KB, and 16 KB more while it ran.
+ */
+#define VIM_RE_DFLT 1L
+
+/*
+ * Vim gathers terminal output in an 8 KB buffer before writing it. A board
+ * without PSRAM (the Cardputer, 25x8 cells) flushes after 1 KB instead and
+ * has the 7 KB for editing (OUT_SIZE: the same patch).
+ */
+#include "sdkconfig.h"
+#if !CONFIG_SPIRAM
+# define OUT_SIZE 1023
+#endif
+
 #endif /* ESP_VIM_CONFIG_H */

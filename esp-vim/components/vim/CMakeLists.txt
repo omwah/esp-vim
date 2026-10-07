@@ -174,13 +174,28 @@ set(VIM_XDIFF_SOURCES
     "${VIM_SRC}/xdiff/xpatience.c"
 )
 
+# The esp_*() builtins (api/). Those of a feature left out of the build
+# ("esp-vim features" in main/Kconfig.projbuild) come from esp_api_absent.c
+# instead, so nothing references the feature's component and the linker drops
+# it. The components stay in REQUIRES: Kconfig values are not known yet when
+# ESP-IDF first reads this file to collect requirements.
+set(VIM_API_SOURCES
+    "api/esp_api_sys.c" "api/esp_api_nvs.c" "api/esp_api_gpio.c"
+    "api/esp_api_fs.c" "api/esp_api_net.c" "api/esp_api_hw.c" "api/esp_api_ble.c"
+    "api/esp_api_sd.c" "api/esp_api_absent.c"
+)
+foreach(feature GIT:git PYTHON:py SSH:ssh WEB:web)
+    string(REPLACE ":" ";" feature "${feature}")
+    list(GET feature 0 option)
+    list(GET feature 1 file)
+    if(CONFIG_ESP_VIM_${option})
+        list(APPEND VIM_API_SOURCES "api/esp_api_${file}.c")
+    endif()
+endforeach()
+
 idf_component_register(
     SRCS "${VIM_SOURCES}" "${VIM_XDIFF_SOURCES}" "port/pathdef.c" "port/esp_shims.c"
-         "port/esp_busy.c"
-         "api/esp_api_sys.c" "api/esp_api_nvs.c" "api/esp_api_gpio.c"
-         "api/esp_api_fs.c" "api/esp_api_net.c" "api/esp_api_ssh.c"
-         "api/esp_api_web.c" "api/esp_api_hw.c" "api/esp_api_ble.c" "api/esp_api_git.c"
-         "api/esp_api_py.c" "api/esp_api_sd.c"
+         "port/esp_busy.c" "${VIM_API_SOURCES}"
     INCLUDE_DIRS "port"
     PRIV_INCLUDE_DIRS "${VIM_SRC}" "${VIM_SRC}/proto"   # upstream Makefile passes -Iproto
     REQUIRES fatfs vfs esp_partition esp_driver_uart esp_timer heap

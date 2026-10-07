@@ -4,9 +4,10 @@ Convert a fixed-width BDF bitmap font into a C table for the display console
 (components/esp_display). Run by the build; the output is never committed, and
 the font itself comes from a vendored archive (third_party/, e.g. Spleen).
 
-    bdf2c.py FONT.bdf OUT.c [SYMBOL [NAME]]
+    bdf2c.py FONT.bdf OUT.c [SYMBOL [NAME [PAD]]]
                           (SYMBOL: default esp_display_font; NAME, as :EspFont
-                           shows it: default the BDF file's name)
+                           shows it: default the BDF file's name; PAD: blank
+                           pixel columns added on the right of every cell)
 
 The table holds one glyph per code point, sorted, each as `height` rows of
 `width` bits, one byte per row for widths up to 8 and two (big-endian) up to 16,
@@ -43,8 +44,9 @@ def parse(path):
     return font_box, glyphs
 
 
-def main(src, out, symbol="esp_display_font", name=None):
+def main(src, out, symbol="esp_display_font", name=None, pad="0"):
     (fw, fh, fx, fy), glyphs = parse(src)
+    fw0, fw = fw, fw + int(pad)             # glyphs stay left-aligned; the pad is blank
     if fw > 16:
         sys.exit(f"bdf2c: {src}: glyphs wider than 16 pixels are not supported")
     bpr = 1 if fw <= 8 else 2               # bytes per row
@@ -64,6 +66,8 @@ def main(src, out, symbol="esp_display_font", name=None):
                 # shifted by the glyph's x offset in the cell
                 v = bits << (8 * (bpr - nbytes)) if nbytes <= bpr else bits >> (8 * (nbytes - bpr))
                 v = (v >> (gx - fx)) & mask if gx >= fx else (v << (fx - gx)) & mask
+                # only the font's own columns: a glyph's box can spill into the pad
+                v &= mask ^ ((1 << (8 * bpr - fw0)) - 1)
                 cell[y] = v
         table.append((cp, cell))
     with open(out, "w") as o:
@@ -83,4 +87,4 @@ def main(src, out, symbol="esp_display_font", name=None):
 
 
 if __name__ == "__main__":
-    main(*sys.argv[1:5])
+    main(*sys.argv[1:6])

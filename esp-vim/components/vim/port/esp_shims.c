@@ -98,7 +98,13 @@ typedef struct vim_blk {
 static vim_blk_t *s_blocks;     /* every live Vim allocation */
 static size_t s_heap_used, s_heap_peak, s_heap_budget;
 
+/* PSRAM when there is some; a board without (the Cardputer) has only internal
+ * RAM, where a request for PSRAM would always fail -- realloc() included. */
+#if CONFIG_SPIRAM
 #define VIM_HEAP_CAPS (MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
+#else
+#define VIM_HEAP_CAPS (MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)
+#endif
 
 #if CONFIG_ESP_VIM_HEAP_GUARD
 /*
@@ -368,7 +374,7 @@ static inline vim_blk_t *our_block(void *ptr)
     return b->self == b ? b : NULL;
 }
 
-static void blk_link(vim_blk_t *b, size_t size)
+static inline void blk_link(vim_blk_t *b, size_t size)
 {
     b->size = size;
     b->self = b;
@@ -382,7 +388,7 @@ static void blk_link(vim_blk_t *b, size_t size)
         s_heap_peak = s_heap_used;
 }
 
-static void blk_unlink(vim_blk_t *b)
+static inline void blk_unlink(vim_blk_t *b)
 {
     if (b->prev != NULL)
         b->prev->next = b->next;
@@ -398,6 +404,78 @@ static bool over_budget(size_t more)
 {
     return s_heap_budget != 0 && s_heap_used + more > s_heap_budget;
 }
+
+#if CONFIG_ESP_VIM_SESSION_REBOOT && !CONFIG_ESP_VIM_HEAP_GUARD
+/*
+ * The lean heap: when a new session restarts the chip (ESP_VIM_SESSION_REBOOT),
+ * nothing ever frees all of Vim's blocks at once, so they need no list and no
+ * header -- 16 bytes on each of the many hundreds of small blocks Vim holds,
+ * which a board without PSRAM can't spare. Vim's use is counted in the heap's
+ * own block sizes (its overhead included, so the budget is honest). A foreign
+ * block (freed by Vim, allocated elsewhere) skews the count a little; it is
+ * kept from going below zero.
+ */
+static void count(ssize_t delta)
+{
+    if (delta < 0 && (size_t)-delta > s_heap_used)
+        s_heap_used = 0;
+    else
+        s_heap_used += delta;
+    if (s_heap_used > s_heap_peak)
+        s_heap_peak = s_heap_used;
+}
+
+void *esp_vim_malloc(size_t size)
+{
+    if (over_budget(size))
+        return NULL;            /* Vim reports "out of memory" itself */
+    void *p = heap_caps_malloc(size, VIM_HEAP_CAPS);
+    if (p != NULL)
+        count((ssize_t)heap_caps_get_allocated_size(p));
+    return p;
+}
+
+void *esp_vim_calloc(size_t n, size_t size)
+{
+    if (size != 0 && n > SIZE_MAX / size)
+        return NULL;
+    void *p = esp_vim_malloc(n * size);
+    if (p != NULL)
+        memset(p, 0, n * size);
+    return p;
+}
+
+void esp_vim_free(void *ptr)
+{
+    if (ptr == NULL)
+        return;
+    count(-(ssize_t)heap_caps_get_allocated_size(ptr));
+    heap_caps_free(ptr);
+}
+
+void *esp_vim_realloc(void *ptr, size_t size)
+{
+    if (ptr == NULL)
+        return esp_vim_malloc(size);
+    if (size == 0) {
+        esp_vim_free(ptr);
+        return NULL;
+    }
+    size_t old = heap_caps_get_allocated_size(ptr);
+    if (size > old && over_budget(size - old))
+        return NULL;
+    void *p = heap_caps_realloc(ptr, size, VIM_HEAP_CAPS);
+    if (p != NULL)
+        count((ssize_t)heap_caps_get_allocated_size(p) - (ssize_t)old);
+    return p;
+}
+
+/* Only ever one session: nothing to release (esp_vim_session_begin). */
+static void vim_heap_release_all(void)
+{
+}
+
+#else   /* the tracked heap: every block on a list, freed at a new session */
 
 void *esp_vim_malloc(size_t size)
 {
@@ -522,6 +600,8 @@ static void vim_heap_release_all(void)
     s_blocks = NULL;
     s_heap_used = 0;
 }
+
+#endif
 
 void esp_vim_heap_stats(size_t *used, size_t *peak, size_t *total)
 {
@@ -827,7 +907,7 @@ int __wrap_tcsetattr(int fd, int action, const struct termios *t)
 /* ======================================================================= */
 
 #ifndef ESP_VIM_CWD_INITIAL
-# define ESP_VIM_CWD_INITIAL "/fat"
+# define ESP_VIM_CWD_INITIAL CONFIG_ESP_VIM_HOME_DIR
 #endif
 
 #define ESP_CWD_MAX 256
@@ -1256,7 +1336,7 @@ static struct passwd esp_pw = {
     .pw_name  = (char *)"esp",
     .pw_uid   = 0,
     .pw_gid   = 0,
-    .pw_dir   = (char *)"/fat",
+    .pw_dir   = (char *)CONFIG_ESP_VIM_HOME_DIR,
     .pw_shell = (char *)"",
 };
 
@@ -1523,6 +1603,12 @@ esp_err_t esp_vim_session_init(esp_vim_session_t *sess, size_t heap_budget)
     size_t data_size = (size_t)(_vim_data_end - _vim_data_start);
 
     memset(sess, 0, sizeof(*sess));
+    sess->heap_budget = heap_budget;
+#if CONFIG_ESP_VIM_SESSION_REBOOT
+    /* Only ever one session per boot (the next one restarts the chip), and the
+     * first finds .data as the loader left it: no snapshot to keep. */
+    (void)data_size;
+#else
     sess->data_snapshot = heap_caps_malloc(data_size ? data_size : 1,
                                            MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     if (sess->data_snapshot == NULL)
@@ -1530,7 +1616,7 @@ esp_err_t esp_vim_session_init(esp_vim_session_t *sess, size_t heap_budget)
     /* Before any Vim code has run, .data holds its initial values. */
     memcpy(sess->data_snapshot, _vim_data_start, data_size);
     sess->data_size = data_size;
-    sess->heap_budget = heap_budget;
+#endif
     return ESP_OK;
 }
 
@@ -1556,7 +1642,8 @@ void esp_vim_session_begin(const esp_vim_session_t *sess)
     vim_heap_release_all();         /* the list head is in .bss, about to be zeroed */
 
     /* 2. Power-on state for every Vim global, this file's included. */
-    memcpy(_vim_data_start, sess->data_snapshot, sess->data_size);
+    if (sess->data_snapshot != NULL)    /* NULL: the first and only session */
+        memcpy(_vim_data_start, sess->data_snapshot, sess->data_size);
     memset(_vim_bss_start, 0, (size_t)(_vim_bss_end - _vim_bss_start));
 
     /* 3. An empty heap with this session's budget. */

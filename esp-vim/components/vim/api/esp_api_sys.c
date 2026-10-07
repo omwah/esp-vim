@@ -83,7 +83,11 @@ void f_esp_info(typval_T *argvars UNUSED, typval_T *rettv)
     uint32_t flash = 0;
     if (esp_flash_get_size(NULL, &flash) == ESP_OK)
         dict_add_number(d, "flash", flash);
+#if CONFIG_SPIRAM
     dict_add_number(d, "psram", esp_psram_is_initialized() ? (varnumber_T)esp_psram_get_size() : 0);
+#else
+    dict_add_number(d, "psram", 0);     /* esp_psram is not even linked */
+#endif
 
     uint8_t mac[6];
     if (esp_read_mac(mac, ESP_MAC_BASE) == ESP_OK) {

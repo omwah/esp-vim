@@ -108,8 +108,9 @@ networking, MicroPython and git parts), 3 MB for Vim's runtime files (2.2 MB use
 help, plugins), about 5.5 MB for your files at `/fat`, and 64 KB for settings. An SD
 card adds storage at `/sd`.
 
-**PSRAM is required.** Vim's memory lives there, because the chip's internal RAM (a
-few hundred KB at most) isn't enough. Vim uses about 0.5 MB editing a typical file and peaked near
+**PSRAM is required** -- except on the M5Stack Cardputer ADV, a cut-down build for a
+board without it (see [below](#m5stack-cardputer-adv)). Vim's memory lives there, because
+the chip's internal RAM (a few hundred KB at most) isn't enough for the full editor. Vim uses about 0.5 MB editing a typical file and peaked near
 2.7 MB in the test suite with help and syntax highlighting loaded. It's allowed up to
 half of the free PSRAM (at most 16 MB), leaving the rest for everything else.
 
@@ -124,6 +125,7 @@ Targeted boards:
 | Freenove ESP32-S3 Display **FNK0115Q** (5.0", 800×480, capacitive touch) | ESP32-S3 | 16 MB / 8 MB | touch LCD, 80×24 cells (72×21 or 100×30 with `:EspFont`); BLE keyboards, paired by touch; console over its USB-serial bridge |
 | Waveshare **ESP32-S3-RLCD-4.2** (4.2", 400×300 reflective monochrome LCD) | ESP32-S3 | 16 MB / 8 MB | black-and-white screen, no backlight, 66×25 cells (80×37, 50×21 or 50×18 with `:EspFont`); BLE keyboards; console over the S3's own USB |
 | ESP32-S3 development boards | ESP32-S3 | 16 MB / 8 MB required | none: a serial terminal |
+| [M5Stack Cardputer ADV](https://docs.m5stack.com/en/core/Cardputer-Adv) | ESP32-S3 | 8 MB / **none** | 1.14" 240×135 screen, 25×8 cells; its own 56-key keyboard; console over the S3's own USB. A cut-down build: [below](#m5stack-cardputer-adv) |
 
 - **CYD boards:** only the **ESP32-S3** variants with 16 MB flash and 8 MB PSRAM (the
   module is marked **N16R8**) can run this. The original CYD, the ESP32-2432S028, uses a
@@ -134,7 +136,38 @@ Targeted boards:
   quad PSRAM, set `CONFIG_SPIRAM_MODE_QUAD` in `esp-vim/sdkconfig.defaults.esp32s3`.
 
 **Tested so far:** the ESP32-P4 and ESP32-S3 chips in Espressif's emulator, over a serial
-terminal. No physical board yet. Progress is in the [plan](docs/PLAN.md#status).
+terminal, and the boards in the [plan](docs/PLAN.md#status).
+
+### M5Stack Cardputer ADV
+
+The Cardputer ADV has no PSRAM: everything -- Vim, its files' text in memory, the screen
+and the keyboard -- shares about 300 KB of internal RAM, so this build leaves things out
+and works differently:
+
+- **Left out:** WiFi, Bluetooth, the web interface, git, SSH and MicroPython; syntax
+  highlighting and filetype detection are off at startup (`:EspSyntax` turns them on,
+  for small files); only a few `:Esp*` commands (`:EspInfo`, `:EspHeap`, `:EspLog`,
+  `:EspReboot`, `:EspSd`, `:EspFont`, `:EspConsole`).
+- **Files and Vim's runtime are on the SD card.** The app has no data partition of its
+  own, so it can live beside other apps under [Launcher](https://github.com/bmorcelli/Launcher).
+  `$HOME` is `/sd`; Vim's runtime is `/sd/vim/runtime`, which
+  `pixi run sd-runtime /media/YOU/CARD` writes (or, with the card in the Cardputer and
+  Launcher's WebUI running, `python scripts/launcher-install.py IP --sd-runtime`). Without
+  it Vim still starts, with a minimal setup, and says why.
+- **Memory:** Vim has about 110 KB; idle it uses about 80 KB. Files bigger than that are
+  fine -- Vim keeps only part of a file in memory and pages the rest to its swap file on
+  the card -- but **undo** is held in memory: a change to every line of a big file (a
+  `:%s` over 2,000 lines) can't be undone, and Vim asks before going ahead without it.
+  `:echo esp_heap().vim` shows where it stands. `:q` restarts the chip for a fresh session.
+- **Keys:** there is no Esc key, so **`` ` `` is Esc** (Shift-`` ` `` is `~`, Fn-`` ` `` is
+  `` ` ``). The arrows printed on **`; , . /` are the plain keys** (Shift gives `: < > ?`,
+  Fn the characters themselves -- so search is Fn-`/`). Fn also gives F1–F12 on
+  `1`…`=`, Delete on Bksp, and PgUp/PgDn on `[ ]`. Alt is Meta; Ctrl, Alt, Fn and Shift
+  can be tapped for the next key (Shift twice is Caps Lock).
+
+Install it with Launcher (`pixi run launcher-install-cardputer IP --boot`, with Launcher's
+WebUI on), or flash it alone over USB:
+`esptool.py --chip esp32s3 write_flash 0x0 esp-vim/build-cardputer/esp-vim-cardputer-merged.bin`.
 
 ## Try it in the emulator
 
@@ -184,7 +217,9 @@ pixi run -- bash -c '. scripts/env.sh && idf.py -C esp-vim -B esp-vim/build-tab5
 For an ESP32-S3 board, use `build-esp32s3`; for the Hosyond ES3C28P, whose only USB
 port is the S3's own, `pixi run vim-build-es3c28p` and `build-es3c28p`, which put the
 console on that port; for the Freenove FNK0115Q, `pixi run vim-build-fnk0115` and
-`build-fnk0115` (its console is UART0, through the board's USB-serial bridge). Attach a terminal to the board's serial port with, for example,
+`build-fnk0115` (its console is UART0, through the board's USB-serial bridge); for the
+M5Stack Cardputer ADV, `pixi run vim-build-cardputer`, then see
+[its section](#m5stack-cardputer-adv). Attach a terminal to the board's serial port with, for example,
 `pixi run -- socat -,raw,echo=0,escape=0x1d /dev/ttyACM0,raw,echo=0` (detach with
 `Ctrl-]`). The Tab5's WiFi comes from its ESP32-C6
 running Espressif's esp-hosted firmware; `pixi run c6-build` builds that firmware at the

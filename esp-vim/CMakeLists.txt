@@ -58,6 +58,12 @@ project(esp-vim)
 # from runtime-image/. Run it (pixi run runtime) before building. There is one
 # image per build variant -- :help names the chip it runs on, and a narrow screen
 # gets its help reflowed -- and a variant without its own (tab5) uses its chip's.
+#
+# A board without the partition (ESP_VIM_FLASH_RUNTIME off: the Cardputer) reads
+# the same runtime from its SD card instead -- pixi run sd-runtime writes it.
+if(NOT CONFIG_ESP_VIM_FLASH_RUNTIME)
+    return()
+endif()
 set(VIMRT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../build-deps/vimrt-${ESPVIM_VARIANT}")
 if(NOT EXISTS "${VIMRT_DIR}/defaults.vim")
     set(VIMRT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../build-deps/vimrt-${IDF_TARGET}")

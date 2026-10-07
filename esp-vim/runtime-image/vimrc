@@ -10,6 +10,14 @@
 set encoding=utf-8
 scriptencoding utf-8
 
+" A board without PSRAM (the Cardputer) has about 100 KB for all of Vim: a
+" lean vimrc of its own instead of the rest of this one, which would not even
+" fit to be read.
+if exists('*esp_info') && esp_info().psram == 0
+  source <sfile>:h/vimrc-lowmem
+  finish
+endif
+
 " The medium is wear-levelled SPI flash. Swap files, backups, undo files and
 " viminfo would all be written continuously, and FATFS reports st_ino = 0, so
 " Vim's same-file detection for backups is blind anyway (docs/PHASE1.md).

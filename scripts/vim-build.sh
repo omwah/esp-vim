@@ -11,6 +11,8 @@
 #   scripts/vim-build.sh es3c28p    # esp32s3, console on USB (Hosyond ES3C28P CYD)
 #   scripts/vim-build.sh fnk0115    # esp32s3, 5" RGB panel (Freenove FNK0115)
 #   scripts/vim-build.sh rlcd42     # esp32s3, 4.2" mono RLCD (Waveshare ESP32-S3-RLCD-4.2)
+#   scripts/vim-build.sh cardputer  # esp32s3, no PSRAM, 8 MB: an app for a launcher
+#                                   #   (M5Stack Cardputer ADV); its runtime on SD
 #
 # Each variant builds in its own directory, esp-vim/build-<variant>/, with its
 # own sdkconfig inside it, so switching never reconfigures another one. A board
@@ -23,8 +25,8 @@ VARIANT="${1:-${ESPVIM_TARGET:-esp32p4}}"
 case "$VARIANT" in
     esp32p4|esp32s3) TARGET="$VARIANT" ;;
     tab5|tab5uart)   TARGET=esp32p4 ;;
-    es3c28p|fnk0115|rlcd42) TARGET=esp32s3 ;;
-    *) echo "vim-build: unsupported variant '$VARIANT' (esp32p4, tab5, tab5uart, esp32s3, es3c28p, fnk0115, rlcd42)" >&2; exit 1 ;;
+    es3c28p|fnk0115|rlcd42|cardputer) TARGET=esp32s3 ;;
+    *) echo "vim-build: unsupported variant '$VARIANT' (esp32p4, tab5, tab5uart, esp32s3, es3c28p, fnk0115, rlcd42, cardputer)" >&2; exit 1 ;;
 esac
 
 PROJECT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../esp-vim" && pwd)"
@@ -73,3 +75,25 @@ idf.py -B "$BUILD" -D "SDKCONFIG=$BUILD/sdkconfig" -D "IDF_TARGET=$TARGET" \
 # A new Vim session resets Vim's globals between linker-made bounds: check, from
 # the link map, that they hold all of them and nothing else.
 python3 "$PROJECT/../scripts/check-vim-sections.py" "$BUILD"
+
+# The Cardputer's app shares 8 MB of flash with other apps under a launcher,
+# which installs the app image alone. Fail if it outgrows its slot in
+# partitions-cardputer.csv, warn when it gets big for sharing, and write both
+# release images: the app alone (for the launcher, pixi run
+# launcher-install-cardputer) and one merged at 0x0 (bootloader, table and app,
+# for esptool or M5Burner on a device without the launcher).
+if [ "$VARIANT" = cardputer ]; then
+    APP="$BUILD/esp-vim.bin"
+    SIZE=$(stat -c %s "$APP")
+    SLOT=$((0x300000))
+    echo "vim-build: app $SIZE bytes ($((SIZE * 100 / SLOT))% of its $SLOT-byte slot)"
+    if [ "$SIZE" -gt "$SLOT" ]; then
+        echo "vim-build: the app no longer fits partitions-cardputer.csv" >&2
+        exit 1
+    fi
+    [ "$SIZE" -le $((2560 * 1024)) ] || echo "vim-build: warning: over 2.5 MB -- less room for other apps"
+    cp "$APP" "$BUILD/esp-vim-cardputer.bin"
+    (cd "$BUILD" && python3 -m esptool --chip esp32s3 merge_bin -o esp-vim-cardputer-merged.bin \
+        @flash_args >/dev/null)
+    echo "vim-build: $BUILD/esp-vim-cardputer.bin (for the launcher), esp-vim-cardputer-merged.bin (at 0x0)"
+fi

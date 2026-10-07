@@ -48,12 +48,18 @@ void esp_kbd_release_all(void);
  * off), so the Bluetooth pairing screen stays away while one is there. */
 #define ESP_KBD_WIRED_TAB5  0x01
 #define ESP_KBD_WIRED_USB   0x02
+#define ESP_KBD_WIRED_CARDPUTER 0x04
 void esp_kbd_wired(unsigned which, bool attached);
 bool esp_kbd_wired_attached(void);
 
 /* The Tab5 keyboard accessory (ESP_VIM_KBD_TAB5): start looking for it; its
  * keys then arrive as any keyboard's. ESP_ERR_NOT_SUPPORTED in other builds. */
 esp_err_t esp_kbd_tab5_start(void);
+
+/* The M5Stack Cardputer ADV's own keyboard (ESP_VIM_KBD_CARDPUTER), a TCA8418:
+ * set it up; its keys then arrive as any keyboard's. ESP_ERR_NOT_SUPPORTED in
+ * other builds. */
+esp_err_t esp_kbd_cardputer_start(void);
 
 /* For the console: is a key waiting, and take up to {len} bytes of keys. */
 bool esp_kbd_pending(void);

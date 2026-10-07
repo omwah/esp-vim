@@ -192,9 +192,11 @@ function! esp#Sd(...) abort
   elseif what ==# 'eject'
     if esp_sd_eject()
       " Not left in a directory that has gone: relative names would fail.
+      " $HOME is /fat, or on a board with no /fat, the card itself: then /.
       if getcwd() =~# '^/sd\%(/\|$\)'
-        cd /fat
-        echo 'SD card unmounted: it can come out (now in /fat)'
+        let home = $HOME =~# '^/sd\%(/\|$\)' ? '/' : $HOME
+        execute 'cd' fnameescape(home)
+        echo 'SD card unmounted: it can come out (now in ' . home . ')'
       else
         echo 'SD card unmounted: it can come out'
       endif

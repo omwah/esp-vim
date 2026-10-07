@@ -996,3 +996,63 @@ free memory didn't shrink overall. `scripts/check-vim-sections.py` checks the
 result after every build: an ESP-IDF update that changed the placement would
 fail the build rather than corrupt the heap at the second session.
 
+
+## 2026-10-06 — The M5Stack Cardputer ADV: Vim without PSRAM, as a Launcher app
+
+The Cardputer ADV (Stamp-S3A: ESP32-S3FN8, 8 MB flash, **no PSRAM**) runs a cut-down
+build, `cardputer`, installed by bmorcelli/Launcher next to other apps. Every other board
+keeps Vim's heap, stack and `.bss` in PSRAM; here all of it shares about 330 KB of
+internal RAM with the system. The first build left Vim nothing: it ran out of memory
+before reading a vimrc, and crashed on the way out. Measured on the device, this is what
+made it fit, roughly in order of what it bought:
+
+- **Vim's read-only data in flash** (`patches/vim/0014-rodata-in-flash`, `VIM_RODATA`):
+  the ~1500 error messages (`errors.h` declares them as plain `char` arrays) and the
+  case-folding, width and digraph tables were being copied into RAM at boot: 84 KB.
+  The termcap tables stay: Vim writes into them (`term.c`, `bt_string = ...`).
+- **No `.data` snapshot; `:q` restarts the chip** (`ESP_VIM_SESSION_REBOOT`, on without
+  PSRAM). Resetting Vim in place needs a 138 KB copy of its initialised data.
+- **A heap with no per-block header** in that mode: the block list exists only to free
+  everything at a new session. 16 bytes on each of hundreds of blocks, ~16 KB.
+- **The Vim task's stack 28 KB, not 64** (measured: ~10 KB used opening, searching and
+  changing a 67 KB file), and `'maxfuncdepth'` 30 so script recursion errors out first.
+- **Startup costs:** `'encoding'` utf-8 and `'regexpengine'` 1 compiled in
+  (`0015-port-option-defaults`): setting them in the vimrc reallocated the screen with
+  the old one still held, and ran the NFA engine before any vimrc could stop it. A
+  25x8 default terminal size, not 24x80. Vim's terminal output buffer 1 KB, not 8.
+- **A vimrc of its own** (`runtime-image/vimrc-lowmem`, sourced by the system vimrc,
+  which then stops): no defaults.vim, no plugins, no filetype or syntax at startup, and
+  eight `:Esp*` commands instead of `plugin/esp.vim`'s seventy.
+- **The display, lean:** libvterm's reply buffers 512 bytes, not 4 KB each, and no
+  alternate screen (a second copy of every cell; Vim owns the display).
+- **Files bigger than memory:** a swap file on the SD card with `'maxmem'` 16 KB, so Vim
+  keeps a few blocks of a file in RAM and pages the rest. Undo can't be paged: a
+  whole-file change to a big file goes ahead without undo (Vim asks). `'undoreload'` 0,
+  or `:e!` copies the whole buffer into undo.
+
+Left out, behind new Kconfig switches (every other board keeps them on): git, MicroPython,
+SSH, the web interface (`ESP_VIM_GIT`, `_PYTHON`, `_SSH`, `_WEB`; their builtins report
+"not in this build", `api/esp_api_absent.c`), and WiFi and Bluetooth. With no
+`/fat` or `/vimrt` (`ESP_VIM_FLASH_FS`, `_FLASH_RUNTIME`), `$HOME` is `/sd` and the
+runtime `/sd/vim/runtime` (`pixi run sd-runtime`).
+
+**Launcher** shaped three things that cost most of the bring-up to find:
+
+- It **starts an app with USB disconnected**: the USB Serial/JTAG's pull-up override on,
+  every pull-up off. Its Arduino apps reconnect it themselves; ESP-IDF's console expects
+  the reset state, so the chip ran but the host never saw it. A software reset doesn't
+  clear that peripheral (by design, so USB survives one), so the app resets it at boot,
+  only when it finds it that way (`ESP_VIM_LAUNCHER_APP`, `usb_console_take_back`).
+  Resetting it every time made the host find the device again on each `:q` restart.
+- Its bootloader runs with a **32 KB instruction cache**; ESP-IDF's S3 default is 16 KB,
+  which starts the app's IRAM lower, in memory that bootloader is still caching from.
+- Its **NVS is shared**: never erased here, though ESP-IDF's recovery would.
+
+Launcher installs an app where it fits, and when there's no gap big enough it reuses an
+installed app's slot -- one install here replaced another app. With 8 MB, a 2.6 MB app
+leaves room for one more of about that size.
+
+**Keys:** the keyboard has no Esc, and Vim needs it constantly: `` ` `` is Esc, with
+the character on Shift (`~`) and Fn (`` ` ``). The arrows printed on `; , . /` are the
+plain keys the same way, by the owner's choice after trying Fn-arrows -- at the price of
+Fn-`/` for search.

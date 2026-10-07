@@ -1,0 +1,69 @@
+" System vimrc for a board without PSRAM (the M5Stack Cardputer ADV), sourced by
+" $VIM/vimrc in place of the rest of it.
+"
+" Vim's heap here is about 100 KB of internal RAM, where the other boards give
+" it megabytes; Vim itself takes most of that before reading a vimrc. So this
+" file sets only what the platform needs, defines a few :Esp* commands, and
+" loads nothing else at startup. The reasons behind each setting are in the
+" full vimrc next to this one.
+"
+" Put personal settings in ~/.vimrc ($HOME is /sd): it is read after this.
+
+set encoding=utf-8
+scriptencoding utf-8
+
+" No defaults.vim, no filetype detection, syntax or indent scripts, and none of
+" the runtime's plugins: each costs more than the whole heap has to spare.
+" :EspSyntax switches filetypes and syntax on for a session.
+let g:skip_defaults_vim = 1
+set noloadplugins
+set nocompatible
+set backspace=indent,eol,start
+set history=20 undolevels=50
+" Undo lives in RAM, not in the swap file: no copy of the whole buffer for
+" :e! (by default, of any file under 10000 lines).
+set undoreload=0
+" Vim's stack is 28 KB here: Vim script recursion stops with an error first.
+set maxfuncdepth=30
+set ruler showcmd wildmenu
+set ttimeout ttimeoutlen=100
+set display=truncate
+set incsearch
+set nrformats-=octal
+set nomodeline
+set nobackup nowritebackup noundofile
+set viminfo=
+set regexpengine=1
+
+" Files bigger than memory: Vim keeps at most 'maxmem' KB of a file in RAM and
+" pages the rest to its swap file -- on the SD card, which also makes it
+" recoverable after a power cut. Without a card there is nowhere to page to.
+if exists('*esp_sd') && esp_sd().mounted
+  silent! call mkdir($HOME . '/.tmp', 'p')
+  let &directory = $HOME . '/.tmp//'
+  set swapfile maxmem=16 maxmemtot=24 updatecount=100
+else
+  set noswapfile
+endif
+
+" Colour: the builtin xterm termcap has none (see the full vimrc).
+if &term =~# '^xterm'
+  let &t_AB = "\<Esc>[4%dm"
+  let &t_AF = "\<Esc>[3%dm"
+  set t_Co=256
+endif
+set ttymouse=sgr
+set background=dark
+highlight Visual cterm=NONE ctermfg=NONE ctermbg=24
+
+" A few :Esp* commands; the rest of plugin/esp.vim would cost more than they
+" are worth here. The autoload scripts load only when one is used.
+let g:loaded_esp = 1
+command! -bar EspInfo call esp#Info()
+command! -bar EspHeap call esp#Heap()
+command! -bar -bang EspLog call esp#Log(<bang>0)
+command! -bar -bang EspReboot call esp#Reboot(<bang>0)
+command! -bar -nargs=? EspSd call esp#Sd(<f-args>)
+command! -bar -nargs=? EspFont call esp#Font(<f-args>)
+command! -bar -nargs=? EspConsole call esp#Console(<f-args>)
+command! -bar EspSyntax filetype plugin indent on | syntax on | doautoall filetypedetect BufRead

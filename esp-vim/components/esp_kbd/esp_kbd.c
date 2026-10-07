@@ -163,13 +163,20 @@ int esp_kbd_read(void *buf, size_t len)
     return (int)xStreamBufferReceive(s_queue, buf, len, 0);
 }
 
+/* The queue in PSRAM when there is some, else internal RAM. */
+#if CONFIG_SPIRAM
+#define QUEUE_CAPS (MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
+#else
+#define QUEUE_CAPS (MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT)
+#endif
+
 esp_err_t esp_kbd_init(void)
 {
     if (s_queue != NULL)
         return ESP_OK;
     s_lock = xSemaphoreCreateMutex();
     s_input_lock = xSemaphoreCreateMutex();
-    s_queue = xStreamBufferCreateWithCaps(QUEUE_SIZE, 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    s_queue = xStreamBufferCreateWithCaps(QUEUE_SIZE, 1, QUEUE_CAPS);
     const esp_timer_create_args_t t = { .callback = on_repeat_timer, .name = "kbd_repeat" };
     if (s_lock == NULL || s_input_lock == NULL || s_queue == NULL || esp_timer_create(&t, &s_repeat) != ESP_OK)
         return ESP_ERR_NO_MEM;

@@ -1,0 +1,116 @@
+# M5Stack Cardputer ADV (Stamp-S3A: ESP32-S3FN8, 8 MB flash, NO PSRAM; 1.14"
+# 240x135 ST7789V2; TCA8418 keyboard; microSD on SPI): layered on
+# sdkconfig.defaults and sdkconfig.defaults.esp32s3 by scripts/vim-build.sh
+# cardputer. Pin map: M5Stack's docs and its M5Cardputer library.
+#
+# Built to live beside other apps under a launcher (bmorcelli/Launcher): one
+# app partition, no data partitions, everything else on the SD card. The
+# chip's defaults assume an N16R8 module, so much of this file switches their
+# PSRAM, Bluetooth and WiFi settings back off.
+
+# 8 MB flash, the launcher-shaped table (partitions-cardputer.csv), and the
+# launcher's ways: its NVS is shared, and it starts us with USB disconnected.
+CONFIG_ESP_VIM_LAUNCHER_APP=y
+# Vim's heap is internal RAM less this for the system (main/Kconfig.projbuild).
+CONFIG_ESP_VIM_HEAP_RESERVE_KB=12
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="8MB"
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions-cardputer.csv"
+
+# No PSRAM. Vim's heap, stack and data are internal RAM, shared with the
+# system (main/Kconfig.projbuild: ESP_VIM_HEAP_RESERVE_KB, ESP_VIM_TASK_STACK_KB,
+# ESP_VIM_SESSION_REBOOT -- on by default without PSRAM).
+# CONFIG_SPIRAM is not set
+# CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY is not set
+# CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP is not set
+# CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC is not set
+CONFIG_MBEDTLS_INTERNAL_MEM_ALLOC=y
+# Measured: about 10 KB used opening, searching and changing a 67 KB file.
+CONFIG_ESP_VIM_TASK_STACK_KB=28
+# A serial terminal that doesn't report its size gets the display's, 25x8, not
+# 24x80: Vim's screen buffers would take ten times the memory.
+CONFIG_ESP_VIM_TERM_ROWS=8
+CONFIG_ESP_VIM_TERM_COLS=25
+
+# The chip's defaults give the data cache 64 KB for PSRAM's sake; flash alone
+# needs less, and the S3 takes what the caches don't use for internal RAM.
+CONFIG_ESP32S3_DATA_CACHE_32KB=y
+CONFIG_ESP32S3_DATA_CACHE_LINE_32B=y
+# The instruction cache 32 KB, as the launcher's bootloader (an Arduino build)
+# has it, not ESP-IDF's 16 KB: with 16 KB the app's IRAM starts lower, in
+# memory that bootloader is still using as its cache while it loads us, and the
+# chip died there -- no app, and its USB gone until a power cycle.
+CONFIG_ESP32S3_INSTRUCTION_CACHE_32KB=y
+
+# No network in this build: no WiFi, Bluetooth, web interface, git, SSH or
+# MicroPython. Their memory is what Vim needs.
+CONFIG_ESP_VIM_NET_NONE=y
+# CONFIG_BT_ENABLED is not set
+# CONFIG_ESP_HTTPS_SERVER_ENABLE is not set
+# CONFIG_ESP_VIM_GIT is not set
+# CONFIG_ESP_VIM_PYTHON is not set
+# CONFIG_ESP_VIM_SSH is not set
+# CONFIG_ESP_VIM_WEB is not set
+
+# Storage: the SD card only. $HOME is /sd and $VIMRUNTIME /sd/vim/runtime
+# (pixi run sd-runtime fills a card).
+# CONFIG_ESP_VIM_FLASH_FS is not set
+# CONFIG_ESP_VIM_FLASH_RUNTIME is not set
+
+# The microSD slot on SPI: SCK 40, MOSI 14, MISO 39, CS 12. GPIO5 is the CS of
+# the LoRa module some units carry on the same bus: held high.
+CONFIG_ESP_VIM_SD_SPI=y
+CONFIG_ESP_VIM_SD_SPI_SCLK=40
+CONFIG_ESP_VIM_SD_SPI_MOSI=14
+CONFIG_ESP_VIM_SD_SPI_MISO=39
+CONFIG_ESP_VIM_SD_SPI_CS=12
+CONFIG_ESP_VIM_SD_SPI_OTHER_CS=5
+CONFIG_ESP_VIM_SD_MHZ=16
+# CONFIG_SPI_MASTER_ISR_IN_IRAM is not set
+
+# The console on the 1.14" ST7789V2 as well (esp_display): landscape 240x135,
+# 25x8 cells of Spleen 8x16 drawn 9 pixels wide. The panel sits at an offset in
+# the controller's 240x320 memory; GPIO38 is its backlight power, held on.
+CONFIG_ESP_VIM_DISPLAY=y
+CONFIG_ESP_VIM_DISP_ST7789=y
+CONFIG_ESP_VIM_DISP_FONTS="spleen-8x16+1"
+CONFIG_ESP_VIM_DISP_MAX_COLS=25
+CONFIG_ESP_VIM_DISP_WIDTH=240
+CONFIG_ESP_VIM_DISP_HEIGHT=135
+CONFIG_ESP_VIM_DISP_SPI_MHZ=40
+CONFIG_ESP_VIM_DISP_SCLK=36
+CONFIG_ESP_VIM_DISP_MOSI=35
+CONFIG_ESP_VIM_DISP_CS=37
+CONFIG_ESP_VIM_DISP_DC=34
+CONFIG_ESP_VIM_DISP_RST=33
+CONFIG_ESP_VIM_DISP_BACKLIGHT=38
+CONFIG_ESP_VIM_DISP_INVERT=y
+CONFIG_ESP_VIM_DISP_SWAP_XY=y
+CONFIG_ESP_VIM_DISP_MIRROR_X=y
+# CONFIG_ESP_VIM_DISP_MIRROR_Y is not set
+# CONFIG_ESP_VIM_DISP_BGR is not set
+CONFIG_ESP_VIM_DISP_X_GAP=40
+CONFIG_ESP_VIM_DISP_Y_GAP=53
+
+# The USB-C port is the S3's own USB Serial/JTAG.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# :EspI2cScan / :EspSensors on the board's own bus (keyboard 0x34, codec
+# 0x18, IMU 0x69); :EspSerial on the Grove port.
+CONFIG_ESP_VIM_I2C_SDA=8
+CONFIG_ESP_VIM_I2C_SCL=9
+CONFIG_ESP_VIM_SERIAL_TX=2
+CONFIG_ESP_VIM_SERIAL_RX=1
+
+# Code ESP-IDF keeps in internal RAM by default, so it runs while flash is
+# being written: here the RAM is worth more. Little writes flash on this board
+# (NVS, now and then), and nothing in it needs to run meanwhile.
+CONFIG_HEAP_PLACE_FUNCTION_INTO_FLASH=y
+CONFIG_RINGBUF_PLACE_FUNCTIONS_INTO_FLASH=y
+# CONFIG_LOG_IN_IRAM is not set
+# CONFIG_LIBC_MISC_IN_IRAM is not set
+# CONFIG_ESP_ROM_PRINT_IN_IRAM is not set
+
+# The built-in keyboard (esp_kbd_cardputer.h): a TCA8418 on the board's bus,
+# ` as Esc, Fn for F-keys, arrows, Delete, PgUp/PgDn.
+CONFIG_ESP_VIM_KBD_CARDPUTER=y
