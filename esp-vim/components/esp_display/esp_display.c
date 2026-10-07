@@ -452,15 +452,20 @@ static void apply_flip(bool on)
 #endif
 }
 
+/* The columns font f gives: as many as fit, or its cap (esp_display_font_t). */
+static int font_cols(const esp_display_font_t *f)
+{
+    int n = CONFIG_ESP_VIM_DISP_WIDTH / f->width;
+    return f->max_cols && n > f->max_cols ? f->max_cols : n;
+}
+
 /* Take font i: the grid it gives, and libvterm's screen resized to it. The
  * whole terminal is repainted next time round. */
 static void use_font(int i)
 {
     s_font = esp_display_fonts[i];
     s_font_index = i;
-    s_cols = CONFIG_ESP_VIM_DISP_WIDTH / FONT_W;
-    if (CONFIG_ESP_VIM_DISP_MAX_COLS > 0 && s_cols > CONFIG_ESP_VIM_DISP_MAX_COLS)
-        s_cols = CONFIG_ESP_VIM_DISP_MAX_COLS;
+    s_cols = font_cols(s_font);
     s_rows = CONFIG_ESP_VIM_DISP_HEIGHT / FONT_H;
     s_x0 = (CONFIG_ESP_VIM_DISP_WIDTH - s_cols * FONT_W) / 2;
     s_y0 = (CONFIG_ESP_VIM_DISP_HEIGHT - s_rows * FONT_H) / 2;
@@ -1367,7 +1372,7 @@ bool esp_display_font_info(int i, esp_display_font_info_t *info)
     info->width = f->width;
     info->height = f->height;
     info->rows = CONFIG_ESP_VIM_DISP_HEIGHT / f->height;
-    info->cols = CONFIG_ESP_VIM_DISP_WIDTH / f->width;
+    info->cols = font_cols(f);
     return true;
 }
 

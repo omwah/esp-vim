@@ -1081,9 +1081,37 @@ of it internal RAM given back by the rest of the system:
   first syntax item in a buffer allocated 25 KB at once, which `:EspHeap`'s view
   window (it highlights its title) couldn't get.
 
-`:EspHeap` and the other commands the lean vimrc defines now load
-`autoload/esp/core.vim` (12 KB) rather than all of `autoload/esp.vim` (33 KB), which
-ran out of memory partway and reported "Missing :endfunction".
+`:EspHeap` and the other commands the lean vimrc defines no longer load all of
+`autoload/esp.vim` (33 KB), which ran out of memory partway and reported "Missing
+:endfunction". Every command every build has is in a small file of its own --
+`autoload/esp/sys.vim` (Info, Heap, Log, Reboot), `sd.vim`, `disp.vim` (Console,
+Flip, Font), `power.vim` (Battery, Power) -- with the view window and tables in
+`view.vim`, because Vim keeps every function it has read: a command costs only its
+own code. (A first cut put them all in one `core.vim`, 12 KB; `:EspPower` then
+left too little to redraw its window.)
+
+Then, on the same board:
+
+- **Memfile pages of 2 KB, not 4** (`MEMFILE_PAGE_SIZE`, 0015): every buffer, even
+  a view window's two lines, holds three pages; :EspPower's window took ~40 KB at its
+  peak, and its refresh (R) ran out. Vim's minimum is 1048; the swap file records the
+  page size, so recovery still works. View buffers keep no undo either.
+- **A second font, 40x11 cells of Spleen 6x12** (`:EspFont`). The 25-column cap is
+  now the font's own (`spleen-8x16+1:25`, `max_cols` in the font table) rather than
+  a board setting, which capped every font. A font change takes or gives back
+  internal RAM for the display's cells (about 9 KB between the two), and
+  `esp_display_font()` moves Vim's budget by as much
+  (`esp_vim_heap_budget_adjust`), so Vim runs out by its own count first.
+- **The battery** (`:EspPower`, `:EspBattery`): GPIO10 through 100k/100k. Its
+  charge disagreed with Meshtastic's on the same board by 20 points: our curve was a
+  stricter one. Every board's curve is now Meshtastic's open-circuit one (the
+  RLCD-4.2 reads higher than before). The Cardputer, though, shows the charge the
+  way most of its software does: M5Stack's M5Unified library and the apps on it
+  (Bruce, for one) take the calibrated ADC voltage times 2.0 and draw a straight
+  line from 3.30 V (0%) to 4.10 V (100%) -- `ESP_VIM_BAT_LINEAR`. Between 3.6 and
+  3.8 V the line and Meshtastic's curve agree within a few points; a bigger gap
+  between two programs is the voltage itself, which moves with the load (a radio
+  running) and over time.
 
 The help: on a 25-column screen (helpfmt.py's compact mode, under 40 columns) indents
 are 2 columns a level and what goes under a term 2 columns in, rather than a quarter of

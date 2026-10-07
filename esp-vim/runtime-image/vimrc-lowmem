@@ -60,14 +60,19 @@ set background=dark
 highlight Visual cterm=NONE ctermfg=NONE ctermbg=24
 
 " A few :Esp* commands; the rest of plugin/esp.vim would cost more than they
-" are worth here. They load autoload/esp/core.vim, and only when one is used:
-" all of autoload/esp.vim doesn't fit.
+" are worth here. Each loads only its own small autoload file (esp/sys.vim,
+" sd.vim, disp.vim, power.vim, and view.vim for its window), and only when
+" used: all of autoload/esp.vim doesn't fit.
 let g:loaded_esp = 1
-command! -bar EspInfo call esp#core#Info()
-command! -bar EspHeap call esp#core#Heap()
-command! -bar -bang EspLog call esp#core#Log(<bang>0)
-command! -bar -bang EspReboot call esp#core#Reboot(<bang>0)
-command! -bar -nargs=? EspSd call esp#core#Sd(<f-args>)
-command! -bar -nargs=? EspFont call esp#core#Font(<f-args>)
-command! -bar -nargs=? EspConsole call esp#core#Console(<f-args>)
+command! -bar EspInfo call esp#sys#Info()
+command! -bar EspHeap call esp#sys#Heap()
+command! -bar -bang EspLog call esp#sys#Log(<bang>0)
+command! -bar -bang EspReboot call esp#sys#Reboot(<bang>0)
+command! -bar -nargs=? EspSd call esp#sd#Sd(<f-args>)
+command! -bar -nargs=? EspFont call esp#disp#Font(<f-args>)
+command! -bar -nargs=? EspConsole call esp#disp#Console(<f-args>)
+command! -bar -nargs=* EspPower call esp#power#Power(<f-args>)
+if esp_power().battery
+  command! -bar EspBattery call esp#power#Battery()
+endif
 command! -bar EspSyntax filetype plugin indent on | syntax on | doautoall filetypedetect BufRead

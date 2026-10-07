@@ -86,6 +86,11 @@ void esp_vim_session_exit(int status) __attribute__((noreturn));
 /* Bytes Vim holds now, its high-water mark, and its budget. */
 void esp_vim_heap_stats(size_t *used, size_t *peak, size_t *total);
 
+/* Move Vim's budget by {delta} bytes: where Vim's heap is internal RAM shared
+ * with the rest (no PSRAM), when something else takes or gives back some of
+ * it while Vim runs -- the display's cells, on a font change. */
+void esp_vim_heap_budget_adjust(long delta);
+
 /*
  * Busy indicator (port/esp_busy.c), driven by the select() wrapper on the Vim
  * task: a zero-timeout console poll means Vim is working, a real wait means it

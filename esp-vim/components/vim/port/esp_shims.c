@@ -603,6 +603,16 @@ static void vim_heap_release_all(void)
 
 #endif
 
+void esp_vim_heap_budget_adjust(long delta)
+{
+    if (s_heap_budget == 0)
+        return;                         /* no budget: nothing to move */
+    if (delta < 0 && (size_t)-delta >= s_heap_budget)
+        s_heap_budget = 1;              /* 0 would mean "unlimited" */
+    else
+        s_heap_budget += delta;
+}
+
 void esp_vim_heap_stats(size_t *used, size_t *peak, size_t *total)
 {
     if (used)  *used  = s_heap_used;

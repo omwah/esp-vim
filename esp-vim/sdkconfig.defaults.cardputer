@@ -73,8 +73,8 @@ CONFIG_ESP_VIM_SD_MHZ=16
 # the controller's 240x320 memory; GPIO38 is its backlight power, held on.
 CONFIG_ESP_VIM_DISPLAY=y
 CONFIG_ESP_VIM_DISP_ST7789=y
-CONFIG_ESP_VIM_DISP_FONTS="spleen-8x16+1"
-CONFIG_ESP_VIM_DISP_MAX_COLS=25
+# :EspFont also offers 40x11 cells of Spleen 6x12, smaller and denser.
+CONFIG_ESP_VIM_DISP_FONTS="spleen-8x16+1:25 spleen-6x12"
 CONFIG_ESP_VIM_DISP_WIDTH=240
 CONFIG_ESP_VIM_DISP_HEIGHT=135
 CONFIG_ESP_VIM_DISP_SPI_MHZ=40
@@ -94,6 +94,18 @@ CONFIG_ESP_VIM_DISP_Y_GAP=53
 
 # The USB-C port is the S3's own USB Serial/JTAG.
 CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# The battery (esp_power: :EspPower, :EspBattery): GPIO10 reads it through
+# 100k over 100k, and the charge is M5Stack's straight line from 3.30 V to
+# 4.10 V -- as their M5Unified library, and the Cardputer apps built on it,
+# show it. Below 3.45 V on battery, with nothing unsaved, the board turns
+# itself off (deep sleep with no wake source: the power switch or USB brings
+# it back). No wake button, so no reader mode.
+CONFIG_ESP_VIM_BAT_ADC_GPIO=10
+CONFIG_ESP_VIM_BAT_DIVIDER=2000
+CONFIG_ESP_VIM_BAT_LINEAR=y
+CONFIG_ESP_VIM_BAT_EMPTY_MV=3300
+CONFIG_ESP_VIM_BAT_FULL_MV=4100
 
 # :EspI2cScan / :EspSensors on the board's own bus (keyboard 0x34, codec
 # 0x18, IMU 0x69); :EspSerial on the Grove port.

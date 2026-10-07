@@ -271,6 +271,14 @@ window at the bottom: "R" refreshes it, "q" closes it.
 		when it is too low for any battery.
 
 :EspPower						*:EspPower*
+@IF cardputer@
+		The power source (USB when a computer is on the port, else
+		battery) and the battery's voltage.  On battery, below
+		3.45 V and with nothing unsaved, the board turns itself
+		off; the power switch brings it back.  It has no wake
+		button, so no reader mode.
+
+@ELSE@
 		The power source (USB when it powers the board, as far as
 		the board can tell, else battery), the battery's voltage,
 		and when the board
@@ -284,6 +292,7 @@ window at the bottom: "R" refreshes it, "q" closes it.
 
 :EspPower deep {minutes}|off
 		Deep sleep after {minutes} in reader mode.
+@ENDIF@
 
 NETWORK							*esp-network*
 

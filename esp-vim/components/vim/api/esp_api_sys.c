@@ -426,11 +426,18 @@ void f_esp_display_font(typval_T *argvars, typval_T *rettv)
             return;
         }
         esp_display_font_info(found, &f);
+        size_t before = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
         esp_err_t e = esp_display_set_font(found);
         if (e != ESP_OK) {
             semsg("esp_display_font(): %s", esp_err_to_name(e));
             return;
         }
+#if !CONFIG_SPIRAM
+        /* The display's cells came out of (or went back to) the internal RAM
+         * Vim's budget counts on: a bigger grid leaves Vim that much less. */
+        esp_vim_heap_budget_adjust((long)heap_caps_get_free_size(MALLOC_CAP_INTERNAL)
+                                   - (long)before);
+#endif
         char v[8];
         snprintf(v, sizeof v, "%d", f.rows);
         setenv("LINES", v, 1);

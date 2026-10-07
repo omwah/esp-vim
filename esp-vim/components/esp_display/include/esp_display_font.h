@@ -8,6 +8,7 @@ typedef struct {
     const char *name;               /* e.g. "terminus-10x20", as :EspFont shows it */
     uint8_t width, height;          /* cell size in pixels; width <= 16 */
     uint8_t bytes_per_row;          /* 1 (width <= 8) or 2, big-endian */
+    uint8_t max_cols;               /* at most this many columns with it; 0: as fit */
     uint16_t count;
     const uint32_t *codepoints;     /* sorted */
     const uint8_t *bitmaps;         /* count * height * bytes_per_row, MSB leftmost */

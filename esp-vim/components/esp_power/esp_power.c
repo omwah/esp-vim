@@ -166,17 +166,24 @@ static int measure(void)
 }
 
 /* A lithium battery's charge from its resting voltage, roughly: per cell, for
- * ESP_VIM_BAT_CELLS in series. */
+ * ESP_VIM_BAT_CELLS in series. Meshtastic's open-circuit curve (its OCV_ARRAY),
+ * or with ESP_VIM_BAT_LINEAR the straight line M5Stack's library draws. */
 static int percent(int mv)
 {
     if (mv > 0)
         mv /= CONFIG_ESP_VIM_BAT_CELLS;
     static const int curve[][2] = {
-        { 4200, 100 }, { 4100, 90 }, { 4000, 80 }, { 3900, 66 }, { 3800, 50 },
-        { 3700, 32 }, { 3600, 18 }, { 3500, 9 }, { 3400, 4 }, { 3300, 0 },
+        { 4190, 100 }, { 4050, 90 }, { 3990, 80 }, { 3890, 70 }, { 3800, 60 }, { 3720, 50 },
+        { 3630, 40 }, { 3530, 30 }, { 3420, 20 }, { 3300, 10 }, { 3100, 0 },
     };
     if (mv < 0)
         return -1;
+#if CONFIG_ESP_VIM_BAT_LINEAR
+    (void)curve;
+    int pct = (mv - CONFIG_ESP_VIM_BAT_EMPTY_MV) * 100
+              / (CONFIG_ESP_VIM_BAT_FULL_MV - CONFIG_ESP_VIM_BAT_EMPTY_MV);
+    return pct < 0 ? 0 : pct > 100 ? 100 : pct;
+#endif
     if (mv >= curve[0][0])
         return 100;
     for (size_t i = 1; i < sizeof curve / sizeof curve[0]; i++)

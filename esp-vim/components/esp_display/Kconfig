@@ -62,7 +62,9 @@ menu "esp-vim display"
             between them, and the choice is kept in NVS. The first is the
             default. Each is spleen-WxH (5x8, 6x12, 8x16, 12x24, 16x32) or
             terminus-WxH / terminus-bold-WxH (6x12, 8x14, 8x16, 10x18, 10x20,
-            11x22, 12x24, 14x28, 16x32). On the 800x480 panel, 10x20 is 80x24
+            11x22, 12x24, 14x28, 16x32), optionally with +N (N blank pixel
+            columns more per cell) and :N (at most N columns): the
+            Cardputer's spleen-8x16+1:25 is 25 cells 9 pixels wide. On the 800x480 panel, 10x20 is 80x24
             cells, 11x22 72x21 and 8x16 100x30; on the 400x300 ST7305, 6x12
             is 66x25; on the Tab5's 1280x720, 12x24 is 106x30, 10x20 128x36,
             16x32 80x22 and 8x16 160x45. Each font's glyphs take
@@ -78,14 +80,6 @@ menu "esp-vim display"
     config ESP_VIM_DISP_OVERLAY_16X32
         bool "Spleen 16x32"
     endchoice
-
-    config ESP_VIM_DISP_MAX_COLS
-        int "At most this many columns (0: as many as fit)"
-        default 0
-        help
-            For a font padded to a wider cell (spleen-8x16+1) that leaves a
-            column more than wanted: the Cardputer's 240 pixels hold 26 cells
-            of 9, and it shows 25, centred.
 
     config ESP_VIM_DISP_WIDTH
         int "Width in pixels, as mounted"

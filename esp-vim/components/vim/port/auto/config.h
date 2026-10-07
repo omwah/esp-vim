@@ -284,6 +284,11 @@
  * states, 168 bytes each: 25 KB at Vim's 150, more than :EspHeap's view
  * window had. (The same patch.) */
 # define SST_MIN_ENTRIES 30
+/* Every buffer, a two-line view window's too, holds at least three memfile
+ * pages in memory: 2 KB pages, not 4 KB, save 6 KB a buffer. A bigger file
+ * just has more of them, paged to the swap file. (The same patch; Vim's
+ * minimum is 1048.) */
+# define MEMFILE_PAGE_SIZE 2048
 #endif
 
 #endif /* ESP_VIM_CONFIG_H */

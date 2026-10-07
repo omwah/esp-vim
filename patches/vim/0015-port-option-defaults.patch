@@ -1,5 +1,5 @@
 --- a/src/option.h	2026-09-21 13:40:41.000000000 -0700
-+++ b/src/option.h	2026-10-06 18:55:33.386468195 -0700
++++ b/src/option.h	2026-10-06 19:24:01.281570970 -0700
 @@ -130,7 +130,8 @@
  #define ENC_UCSBOM	"ucs-bom"	// check for BOM at start of file
  
@@ -10,8 +10,8 @@
  # define ENC_DFLT	"utf-8"
  #else
  # define ENC_DFLT	"latin1"
---- a/src/option.c	2026-10-06 19:23:51.054264237 -0700
-+++ b/src/option.c	2026-10-06 18:55:33.426074601 -0700
+--- a/src/option.c	2026-10-06 21:11:58.147329821 -0700
++++ b/src/option.c	2026-10-06 19:24:01.322399402 -0700
 @@ -596,7 +596,7 @@
      char_u	*p;
      int		opt_idx;
@@ -21,8 +21,8 @@
      // MS-Windows has builtin support for conversion to and from Unicode, using
      // "utf-8" for 'encoding' should work best for most users.
      // z/OS built should default to UTF-8 mode as setlocale does not respect utf-8 environment variable locales
---- a/src/optiondefs.h	2026-10-06 19:23:51.056338566 -0700
-+++ b/src/optiondefs.h	2026-10-06 18:55:33.427628612 -0700
+--- a/src/optiondefs.h	2026-10-06 21:11:58.149405826 -0700
++++ b/src/optiondefs.h	2026-10-06 19:24:01.324535634 -0700
 @@ -2178,7 +2178,11 @@
  			    {(char_u *)2000L, (char_u *)0L} SCTX_INIT},
      {"regexpengine", "re",  P_NUM|P_VI_DEF,
@@ -35,8 +35,8 @@
      {"relativenumber", "rnu", P_BOOL|P_VI_DEF|P_RWIN,
  			    (char_u *)VAR_WIN, PV_RNU,
  			    did_set_number_relativenumber, NULL,
---- a/src/term.c	2026-10-06 19:23:51.037664795 -0700
-+++ b/src/term.c	2026-10-06 18:55:33.388074146 -0700
+--- a/src/term.c	2026-10-06 21:11:58.131065854 -0700
++++ b/src/term.c	2026-10-06 19:24:01.283631352 -0700
 @@ -2844,7 +2844,9 @@
  /*
   * The number of calls to ui_write is reduced by using "out_buf".
@@ -48,8 +48,8 @@
  
  // add one to allow mch_write() in os_win32.c to append a NUL
  static char_u		out_buf[OUT_SIZE + 1];
---- a/src/vim.h	2026-10-06 19:23:51.053363226 -0700
-+++ b/src/vim.h	2026-10-06 19:23:50.665426876 -0700
+--- a/src/vim.h	2026-10-06 21:11:58.146539978 -0700
++++ b/src/vim.h	2026-10-06 19:24:01.284333529 -0700
 @@ -968,7 +968,9 @@
  #define ACTION_EXPAND	5
  
@@ -61,3 +61,16 @@
  # define SST_MAX_ENTRIES 1000	// maximal size for state stack array
  # define SST_FIX_STATES	 7	// size of sst_stack[].
  # define SST_DIST	 16	// normal distance between entries
+--- a/src/memfile.c	2026-09-21 13:40:41.000000000 -0700
++++ b/src/memfile.c	2026-10-06 21:11:57.734906477 -0700
+@@ -61,7 +61,9 @@
+ # endif
+ #endif
+ 
+-#define MEMFILE_PAGE_SIZE 4096		// default page size
++#ifndef MEMFILE_PAGE_SIZE		// a port short of RAM may set it smaller
++# define MEMFILE_PAGE_SIZE 4096		// default page size
++#endif
+ 
+ static long_u	total_mem_used = 0;	// total memory used for memfiles
+ 

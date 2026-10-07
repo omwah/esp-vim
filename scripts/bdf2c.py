@@ -4,10 +4,11 @@ Convert a fixed-width BDF bitmap font into a C table for the display console
 (components/esp_display). Run by the build; the output is never committed, and
 the font itself comes from a vendored archive (third_party/, e.g. Spleen).
 
-    bdf2c.py FONT.bdf OUT.c [SYMBOL [NAME [PAD]]]
+    bdf2c.py FONT.bdf OUT.c [SYMBOL [NAME [PAD [MAXCOLS]]]]
                           (SYMBOL: default esp_display_font; NAME, as :EspFont
                            shows it: default the BDF file's name; PAD: blank
-                           pixel columns added on the right of every cell)
+                           pixel columns added on the right of every cell;
+                           MAXCOLS: at most this many columns with it, 0 any)
 
 The table holds one glyph per code point, sorted, each as `height` rows of
 `width` bits, one byte per row for widths up to 8 and two (big-endian) up to 16,
@@ -44,7 +45,7 @@ def parse(path):
     return font_box, glyphs
 
 
-def main(src, out, symbol="esp_display_font", name=None, pad="0"):
+def main(src, out, symbol="esp_display_font", name=None, pad="0", max_cols="0"):
     (fw, fh, fx, fy), glyphs = parse(src)
     fw0, fw = fw, fw + int(pad)             # glyphs stay left-aligned; the pad is blank
     if fw > 16:
@@ -76,6 +77,7 @@ def main(src, out, symbol="esp_display_font", name=None, pad="0"):
         o.write(f"const esp_display_font_t {symbol} = {{\n"
                 f"    .name = \"{name}\",\n"
                 f"    .width = {fw}, .height = {fh}, .bytes_per_row = {bpr}, .count = {len(table)},\n"
+                f"    .max_cols = {int(max_cols)},\n"
                 f"    .codepoints = (const uint32_t[]){{\n")
         for i in range(0, len(table), 8):
             o.write("        " + " ".join(f"0x{cp:04x}," for cp, _ in table[i:i + 8]) + "\n")
@@ -87,4 +89,4 @@ def main(src, out, symbol="esp_display_font", name=None, pad="0"):
 
 
 if __name__ == "__main__":
-    main(*sys.argv[1:6])
+    main(*sys.argv[1:7])

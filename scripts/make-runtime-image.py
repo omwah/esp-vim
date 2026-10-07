@@ -53,7 +53,7 @@ SD_VARIANTS = {"cardputer"}
 # has (all others' entries go), and the groups of commands it has none of.
 HELP_PRUNE = {
     "cardputer": ({"EspSd", "EspInfo", "EspHeap", "EspLog", "EspConsole", "EspFont",
-                   "EspReboot"},
+                   "EspReboot", "EspPower", "EspBattery"},
                   {"esp-network", "esp-bt-keyboard", "esp-ssh", "esp-git", "esp-python",
                    "esp-web"}),
 }

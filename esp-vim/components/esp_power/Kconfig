@@ -48,6 +48,25 @@ menu "esp-vim power"
         help
             The RLCD-4.2 reads the battery through 200k over 100k: 3000.
 
+    config ESP_VIM_BAT_LINEAR
+        bool "Charge from voltage on a straight line, not a curve"
+        default n
+        help
+            How most software for M5Stack's boards shows the charge (their
+            M5Unified library, and apps built on it): a straight line from
+            ESP_VIM_BAT_EMPTY_MV (0%) to ESP_VIM_BAT_FULL_MV (100%). Off, a
+            lithium cell's open-circuit curve (Meshtastic's).
+
+    config ESP_VIM_BAT_EMPTY_MV
+        int "Per-cell mV at 0%"
+        depends on ESP_VIM_BAT_LINEAR
+        default 3300
+
+    config ESP_VIM_BAT_FULL_MV
+        int "Per-cell mV at 100%"
+        depends on ESP_VIM_BAT_LINEAR
+        default 4100
+
     config ESP_VIM_SLEEP_IDLE_MIN
         int "Minutes without a key, on battery, before reader mode (0: never)"
         default 0

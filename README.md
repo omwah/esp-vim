@@ -147,7 +147,7 @@ and works differently:
 - **Left out:** WiFi, Bluetooth, the web interface, git, SSH and MicroPython; syntax
   highlighting and filetype detection are off at startup (`:EspSyntax` turns them on,
   for small files); only a few `:Esp*` commands (`:EspInfo`, `:EspHeap`, `:EspLog`,
-  `:EspReboot`, `:EspSd`, `:EspFont`, `:EspConsole`).
+  `:EspReboot`, `:EspSd`, `:EspFont`, `:EspConsole`, `:EspPower`, `:EspBattery`).
 - **Files and Vim's runtime are on the SD card.** The app has no data partition of its
   own, so it can live beside other apps under [Launcher](https://github.com/bmorcelli/Launcher).
   `$HOME` is `/sd`; Vim's runtime is `/sd/vim/runtime`, which
@@ -159,6 +159,9 @@ and works differently:
   the card -- but **undo** is held in memory: a change to every line of a big file (a
   `:%s` over 2,000 lines) can't be undone, and Vim asks before going ahead without it.
   `:echo esp_heap().vim` shows where it stands. `:q` restarts the chip for a fresh session.
+- **Fonts:** 25×8 cells; `:EspFont 40x11` for a smaller, denser one (remembered).
+- **Battery:** `:EspBattery` and `:EspPower` show it. Below 3.45 V on battery, with
+  nothing unsaved, the board turns itself off.
 - **Keys:** there is no Esc key, so **`` ` `` is Esc** (Shift-`` ` `` is `~`, Fn-`` ` `` is
   `` ` ``). The arrows printed on **`; , . /` are the plain keys** (Shift gives `: < > ?`,
   Fn the characters themselves -- so search is Fn-`/`). Fn also gives F1–F12 on

@@ -26,7 +26,13 @@ if(CONFIG_ESP_VIM_DISPLAY)
     set(i 0)
     foreach(font IN LISTS FONTS)
         # A "+N" suffix widens the cells by N blank pixel columns (bdf2c.py
-        # PAD): spleen-8x16+1 is 9x16, 25 columns on a 240-pixel panel.
+        # PAD): spleen-8x16+1 is 9x16. A ":N" after that caps the columns:
+        # spleen-8x16+1:25 is 25 of them on a 240-pixel panel (26 would fit).
+        set(maxcols 0)
+        if(font MATCHES "^(.*):([0-9]+)$")
+            set(maxcols "${CMAKE_MATCH_2}")
+            set(font "${CMAKE_MATCH_1}")
+        endif()
         set(pad 0)
         if(font MATCHES "^(.*)\\+([0-9]+)$")
             set(pad "${CMAKE_MATCH_2}")
@@ -50,7 +56,7 @@ if(CONFIG_ESP_VIM_DISPLAY)
         set(c "${CMAKE_CURRENT_BINARY_DIR}/esp_display_font_${i}.c")
         add_custom_command(
             OUTPUT "${c}"
-            COMMAND ${python} "${BDF2C}" "${bdf}" "${c}" "esp_display_font_${i}" "${font}" "${pad}"
+            COMMAND ${python} "${BDF2C}" "${bdf}" "${c}" "esp_display_font_${i}" "${font}" "${pad}" "${maxcols}"
             DEPENDS "${bdf}" "${BDF2C}"
             VERBATIM)
         list(APPEND FONT_SRCS "${c}")
