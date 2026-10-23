@@ -201,7 +201,7 @@ and works differently:
   `1`…`=`, Delete on Bksp, and PgUp/PgDn on `[ ]`. Alt is Meta; Ctrl, Alt, Fn and Shift
   can be tapped for the next key (Shift twice is Caps Lock).
 
-Install it with Launcher (`pixi run launcher-install-cardputer IP --boot`, with Launcher's
+Install it with Launcher (`pixi run launcher-install IP --boot`, with Launcher's
 WebUI on), or flash it alone over USB:
 `esptool.py --chip esp32s3 write_flash 0x0 esp-vim/build-cardputer/esp-vim-cardputer-merged.bin`.
 

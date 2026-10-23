@@ -78,24 +78,29 @@ idf.py -B "$BUILD" -D "SDKCONFIG=$BUILD/sdkconfig" -D "IDF_TARGET=$TARGET" \
 # the link map, that they hold all of them and nothing else.
 python3 "$PROJECT/../scripts/check-vim-sections.py" "$BUILD"
 
-# The Cardputer's app shares 8 MB of flash with other apps under a launcher,
-# which installs the app image alone. Fail if it outgrows its slot in
-# partitions-cardputer.csv, warn when it gets big for sharing, and write both
-# release images: the app alone (for the launcher, pixi run
-# launcher-install-cardputer) and one merged at 0x0 (bootloader, table and app,
-# for esptool or M5Burner on a device without the launcher).
-if [ "$VARIANT" = cardputer ]; then
+# A launcher app (ESP_VIM_LAUNCHER_APP: the Cardputer's) shares the device's
+# flash with other apps under a launcher, which installs the app image alone.
+# Fail if it outgrows the app slot in its partition table, warn when it gets
+# big for sharing, and write both release images: the app alone (for the
+# launcher, pixi run launcher-install) and one merged at 0x0 (bootloader, table
+# and app, for esptool or M5Burner on a device without the launcher).
+if grep -q '^CONFIG_ESP_VIM_LAUNCHER_APP=y' "$BUILD/sdkconfig"; then
     APP="$BUILD/esp-vim.bin"
     SIZE=$(stat -c %s "$APP")
-    SLOT=$((0x300000))
+    TABLE=$(sed -n 's/^CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="\(.*\)"/\1/p' "$BUILD/sdkconfig")
+    SLOT=$(python3 -c 'import csv, sys
+for r in csv.reader(l for l in open(sys.argv[1]) if not l.startswith("#")):
+    r = [f.strip() for f in r]
+    if len(r) > 4 and r[1] == "app":
+        print(int(r[4], 0)); break' "$TABLE")
     echo "vim-build: app $SIZE bytes ($((SIZE * 100 / SLOT))% of its $SLOT-byte slot)"
     if [ "$SIZE" -gt "$SLOT" ]; then
-        echo "vim-build: the app no longer fits partitions-cardputer.csv" >&2
+        echo "vim-build: the app no longer fits $TABLE" >&2
         exit 1
     fi
     [ "$SIZE" -le $((2560 * 1024)) ] || echo "vim-build: warning: over 2.5 MB -- less room for other apps"
-    cp "$APP" "$BUILD/esp-vim-cardputer.bin"
-    (cd "$BUILD" && python3 -m esptool --chip esp32s3 merge_bin -o esp-vim-cardputer-merged.bin \
+    cp "$APP" "$BUILD/esp-vim-$VARIANT.bin"
+    (cd "$BUILD" && python3 -m esptool --chip "$TARGET" merge_bin -o "esp-vim-$VARIANT-merged.bin" \
         @flash_args >/dev/null)
-    echo "vim-build: $BUILD/esp-vim-cardputer.bin (for the launcher), esp-vim-cardputer-merged.bin (at 0x0)"
+    echo "vim-build: $BUILD/esp-vim-$VARIANT.bin (for the launcher), esp-vim-$VARIANT-merged.bin (at 0x0)"
 fi

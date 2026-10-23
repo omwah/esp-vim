@@ -3,11 +3,13 @@
 Install an app image on a device running bmorcelli/Launcher, over its web
 interface (WebUI) -- the way its own page does, without a browser.
 
-    scripts/launcher-install.py IP [BIN] [--name NAME] [--replace] [--boot]
-    scripts/launcher-install.py IP --sd-runtime [VARIANT]
+    scripts/launcher-install.py IP [BIN] [--variant V] [--name NAME] [--replace] [--boot]
+    scripts/launcher-install.py IP --sd-runtime [--variant V]
 
 IP     the device's address, as Launcher's WebUI screen shows it
-BIN    the app image (default: the Cardputer build's esp-vim-cardputer.bin)
+BIN    the app image (default: the build variant's esp-vim-V.bin)
+--variant  a build variant made as a launcher app (ESP_VIM_LAUNCHER_APP;
+       default cardputer, the one there is so far)
 --name the app's name in Launcher's menu (default: esp-vim)
 --replace  first delete any installed app of that name, so a new build takes
        its place rather than adding a copy. Launcher applies a partition change
@@ -15,8 +17,8 @@ BIN    the app image (default: the Cardputer build's esp-vim-cardputer.bin)
 --boot restart into the app once it is installed (installing already makes it
        the one Launcher boots).
 --sd-runtime  instead of installing, copy Vim's runtime to the SD card in the
-       device, through the WebUI's file manager: build-deps/vimrt-VARIANT
-       (pixi run sd-runtime makes it; default cardputer) to /vim/runtime. The
+       device, through the WebUI's file manager: build-deps/vimrt-V
+       (pixi run sd-runtime makes it) to /vim/runtime. The
        same as pixi run sd-runtime with the card in this computer.
 
 The WebUI login is Launcher's default (admin / launcher) unless
@@ -47,7 +49,7 @@ import uuid
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_BIN = ROOT / "esp-vim" / "build-cardputer" / "esp-vim-cardputer.bin"
+DEFAULT_VARIANT = "cardputer"
 
 
 def die(msg):
@@ -217,17 +219,20 @@ class Launcher:
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("ip")
-    ap.add_argument("bin", nargs="?", type=Path, default=DEFAULT_BIN)
+    ap.add_argument("bin", nargs="?", type=Path)
+    ap.add_argument("--variant", default=DEFAULT_VARIANT)
     ap.add_argument("--name", default="esp-vim")
     ap.add_argument("--replace", action="store_true")
     ap.add_argument("--boot", action="store_true")
-    ap.add_argument("--sd-runtime", nargs="?", const="cardputer", metavar="VARIANT")
+    ap.add_argument("--sd-runtime", action="store_true")
     a = ap.parse_args()
+    if a.bin is None:
+        a.bin = ROOT / "esp-vim" / f"build-{a.variant}" / f"esp-vim-{a.variant}.bin"
 
     if a.sd_runtime:
-        src = ROOT / "build-deps" / f"vimrt-{a.sd_runtime}"
+        src = ROOT / "build-deps" / f"vimrt-{a.variant}"
         if not (src / "vimrc").is_file():
-            die(f"{src}: not made yet (python scripts/make-runtime-image.py {a.sd_runtime})")
+            die(f"{src}: not made yet (python scripts/make-runtime-image.py {a.variant})")
         dev = Launcher(a.ip)
         if not dev.alive():
             die(f"no Launcher WebUI at {a.ip} (start it from Launcher's menu)")
@@ -236,7 +241,7 @@ def main():
         return
 
     if not a.bin.is_file():
-        die(f"{a.bin}: no such file (build it first: pixi run vim-build-cardputer)")
+        die(f"{a.bin}: no such file (build it first: scripts/vim-build.sh {a.variant})")
 
     dev = Launcher(a.ip)
     if not dev.alive():
