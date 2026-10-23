@@ -268,7 +268,27 @@ int esp_board_usb_c_powered(void)
 
 #else   /* no board layer */
 
+#if CONFIG_ESP_VIM_BOARD_POWER_GPIO >= 0
+#include "driver/gpio.h"
+#include "esp_private/esp_gpio_reserve.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+/* The switch for the board's peripherals (the LilyGo T-Deck's keyboard chip,
+ * touch panel, screen and radio): on, and a moment for them to start. */
+esp_err_t esp_board_init(void)
+{
+    gpio_config_t g = { .pin_bit_mask = BIT64(CONFIG_ESP_VIM_BOARD_POWER_GPIO),
+                        .mode = GPIO_MODE_OUTPUT };
+    gpio_set_level(CONFIG_ESP_VIM_BOARD_POWER_GPIO, 1);     /* high as soon as it drives */
+    esp_err_t e = gpio_config(&g);
+    esp_gpio_reserve(BIT64(CONFIG_ESP_VIM_BOARD_POWER_GPIO));
+    vTaskDelay(pdMS_TO_TICKS(200));
+    return e;
+}
+#else
 esp_err_t esp_board_init(void) { return ESP_OK; }
+#endif
 const char *esp_board_name(void) { return NULL; }
 i2c_master_bus_handle_t esp_board_i2c_bus(int sda, int scl) { (void)sda; (void)scl; return NULL; }
 esp_err_t esp_board_panel_new(esp_lcd_panel_handle_t *panel, int *width, int *height)

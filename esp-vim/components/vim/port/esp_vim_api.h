@@ -32,6 +32,8 @@ void f_esp_display_font(typval_T *argvars, typval_T *rettv);
 void f_esp_power(typval_T *argvars, typval_T *rettv);
 void f_esp_sleep(typval_T *argvars, typval_T *rettv);
 void f_esp_time(typval_T *argvars, typval_T *rettv);
+void f_esp_touch(typval_T *argvars, typval_T *rettv);
+void f_esp_kbd_light(typval_T *argvars, typval_T *rettv);
 
 /* api/esp_api_fs.c (over components/esp_fs) */
 void f_esp_fs_copy(typval_T *argvars, typval_T *rettv);

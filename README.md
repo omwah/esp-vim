@@ -125,6 +125,7 @@ Targeted boards:
 | Freenove ESP32-S3 Display **FNK0115Q** (5.0", 800×480, capacitive touch) | ESP32-S3 | 16 MB / 8 MB | touch LCD, 80×24 cells (72×21 or 100×30 with `:EspFont`); BLE keyboards, paired by touch; console over its USB-serial bridge |
 | Waveshare **ESP32-S3-RLCD-4.2** (4.2", 400×300 reflective monochrome LCD) | ESP32-S3 | 16 MB / 8 MB | black-and-white screen, no backlight, 66×25 cells (80×37, 50×21 or 50×18 with `:EspFont`); BLE keyboards; console over the S3's own USB |
 | ESP32-S3 development boards | ESP32-S3 | 16 MB / 8 MB required | none: a serial terminal |
+| [LilyGo T-Deck and T-Deck Plus](https://github.com/Xinyuan-LilyGO/T-Deck) | ESP32-S3 | 16 MB / 8 MB | 2.8" 320×240 touch screen, 53×20 cells; its own keyboard and trackball; console over the S3's own USB. One build for both: [below](#lilygo-t-deck-and-t-deck-plus) |
 | [M5Stack Cardputer ADV](https://docs.m5stack.com/en/core/Cardputer-Adv) | ESP32-S3 | 8 MB / **none** | 1.14" 240×135 screen, 25×8 cells; its own 56-key keyboard; console over the S3's own USB. A cut-down build: [below](#m5stack-cardputer-adv) |
 
 - **CYD boards:** only the **ESP32-S3** variants with 16 MB flash and 8 MB PSRAM (the
@@ -137,6 +138,38 @@ Targeted boards:
 
 **Tested so far:** the ESP32-P4 and ESP32-S3 chips in Espressif's emulator, over a serial
 terminal, and the boards in the [plan](docs/PLAN.md#status).
+
+### LilyGo T-Deck and T-Deck Plus
+
+**Running on a T-Deck Plus** (2026-10-22); not yet tried on an original T-Deck. One build, `pixi run vim-build-tdeck`, for both. The Plus adds a
+GPS (on the Grove pins: `:EspSerial` at 9600 baud shows its NMEA) and a battery, and its
+touch controller comes up differently from one unit to the next. The build handles that
+without rewriting the controller's settings (see [DECISIONS.md](docs/DECISIONS.md), 2026-10-22).
+
+- **Keys:** the keyboard has no Esc, Ctrl or Tab, so **Mic is Ctrl**, **Alt is Esc** and
+  Sym-Space is Tab. Sym gives the second legends printed on the keys (Sym-Mic is `0`) and
+  Delete on Bksp. **Sym with Shift** gives the characters that aren't printed anywhere:
+
+  | Sym-Shift + | q | w | e | r | t | y | u | i | o | p | a | s | d | f | g | h j k l | b | n | m |
+  |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+  | gives | `~` | `` ` `` | `^` | `%` | `[` | `]` | `{` | `}` | `=` | `&` | `\|` | `\` | `<` | `>` | Home | ← ↓ ↑ → | PgUp | PgDn | End |
+
+  Shift, Mic and Sym can be held or tapped for the next key; Shift twice is Caps Lock.
+- **Key light:** the keys light up while you type and go dark 10 seconds after the last
+  one; `:EspKeyLight {seconds}|off [{brightness}]` changes that, and it's remembered.
+- **Keyboard firmware:** Esc, Ctrl and the Sym layers need the keyboard's ESP32-C3 to
+  report its keys raw, which LilyGo's keyboard firmware has done since June 2025
+  (`T-Keyboard_Keyboard_ESP32C3_250620.bin` in their repo's `firmware/`; flash it through
+  the 6-pin header beside the reset button). With older firmware the keys type only what's
+  printed on them, and the boot log says so.
+- **Trackball:** rolls as the arrow keys. Pressing it is the wake key: it puts the board
+  into reader mode and wakes it again. On battery the board goes there by itself after 5
+  minutes without a key.
+- **Touch:** the T-Deck's and some T-Deck Plus's panels are mirrored left to right from
+  each other (the GT911's own configuration differs between batches). The build reads the
+  panel's axis bits and follows them, set from a T-Deck Plus whose value is 0xB5. If taps
+  still land on the wrong side, `:EspTouch flipx` fixes it, and it's remembered.
+- **Storage:** the microSD card shares the screen's SPI bus and is mounted at `/sd`.
 
 ### M5Stack Cardputer ADV
 
@@ -221,6 +254,8 @@ For an ESP32-S3 board, use `build-esp32s3`; for the Hosyond ES3C28P, whose only 
 port is the S3's own, `pixi run vim-build-es3c28p` and `build-es3c28p`, which put the
 console on that port; for the Freenove FNK0115Q, `pixi run vim-build-fnk0115` and
 `build-fnk0115` (its console is UART0, through the board's USB-serial bridge); for the
+LilyGo T-Deck or T-Deck Plus, `pixi run vim-build-tdeck` and `build-tdeck` (console on the
+S3's own USB; hold the trackball down while pressing reset if it won't take a flash); for the
 M5Stack Cardputer ADV, `pixi run vim-build-cardputer`, then see
 [its section](#m5stack-cardputer-adv). Attach a terminal to the board's serial port with, for example,
 `pixi run -- socat -,raw,echo=0,escape=0x1d /dev/ttyACM0,raw,echo=0` (detach with

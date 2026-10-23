@@ -73,7 +73,11 @@ static esp_err_t mount(void)
     };
 #if CONFIG_ESP_VIM_SD_SPI
     sdmmc_host_t host = SDSPI_HOST_DEFAULT();
+#if CONFIG_ESP_VIM_SD_SPI_ON_DISPLAY_BUS
+    host.slot = SPI3_HOST;              /* esp_display's, set up before storage */
+#else
     host.slot = SPI2_HOST;
+#endif
 #if CONFIG_ESP_VIM_SD_SPI_OTHER_CS >= 0
     gpio_set_level(CONFIG_ESP_VIM_SD_SPI_OTHER_CS, 1);     /* deselected */
     gpio_set_direction(CONFIG_ESP_VIM_SD_SPI_OTHER_CS, GPIO_MODE_OUTPUT);
@@ -89,6 +93,10 @@ static esp_err_t mount(void)
             .max_transfer_sz = 4096,
         };
         esp_err_t e = spi_bus_initialize(host.slot, &bus, SDSPI_DEFAULT_DMA);
+#if CONFIG_ESP_VIM_SD_SPI_ON_DISPLAY_BUS
+        if (e == ESP_ERR_INVALID_STATE)
+            e = ESP_OK;                 /* the display's, already up */
+#endif
         if (e != ESP_OK)
             return e;
         s_bus_ready = true;

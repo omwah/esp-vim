@@ -9,9 +9,11 @@
 #include "esp_vim_port.h"
 #include "esp_board.h"
 #include "esp_display.h"
+#include "esp_kbd.h"
 #include "esp_logbuf.h"
 #include "esp_power.h"
 #include "esp_time.h"
+#include "esp_touch.h"
 
 #include "esp_chip_info.h"
 #include "esp_flash.h"
@@ -388,6 +390,84 @@ void f_esp_display_flip(typval_T *argvars, typval_T *rettv)
     }
     rettv->v_type = VAR_BOOL;
     rettv->vval.v_number = on ? VVAL_TRUE : VVAL_FALSE;
+}
+
+/*
+ * esp_touch([{turn}]) -> Dict: the touch panel -- available, chip ("GT911",
+ * "FT6336", "board"), addr, config_version and switch1 (a GT911's, -1
+ * otherwise), and how its points are turned to the screen: swap, mirror_x,
+ * mirror_y (the swap first), saved (that turn set here, not the board's).
+ * With {turn}, a Dict of any of swap, mirror_x and mirror_y: turn them so from
+ * now on, kept for the next start; or {'reset': 1} for the board's again.
+ */
+void f_esp_touch(typval_T *argvars, typval_T *rettv)
+{
+    esp_touch_info_t t;
+    esp_touch_get_info(&t);
+    if (argvars[0].v_type != VAR_UNKNOWN) {
+        if (check_for_dict_arg(argvars, 0) == FAIL)
+            return;
+        dict_T *d = argvars[0].vval.v_dict;
+        esp_err_t e;
+        if (d != NULL && dict_get_bool(d, "reset", FALSE))
+            e = esp_touch_reset_turn();
+        else if (d != NULL)
+            e = esp_touch_set_turn(dict_get_bool(d, "swap", t.swap),
+                                   dict_get_bool(d, "mirror_x", t.mirror_x),
+                                   dict_get_bool(d, "mirror_y", t.mirror_y));
+        else
+            e = ESP_OK;
+        if (e != ESP_OK) {
+            semsg("esp_touch(): %s", t.available ? esp_err_to_name(e) : "no touch panel");
+            return;
+        }
+        esp_touch_get_info(&t);
+    }
+    if (rettv_dict_alloc(rettv) == FAIL)
+        return;
+    dict_T *r = rettv->vval.v_dict;
+    dict_add_bool(r, "available", t.available);
+    dict_add_string(r, "chip", (char_u *)t.chip);
+    dict_add_number(r, "addr", t.addr);
+    dict_add_number(r, "config_version", t.config_version);
+    dict_add_number(r, "switch1", t.switch1);
+    dict_add_bool(r, "swap", t.swap);
+    dict_add_bool(r, "mirror_x", t.mirror_x);
+    dict_add_bool(r, "mirror_y", t.mirror_y);
+    dict_add_bool(r, "saved", t.saved);
+}
+
+/*
+ * esp_kbd_light([{seconds} [, {brightness}]]) -> Dict: the T-Deck's key
+ * backlight -- available, seconds (on that long after a key; 0 never on) and
+ * brightness (1-255). With {seconds} (and {brightness}): set them, kept for
+ * the next start.
+ */
+void f_esp_kbd_light(typval_T *argvars, typval_T *rettv)
+{
+    int sec, level;
+    esp_err_t e = esp_kbd_light_get(&sec, &level);
+    if (argvars[0].v_type != VAR_UNKNOWN) {
+        int error = FALSE;
+        sec = (int)tv_get_number_chk(&argvars[0], &error);
+        if (!error && argvars[1].v_type != VAR_UNKNOWN)
+            level = (int)tv_get_number_chk(&argvars[1], &error);
+        if (error)
+            return;
+        e = esp_kbd_light_set(sec, level);
+        if (e != ESP_OK) {
+            semsg("esp_kbd_light(): %s", e == ESP_ERR_INVALID_ARG
+                  ? "seconds 0-65535, brightness 1-255"
+                  : e == ESP_ERR_NOT_FOUND || e == ESP_ERR_NOT_SUPPORTED
+                  ? "no keyboard light" : esp_err_to_name(e));
+            return;
+        }
+    }
+    if (rettv_dict_alloc(rettv) == FAIL)
+        return;
+    dict_add_bool(rettv->vval.v_dict, "available", e == ESP_OK);
+    dict_add_number(rettv->vval.v_dict, "seconds", sec);
+    dict_add_number(rettv->vval.v_dict, "brightness", level);
 }
 
 /*

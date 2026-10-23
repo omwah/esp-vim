@@ -1,4 +1,5 @@
-" :EspConsole, :EspFlip, :EspFont -- the display (plugin/esp.vim; vimrc-lowmem).
+" :EspConsole, :EspFlip, :EspTouch, :EspFont -- the display (plugin/esp.vim;
+" vimrc-lowmem).
 
 " ----------------------------------------------------------------- :EspConsole --
 
@@ -36,6 +37,46 @@ function! esp#disp#Flip(...) abort
   endif
   call esp_display_flip(a:0 ? a:1 ==# 'on' : !esp_display_flip())
   echo 'Display has flipped'
+endfunction
+
+" ----------------------------------------------------------------- :EspTouch --
+
+" :EspTouch [flipx|flipy|swap|reset]: where taps land. flipx and flipy mirror
+" them left-right and top-bottom on the screen, swap exchanges the screen's X
+" and Y, reset goes back to the board's own; each is kept for the next start.
+" Without an argument, shows the panel and its turn.
+function! esp#disp#TouchComplete(lead, line, pos) abort
+  return filter(['flipx', 'flipy', 'swap', 'reset'], 'v:val =~# "^" . a:lead')
+endfunction
+
+function! esp#disp#Touch(...) abort
+  let t = esp_touch()
+  if !t.available
+    echoerr 'EspTouch: no touch panel'
+    return
+  endif
+  if a:0
+    if a:1 ==# 'flipx'
+      let t = esp_touch({'mirror_x': !t.mirror_x})
+    elseif a:1 ==# 'flipy'
+      let t = esp_touch({'mirror_y': !t.mirror_y})
+    elseif a:1 ==# 'swap'
+      let t = esp_touch({'swap': !t.swap})
+    elseif a:1 ==# 'reset'
+      let t = esp_touch({'reset': 1})
+    else
+      echoerr 'Usage: :EspTouch [flipx|flipy|swap|reset]'
+      return
+    endif
+  endif
+  let chip = t.chip . (t.addr >= 0 ? printf(' at 0x%02x', t.addr) : '')
+  if t.switch1 >= 0
+    let chip .= printf(', config 0x%02x, switch 0x%02x', t.config_version, t.switch1)
+  endif
+  echo 'Touch: ' . chip
+  echo printf('Turn: swap %s, mirror x %s, mirror y %s (%s)',
+        \ t.swap ? 'on' : 'off', t.mirror_x ? 'on' : 'off', t.mirror_y ? 'on' : 'off',
+        \ t.saved ? 'set by :EspTouch' : "the board's")
 endfunction
 
 " ------------------------------------------------------------------ :EspFont --

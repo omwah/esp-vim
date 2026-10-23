@@ -1,0 +1,108 @@
+# LilyGo T-Deck and T-Deck Plus (ESP32-S3FN16R8, 2.8" 320x240 ST7789 + GT911,
+# a keyboard on its own ESP32-C3, a trackball): layered on sdkconfig.defaults and
+# sdkconfig.defaults.esp32s3 by scripts/vim-build.sh tdeck. One build for both:
+# they differ in the Plus's GPS and battery, and in how its touch controller
+# comes up (esp_touch). Pin map: LilyGo's examples/UnitTest/utilities.h and
+# schematic (github.com/Xinyuan-LilyGO/T-Deck), checked against their wiki and
+# Meshtastic's variants/esp32s3/t-deck.
+
+# GPIO10 powers the keyboard's C3, the touch panel, the screen and the radio:
+# on before anything looks for them (esp_board).
+CONFIG_ESP_VIM_BOARD_POWER_GPIO=10
+
+# The USB-C port is the S3's own USB Serial/JTAG -- no USB-UART bridge -- so the
+# console (boot messages and Vim) goes there, not to UART0.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# :EspSerial on UART0's pins, free now that the console is on USB: the Grove
+# port on the T-Deck, the GPS (9600 baud, NMEA) on the Plus.
+CONFIG_ESP_VIM_SERIAL_TX=43
+CONFIG_ESP_VIM_SERIAL_RX=44
+# :EspI2cScan / :EspSensors default to the board's own bus: the keyboard (0x55)
+# and the touch panel (0x5D or 0x14).
+CONFIG_ESP_VIM_I2C_SDA=18
+CONFIG_ESP_VIM_I2C_SCL=8
+
+# The console on the 2.8" ST7789, landscape 320x240 with the keyboard below:
+# 53x20 cells in Spleen 6x12, and :EspFont switches to 40x15 (8x16) or 64x30
+# (5x8). The panel shares its SPI bus with the SD card and the LoRa radio, so
+# the bus is set up with the card's MISO too. No reset line: a software reset.
+CONFIG_ESP_VIM_DISPLAY=y
+CONFIG_ESP_VIM_DISP_ST7789=y
+CONFIG_ESP_VIM_DISP_FONTS="spleen-6x12 spleen-8x16 spleen-5x8"
+CONFIG_ESP_VIM_DISP_WIDTH=320
+CONFIG_ESP_VIM_DISP_HEIGHT=240
+CONFIG_ESP_VIM_DISP_SPI_MHZ=40
+CONFIG_ESP_VIM_DISP_SCLK=40
+CONFIG_ESP_VIM_DISP_MOSI=41
+CONFIG_ESP_VIM_DISP_MISO=38
+CONFIG_ESP_VIM_DISP_CS=12
+CONFIG_ESP_VIM_DISP_DC=11
+CONFIG_ESP_VIM_DISP_RST=-1
+# The backlight's driver dims in 16 steps counted in pulses on its pin; held
+# high it is fully on, which is all esp_display asks of it.
+CONFIG_ESP_VIM_DISP_BACKLIGHT=42
+CONFIG_ESP_VIM_DISP_INVERT=y
+CONFIG_ESP_VIM_DISP_SWAP_XY=y
+CONFIG_ESP_VIM_DISP_MIRROR_X=y
+# CONFIG_ESP_VIM_DISP_MIRROR_Y is not set
+# CONFIG_ESP_VIM_DISP_BGR is not set
+# The SPI driver's interrupt code in flash rather than internal RAM, as on the
+# ES3C28P: a transfer that ends during a flash write is simply noticed later.
+# CONFIG_SPI_MASTER_ISR_IN_IRAM is not set
+
+# The GT911 touch panel: taps, drags and swipes become mouse events in Vim. It
+# has no reset line, so it chose its address at power-on (esp_touch tries
+# both), and the Plus's come from the factory with differing INT modes: either
+# edge wakes the touch task. It reports in portrait, turned as LilyGo's own
+# code turns it.
+CONFIG_ESP_VIM_TOUCH=y
+CONFIG_ESP_VIM_TOUCH_GT911=y
+CONFIG_ESP_VIM_TOUCH_SDA=18
+CONFIG_ESP_VIM_TOUCH_SCL=8
+CONFIG_ESP_VIM_TOUCH_INT=16
+CONFIG_ESP_VIM_TOUCH_RST=-1
+CONFIG_ESP_VIM_TOUCH_ADDR=0x5D
+CONFIG_ESP_VIM_TOUCH_ANY_EDGE=y
+CONFIG_ESP_VIM_TOUCH_WIDTH=320
+CONFIG_ESP_VIM_TOUCH_HEIGHT=240
+CONFIG_ESP_VIM_TOUCH_SWAP_XY=y
+# CONFIG_ESP_VIM_TOUCH_MIRROR_X is not set
+CONFIG_ESP_VIM_TOUCH_MIRROR_Y=y
+# The GT911's own axis bits (Module_Switch1, logged at boot) differ between
+# batches -- the T-Deck's and the Plus's are mirrored left to right from each
+# other. The turn above is right on a T-Deck Plus whose value is 0xB5 (181):
+# a panel whose bits differ is turned back to match. :EspTouch flipx fixes a
+# board that still comes out mirrored, and keeps it.
+CONFIG_ESP_VIM_TOUCH_GT911_SWITCH_REF=181
+
+# The keyboard and trackball (esp_kbd_tdeck.h: Mic is Ctrl, Alt is Esc), on the
+# touch panel's bus; the Kconfig defaults are this board's pins. The keys light
+# up while you type, for 10 seconds after the last (:EspKeyLight).
+CONFIG_ESP_VIM_KBD_TDECK=y
+
+# The microSD slot, on the display's SPI bus (CS 39), mounted at /sd. The LoRa
+# radio's chip select (GPIO9) is held high, so it stays off the bus.
+CONFIG_ESP_VIM_SD_SPI=y
+CONFIG_ESP_VIM_SD_SPI_ON_DISPLAY_BUS=y
+CONFIG_ESP_VIM_SD_SPI_SCLK=40
+CONFIG_ESP_VIM_SD_SPI_MOSI=41
+CONFIG_ESP_VIM_SD_SPI_MISO=38
+CONFIG_ESP_VIM_SD_SPI_CS=39
+CONFIG_ESP_VIM_SD_SPI_OTHER_CS=9
+
+# Sleep (esp_power): pressing the trackball (GPIO0, BOOT) wakes the board, and
+# pressed while it's awake puts it into reader mode. On battery (GPIO4 reads it
+# through 100k over 100k) it goes there by itself after 5 minutes without a key,
+# and to deep sleep after an hour more if nothing is unsaved.
+CONFIG_ESP_VIM_WAKE_KEY_GPIO=0
+CONFIG_ESP_VIM_WAKE_KEY_NAME="BALL"
+CONFIG_ESP_VIM_BAT_ADC_GPIO=4
+CONFIG_ESP_VIM_BAT_DIVIDER=2000
+CONFIG_ESP_VIM_SLEEP_IDLE_MIN=5
+CONFIG_ESP_VIM_SLEEP_DEEP_MIN=60
+
+# The program runs from a copy in PSRAM, as on the RLCD-4.2, so the stacks of
+# the tasks that write flash can live in PSRAM too (ESP_VIM_STACK_IN_PSRAM),
+# leaving internal RAM for WiFi and a Bluetooth keyboard together.
+CONFIG_SPIRAM_XIP_FROM_PSRAM=y

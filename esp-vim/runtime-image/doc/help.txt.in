@@ -226,6 +226,21 @@ window at the bottom: "R" refreshes it, "q" closes it.
 		Kept across restarts.  From a script:
 		esp_display_flip() and esp_display().flip.
 
+:EspTouch [{how}]					*:EspTouch*
+		On boards with a touch screen, where taps land.  If they
+		land mirrored, {how} "flipx" turns them left to right,
+		"flipy" top to bottom, and "swap" exchanges across and
+		down; "reset" goes back to the board's own setting.  Kept
+		across restarts.  Without an argument, shows the touch chip
+		and how its points are turned.  From a script: esp_touch().
+
+:EspKeyLight [{seconds}|off [{brightness}]]		*:EspKeyLight*
+		On the T-Deck, the keyboard's backlight: it lights up with a
+		key, and goes dark {seconds} after the last one.  "off"
+		keeps it dark.  {brightness} is 1 to 255 (127 to start
+		with).  Kept across restarts.  Without an argument, shows
+		the setting.  From a script: esp_kbd_light().
+
 :EspFont [{size}]					*:EspFont*
 		On boards with a screen, its font, named for the screen size
 		it gives in columns and lines.  Without an argument, lists
@@ -810,6 +825,34 @@ The Cardputer's own keyboard has no Esc key, and Vim needs one all the time:
 			tapped twice is Caps Lock, a third time ends it.
 
 A terminal on the USB serial console types into Vim as well.
+
+@ENDIF@
+@IF tdeck@
+The T-Deck's own keyboard has no Esc, Ctrl or Tab, and Vim needs them:
+
+	Mic		Ctrl: Mic, w is CTRL-W.
+	Alt		Esc.
+	Sym		The second legends printed on the keys (Sym-Mic
+			is 0), Tab on Space and Delete on Bksp.
+	Sym Shift	What isn't printed: ~ ` ^ % [ ] { } = & on
+			q w e r t y u i o p, | \ < > on a s d f, the
+			arrows on h j k l, Home on g, End on m, Page Up
+			and Page Down on b and n.
+	Mods		Shift, Mic and Sym work held, or tapped for the
+			next key only: Mic, then w, is CTRL-W.  Shift
+			tapped twice is Caps Lock, a third time ends it.
+	Trackball	Rolls as the arrow keys.  Pressed, it is the
+			wake key: see |esp-sleep|.
+	Light		The keys light up while you type; see
+			|:EspKeyLight|.
+	Touch		If taps land on the wrong side of the screen
+			(T-Deck panels differ), ":EspTouch flipx" fixes
+			it for good; see |:EspTouch|.
+
+Esc, Ctrl and Sym-Shift need LilyGo's keyboard firmware from June 2025 or
+later on the keyboard's own chip; with older firmware the keys type only what
+is printed on them, and the boot log says so.  A terminal on the USB serial
+console types into Vim as well.
 
 @ENDIF@
 Interrupt		CTRL-C stops a long command, a runaway search or a

@@ -46,6 +46,15 @@ menu "esp-vim SD card"
         int "CS GPIO"
         depends on ESP_VIM_SD_SPI
         default 10
+    config ESP_VIM_SD_SPI_ON_DISPLAY_BUS
+        bool "On the display's SPI bus"
+        depends on ESP_VIM_SD_SPI && (ESP_VIM_DISP_ILI9341 || ESP_VIM_DISP_ST7789)
+        default n
+        help
+            The card shares the panel's bus (the LilyGo T-Deck's): the same
+            SCLK and MOSI, and the panel's bus set up with the card's MISO
+            (ESP_VIM_DISP_MISO). The SPI driver takes turns between them.
+
     config ESP_VIM_SD_SPI_OTHER_CS
         int "Another device's CS on the card's bus, held high (-1: none)"
         depends on ESP_VIM_SD_SPI

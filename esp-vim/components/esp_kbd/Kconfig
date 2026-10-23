@@ -47,4 +47,63 @@ menu "esp-vim keyboards"
         depends on ESP_VIM_KBD_CARDPUTER
         default 11
 
+    config ESP_VIM_KBD_TDECK
+        bool "LilyGo T-Deck / T-Deck Plus keyboard and trackball"
+        default n
+        help
+            The T-Deck's built-in 35 keys, scanned by an ESP32-C3 on the
+            board's I2C bus, typed as esp_kbd_tdeck.h describes: Mic is Ctrl,
+            Alt is Esc, Sym the printed second legends, Sym with Shift the
+            rest, and sticky modifiers. Esc, Ctrl and the Sym layers need the
+            C3's raw mode (LilyGo's keyboard firmware of June 2025 or later);
+            older firmware types characters only. The trackball rolls as
+            arrow keys, and the keys light up while you type.
+
+    if ESP_VIM_KBD_TDECK
+
+    config ESP_VIM_KBD_TDECK_SDA
+        int "SDA GPIO"
+        default 18
+    config ESP_VIM_KBD_TDECK_SCL
+        int "SCL GPIO"
+        default 8
+    config ESP_VIM_KBD_TDECK_ADDR
+        hex "The keyboard's I2C address"
+        default 0x55
+
+    config ESP_VIM_KBD_TDECK_LIGHT_SEC
+        int "Key backlight: seconds on after a key (0: off)"
+        range 0 65535
+        default 10
+        help
+            The keys light up while you type, and go dark this long after
+            the last key. :EspKeyLight changes it, kept in NVS.
+    config ESP_VIM_KBD_TDECK_LIGHT_LEVEL
+        int "Key backlight brightness (1-255)"
+        range 1 255
+        default 127
+
+    config ESP_VIM_KBD_TDECK_BALL_UP
+        int "Trackball up GPIO"
+        default 3
+    config ESP_VIM_KBD_TDECK_BALL_DOWN
+        int "Trackball down GPIO"
+        default 15
+    config ESP_VIM_KBD_TDECK_BALL_LEFT
+        int "Trackball left GPIO"
+        default 1
+    config ESP_VIM_KBD_TDECK_BALL_RIGHT
+        int "Trackball right GPIO"
+        default 2
+    config ESP_VIM_KBD_TDECK_BALL_STEP
+        int "Trackball toggles per arrow key"
+        range 1 16
+        default 2
+        help
+            Each of the trackball's sensors toggles its pin as the ball
+            rolls; this many toggles one way is one arrow key. More is
+            slower.
+
+    endif
+
 endmenu

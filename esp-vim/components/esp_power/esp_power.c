@@ -43,6 +43,7 @@
 static const char *TAG = "esp_power";
 
 #define KEY         CONFIG_ESP_VIM_WAKE_KEY_GPIO
+#define KEY_NAME    CONFIG_ESP_VIM_WAKE_KEY_NAME   /* as printed on the board */
 #define BAT         CONFIG_ESP_VIM_BAT_ADC_GPIO
 #if BAT >= 0 || CONFIG_ESP_VIM_BAT_INA226
 # define HAVE_BAT   1
@@ -265,11 +266,11 @@ static const char *const s_hippo[] = {
 #define HIPPO_LINES (sizeof s_hippo / sizeof s_hippo[0])
 
 static const char *const s_quips[] = {
-    "Out cold. Press KEY if it's important.",
+    "Out cold. Press " KEY_NAME " if it's important.",
     "Deep sleep. Like the river, only drier.",
     "Hippos sleep 16 hours a day. I'm catching up.",
     "Do not disturb. Unless it's watermelon.",
-    "Gone wallowing. KEY brings me back.",
+    "Gone wallowing. " KEY_NAME " brings me back.",
     "Not lazy. Energy-efficient.",
     "Your words will keep. So will I.",
     "Shh. Dreaming in monospace.",
@@ -362,7 +363,7 @@ static void deep_sleep(int wake_s)
         ? s_quips_low[esp_random() % (sizeof s_quips_low / sizeof s_quips_low[0])]
         : s_quips[esp_random() % (sizeof s_quips / sizeof s_quips[0])];
     char foot[64];
-    snprintf(foot, sizeof foot, "%s", KEY >= 0 ? "KEY wakes me." : "RESET wakes me.");
+    snprintf(foot, sizeof foot, "%s", KEY >= 0 ? KEY_NAME " wakes me." : "RESET wakes me.");
     if (mv > 0 && !battery_absent())
         snprintf(foot + strlen(foot), sizeof foot - strlen(foot), "   Battery %d.%02d V",
                  mv / 1000, mv % 1000 / 10);
@@ -416,7 +417,7 @@ static void reader_sleep(int wake_s, bool unsaved)
 {
     esp_ble_kbd_suspend();
     esp_net_suspend();
-    esp_display_sleep_t screen = { .badge = KEY >= 0 ? " Zzzz KEY " : " Zzzz " };
+    esp_display_sleep_t screen = { .badge = KEY >= 0 ? " Zzzz " KEY_NAME " " : " Zzzz " };
     esp_display_sleep(&screen);
     wait_key_released();
 

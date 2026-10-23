@@ -1,4 +1,4 @@
-" :EspSerial, :EspSerialSend, :EspI2cScan, :EspSensors, :EspAdc.
+" :EspSerial, :EspSerialSend, :EspI2cScan, :EspSensors, :EspAdc, :EspKeyLight.
 
 " ---------------------------------------------------------------- serial --
 
@@ -133,3 +133,27 @@ function! esp#hw#Adc(pin) abort
           \ r.mv >= 0 ? printf(', %d mV', r.mv) : ', not calibrated')
   endif
 endfunction
+
+" -------------------------------------------------------------- :EspKeyLight --
+
+" :EspKeyLight [{seconds}|off [{brightness}]]: the keyboard's backlight (the
+" T-Deck's) comes on with a key and goes off {seconds} after the last one;
+" off, never. Kept for the next start. Without an argument, shows the setting.
+function! esp#hw#KeyLight(...) abort
+  let l = esp_kbd_light()
+  if !l.available
+    echoerr 'EspKeyLight: this board has no keyboard light'
+    return
+  endif
+  if a:0
+    let sec = a:1 ==# 'off' ? 0 : str2nr(a:1)
+    if a:1 !=# 'off' && (a:1 !~# '^\d\+$' || sec < 1)
+      echoerr 'Usage: :EspKeyLight [{seconds}|off [{brightness}]]'
+      return
+    endif
+    let l = a:0 > 1 ? esp_kbd_light(sec, str2nr(a:2)) : esp_kbd_light(sec)
+  endif
+  echo l.seconds == 0 ? 'Key light: off'
+        \ : printf('Key light: on for %d s after a key, brightness %d of 255', l.seconds, l.brightness)
+endfunction
+

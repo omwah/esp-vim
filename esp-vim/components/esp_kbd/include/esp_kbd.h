@@ -49,6 +49,7 @@ void esp_kbd_release_all(void);
 #define ESP_KBD_WIRED_TAB5  0x01
 #define ESP_KBD_WIRED_USB   0x02
 #define ESP_KBD_WIRED_CARDPUTER 0x04
+#define ESP_KBD_WIRED_TDECK 0x08
 void esp_kbd_wired(unsigned which, bool attached);
 bool esp_kbd_wired_attached(void);
 
@@ -60,6 +61,18 @@ esp_err_t esp_kbd_tab5_start(void);
  * set it up; its keys then arrive as any keyboard's. ESP_ERR_NOT_SUPPORTED in
  * other builds. */
 esp_err_t esp_kbd_cardputer_start(void);
+
+/* The LilyGo T-Deck's own keyboard and trackball (ESP_VIM_KBD_TDECK): set them
+ * up, on the touch panel's I2C bus when it has one there -- so after
+ * esp_touch_init(). ESP_ERR_NOT_FOUND when the keyboard doesn't answer (the
+ * trackball still works); ESP_ERR_NOT_SUPPORTED in other builds. */
+esp_err_t esp_kbd_tdeck_start(void);
+
+/* The T-Deck's key backlight: on with a key, off after {seconds} without one
+ * (0: never on), at {level} (1-255). Kept in NVS. ESP_ERR_NOT_FOUND without the
+ * keyboard; ESP_ERR_NOT_SUPPORTED in other builds. */
+esp_err_t esp_kbd_light_get(int *seconds, int *level);
+esp_err_t esp_kbd_light_set(int seconds, int level);
 
 /* For the console: is a key waiting, and take up to {len} bytes of keys. */
 bool esp_kbd_pending(void);

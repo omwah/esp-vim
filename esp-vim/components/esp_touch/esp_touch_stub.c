@@ -7,3 +7,6 @@ esp_err_t esp_touch_init(void) { return ESP_ERR_NOT_SUPPORTED; }
 bool esp_touch_available(void) { return false; }
 void esp_touch_set_handler(esp_touch_handler_t handler, void *ctx) { (void)handler; (void)ctx; }
 i2c_master_bus_handle_t esp_touch_i2c_bus(int sda, int scl) { return esp_board_i2c_bus(sda, scl); }
+void esp_touch_get_info(esp_touch_info_t *info) { *info = (esp_touch_info_t){ .chip = "", .addr = -1, .config_version = -1, .switch1 = -1 }; }
+esp_err_t esp_touch_set_turn(bool swap, bool mirror_x, bool mirror_y) { (void)swap; (void)mirror_x; (void)mirror_y; return ESP_ERR_NOT_SUPPORTED; }
+esp_err_t esp_touch_reset_turn(void) { return ESP_ERR_NOT_SUPPORTED; }

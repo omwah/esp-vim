@@ -11,6 +11,8 @@
 #   scripts/vim-build.sh es3c28p    # esp32s3, console on USB (Hosyond ES3C28P CYD)
 #   scripts/vim-build.sh fnk0115    # esp32s3, 5" RGB panel (Freenove FNK0115)
 #   scripts/vim-build.sh rlcd42     # esp32s3, 4.2" mono RLCD (Waveshare ESP32-S3-RLCD-4.2)
+#   scripts/vim-build.sh tdeck      # esp32s3, keyboard and trackball (LilyGo T-Deck,
+#                                   #   T-Deck Plus)
 #   scripts/vim-build.sh cardputer  # esp32s3, no PSRAM, 8 MB: an app for a launcher
 #                                   #   (M5Stack Cardputer ADV); its runtime on SD
 #
@@ -25,8 +27,8 @@ VARIANT="${1:-${ESPVIM_TARGET:-esp32p4}}"
 case "$VARIANT" in
     esp32p4|esp32s3) TARGET="$VARIANT" ;;
     tab5|tab5uart)   TARGET=esp32p4 ;;
-    es3c28p|fnk0115|rlcd42|cardputer) TARGET=esp32s3 ;;
-    *) echo "vim-build: unsupported variant '$VARIANT' (esp32p4, tab5, tab5uart, esp32s3, es3c28p, fnk0115, rlcd42, cardputer)" >&2; exit 1 ;;
+    es3c28p|fnk0115|rlcd42|cardputer|tdeck) TARGET=esp32s3 ;;
+    *) echo "vim-build: unsupported variant '$VARIANT' (esp32p4, tab5, tab5uart, esp32s3, es3c28p, fnk0115, rlcd42, cardputer, tdeck)" >&2; exit 1 ;;
 esac
 
 PROJECT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../esp-vim" && pwd)"

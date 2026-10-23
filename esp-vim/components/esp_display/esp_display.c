@@ -1104,13 +1104,18 @@ static esp_err_t panel_init(void)
 
 static esp_err_t panel_init(void)
 {
+    /* With a MISO pin the bus is shared (the T-Deck's SD card is on it, which
+     * esp_sd adds later): room for the card's transfers too. */
+    int max = s_line_px * sizeof(uint16_t);
+    if (CONFIG_ESP_VIM_DISP_MISO >= 0 && max < 4096)
+        max = 4096;
     spi_bus_config_t bus = {
         .sclk_io_num = CONFIG_ESP_VIM_DISP_SCLK,
         .mosi_io_num = CONFIG_ESP_VIM_DISP_MOSI,
-        .miso_io_num = -1,
+        .miso_io_num = CONFIG_ESP_VIM_DISP_MISO,
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
-        .max_transfer_sz = s_line_px * sizeof(uint16_t),
+        .max_transfer_sz = max,
     };
     esp_err_t e = spi_bus_initialize(SPI3_HOST, &bus, SPI_DMA_CH_AUTO);
     if (e != ESP_OK)

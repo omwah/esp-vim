@@ -1119,3 +1119,84 @@ the original and 4. The Cardputer's help.txt drops the commands it doesn't have
 (`HELP_PRUNE`), and its storage, settings, configuration, keyboard and quitting
 sections are its own, chosen in help.txt.in by `@IF cardputer@ ... @ELSE@ ...
 @ENDIF@`.
+
+## 2026-10-22 — The LilyGo T-Deck and T-Deck Plus: one build, and the GT911 left as it is
+
+The T-Deck and T-Deck Plus have the same chip (ESP32-S3FN16R8), screen (2.8" ST7789,
+320x240), touch controller (GT911), keyboard (an ESP32-C3 at I2C 0x55) and pins. The Plus
+adds a GPS on the Grove pins and a battery. Pins come from LilyGo's
+`examples/UnitTest/utilities.h` and schematic, checked against their T-Deck Plus wiki
+page and Meshtastic's `variants/esp32s3/t-deck`. One build, `tdeck`, runs on both.
+
+**Touch is where they differ, and in how the controller comes up, not in the wiring.**
+- The GT911 has **no reset line** here. It picks its address (0x5D or 0x14) from INT's
+  level at power-on, and INT is left floating then, so either address is possible. LilyGo's
+  SensorLib probes both, and so does Meshtastic. esp_touch now does the same whenever
+  `ESP_VIM_TOUCH_RST` is -1.
+- The Plus's **INT mode varies from unit to unit** (Meshtastic's device-ui: "T-Deck Plus has
+  inconsistent factory settings for IRQ pin"). Meshtastic rewrites the controller's
+  configuration (0x804D) to "level low while touched". LilyGo ships a `T-Deck-Plus-TouchFix`
+  firmware for the Plus's rounded-corner glass and warns that flashing it to the T-Deck's
+  rectangular glass breaks touch. A persistent write that depends on which glass is fitted
+  is not something to do at every boot. Instead, `ESP_VIM_TOUCH_ANY_EDGE` wakes the touch
+  task on either edge, which catches a touch in all four modes. An edge that brings no new
+  report is ignored, as before.
+- **Left and right differ between panels.** The T-Deck's and the Plus's touch panels are
+  mirrored left to right from each other. Only a Plus was at hand. The GT911's
+  Module_Switch1 (0x804D) carries its own axis reversal (bit 7 Driver_Reversal, bit 6
+  Sensor_Reversal) and swap (bit 3). The fix posted for the Plus in Meshtastic's
+  discussion #5432 writes 0xB5 there, so the difference most likely lives in that byte.
+  esp_touch logs it at boot. `ESP_VIM_TOUCH_GT911_SWITCH_REF` is the value the Kconfig's
+  swap and mirrors are right for: a panel whose bits differ gets those axes turned back.
+  Which panel axis each bit reverses is taken from Goodix's naming and is unchecked. On the
+  first T-Deck Plus run (GT911 at 0x5D, config version 0x41) it read **0xB5**, the very value
+  Meshtastic's fix writes, and LilyGo's turn (swap, mirror Y) was right: that is the T-Deck
+  build's reference. An original T-Deck has yet to confirm the other side. `:EspTouch flipx / flipy
+  / swap / reset` sets a turn by hand, kept in NVS, for any board that still comes out
+  wrong (`esp_touch()` in scripts).
+- The panel reports in **portrait** (240x320). Scaling the reported range to the screen
+  was done before swapping X and Y, which only worked for a square range or a panel that
+  isn't turned. It is now done in the panel's own axes. The FNK0115's panel isn't swapped,
+  so it is unaffected.
+
+**Keys.** The keyboard has no Esc, Ctrl or Tab. **Mic is Ctrl**, the owner's choice after
+first trying it as Esc: Vim has many more Ctrl commands than uses for one Esc key, and Mic
+is next to Space under the left thumb. **Alt is Esc**, at the left end of the z row, where
+Esc or Caps Lock sits for a Vim user. That also keeps clear of the C3 firmware's own Alt-B,
+which toggles the key light by itself: with Alt as Ctrl every Ctrl-B would have flickered
+it. Sym-Mic still types 0, its printed legend. Sym gives the printed legends, as LilyGo's firmware does, plus Tab on Space and
+Delete on Bksp. **Sym with Shift** is a second layer for what isn't printed (`` ~ ` ^ % [ ] {
+} = & | \ < > ``), the arrows on h j k l, and Home, End, PgUp and PgDn. The modifiers latch
+when tapped, as on the Cardputer. All of this needs the C3 to report raw key states
+(command 0x03, in LilyGo's keyboard firmware since June 2025). Older firmware answers only
+with the last printed character. It is recognised from the raw reply, which then has bit 7
+set or five equal bytes, and the build falls back to typing characters and logs which
+firmware to flash. That detection has only been reasoned about, not yet seen on a board.
+
+**Buses.** GPIO10 powers the C3, the panel and the radio: `ESP_VIM_BOARD_POWER_GPIO`
+drives it high in `esp_board_init()`, before anything probes them. The SD card shares the
+screen's SPI bus (and the LoRa radio's, whose chip select is held high). The screen sets
+up the bus with the card's MISO (`ESP_VIM_DISP_MISO`), and the card is added to it
+(`ESP_VIM_SD_SPI_ON_DISPLAY_BUS`). On the T-Deck Plus the card mounts and is read and
+written while the screen draws. The keyboard shares the touch panel's I2C bus. It
+starts after touch and takes the bus from `esp_touch_i2c_bus()`, which now hands it out
+even when no panel answered.
+
+**Trackball.** Each of its four hall sensors toggles a pin as the ball rolls. Two toggles
+one way make one arrow key (`ESP_VIM_KBD_TDECK_BALL_STEP`), and rolling the other way
+forgets a half-counted step. The click is GPIO0, the BOOT strap: it is the wake/reader-mode
+key, as KEY is on the RLCD-4.2, rather than a key that types. The sleep screen calls it BALL
+(`ESP_VIM_WAKE_KEY_NAME`).
+
+**Key light.** The C3 also drives the keys' backlight (command 0x01 and a brightness). It
+comes on with a key or a roll of the trackball and goes off 10 seconds after the last one
+(`:EspKeyLight`, kept in NVS). There is no "always on": nobody asked for it. Only changes
+are written to the C3.
+
+**The first run, over the network.** It was flashed from a laptop's USB port shared over
+TCP. esptool's RFC 2217 route failed: pyserial's client resends every port setting each
+time esptool changes its read timeout, until the link broke. A raw `socat` bridge
+(`socket://` in esptool, with the board put into download mode by hand) worked. It needs
+`rawer` and `hupcl=0` on the tty: with plain `raw` the laptop echoed Vim's output back in as
+keys, and dropping DTR on close reset the S3 out of download mode.
+

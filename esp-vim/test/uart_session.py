@@ -36,7 +36,7 @@ C6_IMAGE = PROJECT.parent / "build-deps" / "c6-coprocessor" / "build" / "merged.
 # SDIO bridge (scripts/c6-build.sh makes the C6 firmware).
 VARIANT = os.environ.get("ESPVIM_TARGET", "esp32p4")
 TARGET = {"tab5": "esp32p4", "tab5uart": "esp32p4", "es3c28p": "esp32s3", "fnk0115": "esp32s3",
-          "rlcd42": "esp32s3"}.get(VARIANT, VARIANT)
+          "rlcd42": "esp32s3", "tdeck": "esp32s3"}.get(VARIANT, VARIANT)
 COPROCESSOR = VARIANT in ("tab5", "tab5uart")
 PSRAM = {"esp32p4": "32M", "esp32s3": "8M"}
 

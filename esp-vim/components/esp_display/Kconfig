@@ -121,6 +121,15 @@ menu "esp-vim display"
         int "MOSI GPIO"
         default 12 if ESP_VIM_DISP_ST7305
         default 11
+    config ESP_VIM_DISP_MISO
+        int "MISO GPIO (-1: none; another device shares the bus)"
+        depends on ESP_VIM_DISP_ILI9341 || ESP_VIM_DISP_ST7789
+        default -1
+        help
+            The panel never answers, but a device sharing its bus may: the
+            LilyGo T-Deck's SD card (ESP_VIM_SD_SPI_ON_DISPLAY_BUS) is on the
+            panel's SCLK and MOSI, with its MISO on 38.
+
     config ESP_VIM_DISP_CS
         int "CS GPIO"
         default 40 if ESP_VIM_DISP_ST7305

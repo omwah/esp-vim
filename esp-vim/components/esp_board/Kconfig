@@ -12,4 +12,15 @@ menu "esp-vim board layer"
             MIPI-DSI panel, whichever of the three fitted revisions it is
             (ILI9881C + GT911, ST7123, ST7121).
 
+    config ESP_VIM_BOARD_POWER_GPIO
+        int "Peripheral power switch GPIO, driven high at boot (-1: none)"
+        depends on !ESP_VIM_BOARD_TAB5
+        default -1
+        range -1 48
+        help
+            A board whose peripherals are powered through a switch on a
+            GPIO: it is turned on first thing, before any driver looks for
+            its chip. The LilyGo T-Deck's is 10 (its keyboard, touch panel,
+            screen and LoRa radio).
+
 endmenu

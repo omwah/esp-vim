@@ -11,6 +11,13 @@ menu "esp-vim power"
             it was. To wake from deep sleep as well it must be an RTC GPIO
             (0-21 on the ESP32-S3). The Waveshare ESP32-S3-RLCD-4.2's KEY is 18.
 
+    config ESP_VIM_WAKE_KEY_NAME
+        string "The wake button's name, as the sleep screen shows it"
+        default "KEY"
+        help
+            The RLCD-4.2's button is printed KEY; the LilyGo T-Deck's is the
+            trackball, pressed (BALL).
+
     config ESP_VIM_BAT_ADC_GPIO
         int "Battery voltage ADC GPIO (-1: none)"
         default -1

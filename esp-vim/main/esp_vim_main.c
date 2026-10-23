@@ -572,6 +572,9 @@ void app_main(void)
     else
         ESP_LOGE(TAG, "touch: not available");
 #endif
+    kb = esp_kbd_tdeck_start();         /* the T-Deck's own keys: on the touch panel's bus */
+    if (kb != ESP_OK && kb != ESP_ERR_NOT_SUPPORTED)
+        ESP_LOGE(TAG, "T-Deck keyboard: %s", esp_err_to_name(kb));
     storage_init();
     environment_init();
 #if CONFIG_ESP_VIM_SSH

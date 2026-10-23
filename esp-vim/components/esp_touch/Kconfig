@@ -52,6 +52,30 @@ menu "esp-vim touch"
         help
             A GT911 takes 0x5D or 0x14, chosen by its INT line at reset;
             with a reset pin, the driver selects the one given here.
+            Without one (-1), this is tried first and then the other.
+
+    config ESP_VIM_TOUCH_ANY_EDGE
+        bool "Wake on either edge of INT"
+        depends on !ESP_VIM_TOUCH_BOARD
+        default n
+        help
+            For a GT911 whose INT mode isn't known: pulses either way, or a
+            level held while touched (the LilyGo T-Deck Plus's differ from
+            unit to unit). Off, a falling edge wakes the touch task.
+
+    config ESP_VIM_TOUCH_GT911_SWITCH_REF
+        int "GT911 Module_Switch1 the swap and mirrors are right for (-1: ignore it)"
+        depends on ESP_VIM_TOUCH_GT911
+        range -1 255
+        default -1
+        help
+            A GT911's own configuration can reverse its axes and swap them
+            (register 0x804D: bit 7 Driver_Reversal, bit 6 Sensor_Reversal,
+            bit 3 X2Y), and panels of one board can differ there: the LilyGo
+            T-Deck Plus's left and right from batch to batch. Set this to
+            the value (the boot log shows it) on a panel the swap and mirrors
+            below are right for; a panel whose bits differ gets those axes
+            turned back. :EspTouch sets a turn of its own over all this.
 
     config ESP_VIM_TOUCH_WIDTH
         int "Screen width, as mounted"
