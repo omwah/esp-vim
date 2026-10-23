@@ -78,12 +78,19 @@ idf.py -B "$BUILD" -D "SDKCONFIG=$BUILD/sdkconfig" -D "IDF_TARGET=$TARGET" \
 # the link map, that they hold all of them and nothing else.
 python3 "$PROJECT/../scripts/check-vim-sections.py" "$BUILD"
 
+# Every build's flash in one image, at 0x0: bootloader, partition table, app
+# and (where it has one) Vim's runtime partition. One esptool command, or a web
+# flasher, puts it on a board without this repository:
+#   esptool.py --chip <chip> write_flash 0x0 esp-vim-<variant>-merged.bin
+(cd "$BUILD" && python3 -m esptool --chip "$TARGET" merge_bin -o "esp-vim-$VARIANT-merged.bin" \
+    @flash_args >/dev/null)
+echo "vim-build: $BUILD/esp-vim-$VARIANT-merged.bin (the whole flash, at 0x0)"
+
 # A launcher app (ESP_VIM_LAUNCHER_APP: the Cardputer's) shares the device's
 # flash with other apps under a launcher, which installs the app image alone.
 # Fail if it outgrows the app slot in its partition table, warn when it gets
-# big for sharing, and write both release images: the app alone (for the
-# launcher, pixi run launcher-install) and one merged at 0x0 (bootloader, table
-# and app, for esptool or M5Burner on a device without the launcher).
+# big for sharing, and write the app alone too (for the launcher, pixi run
+# launcher-install).
 if grep -q '^CONFIG_ESP_VIM_LAUNCHER_APP=y' "$BUILD/sdkconfig"; then
     APP="$BUILD/esp-vim.bin"
     SIZE=$(stat -c %s "$APP")
@@ -100,7 +107,5 @@ for r in csv.reader(l for l in open(sys.argv[1]) if not l.startswith("#")):
     fi
     [ "$SIZE" -le $((2560 * 1024)) ] || echo "vim-build: warning: over 2.5 MB -- less room for other apps"
     cp "$APP" "$BUILD/esp-vim-$VARIANT.bin"
-    (cd "$BUILD" && python3 -m esptool --chip "$TARGET" merge_bin -o "esp-vim-$VARIANT-merged.bin" \
-        @flash_args >/dev/null)
-    echo "vim-build: $BUILD/esp-vim-$VARIANT.bin (for the launcher), esp-vim-$VARIANT-merged.bin (at 0x0)"
+    echo "vim-build: $BUILD/esp-vim-$VARIANT.bin (the app alone, for the launcher)"
 fi

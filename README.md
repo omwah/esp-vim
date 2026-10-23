@@ -257,7 +257,10 @@ console on that port; for the Freenove FNK0115Q, `pixi run vim-build-fnk0115` an
 LilyGo T-Deck or T-Deck Plus, `pixi run vim-build-tdeck` and `build-tdeck` (console on the
 S3's own USB; hold the trackball down while pressing reset if it won't take a flash); for the
 M5Stack Cardputer ADV, `pixi run vim-build-cardputer`, then see
-[its section](#m5stack-cardputer-adv). Attach a terminal to the board's serial port with, for example,
+[its section](#m5stack-cardputer-adv). Every build also writes the whole flash as one
+image, `esp-vim/build-<variant>/esp-vim-<variant>-merged.bin`, for flashing a board
+without this repository: `esptool.py --chip esp32s3 write_flash 0x0
+esp-vim-tdeck-merged.bin` (`esp32p4` for the Tab5). Attach a terminal to the board's serial port with, for example,
 `pixi run -- socat -,raw,echo=0,escape=0x1d /dev/ttyACM0,raw,echo=0` (detach with
 `Ctrl-]`). The Tab5's WiFi comes from its ESP32-C6
 running Espressif's esp-hosted firmware; `pixi run c6-build` builds that firmware at the
